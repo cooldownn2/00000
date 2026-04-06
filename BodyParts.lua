@@ -1,0 +1,26 @@
+local BODY_PART_NAMES = {
+    Head = true,
+    Humanoid = true,
+    HumanoidRootPart = true,
+    Torso = true,
+    UpperTorso = true,
+    LowerTorso = true,
+    ["Left Arm"] = true,
+    ["Right Arm"] = true,
+    ["Left Leg"] = true,
+    ["Right Leg"] = true,
+    LeftUpperArm = true,
+    LeftLowerArm = true,
+    LeftHand = true,
+    RightUpperArm = true,
+    RightLowerArm = true,
+    RightHand = true,
+    LeftUpperLeg = true,
+    LeftLowerLeg = true,
+    LeftFoot = true,
+    RightUpperLeg = true,
+    RightLowerLeg = true,
+    RightFoot = true,
+}
+
+return BODY_PART_NAMES
