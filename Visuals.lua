@@ -149,20 +149,19 @@ local featureDefs = {
     {
         label = "Triggerbot",
         getOn = function()
-            return settings["Triggerbot"] and settings["Triggerbot"]["Enabled"] == true
+            return State.TriggerbotToggleActive or State.TriggerbotHoldActive
         end,
     },
     {
         label = "Camlock",
         getOn = function()
-            return settings["Camlock"] and settings["Camlock"]["Enabled"] == true
+            return State.CamlockToggleActive or State.CamlockHoldActive
         end,
     },
     {
         label = "Force Shot",
         getOn = function()
-            local wm = settings["Weapon Modifications"]
-            return wm and wm["ForceHit"] and wm["ForceHit"]["Enabled"] == true
+            return State.ForceHitActive
         end,
     },
 }
