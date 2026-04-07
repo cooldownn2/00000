@@ -529,12 +529,7 @@ local function renderTarget(cfg, bx, curY)
         local tc = pool.tChip
         tc.BackgroundColor3       = C.TargetBg or C.ChipBg
         tc.BackgroundTransparency = C.TargetAlpha or C.ChipAlpha
-        local inv    = cfg["Inverted"] == true
-        local tStyle = cfg["ToggleStyle"] or "pill"
-        local tgtX   = bx
-        if inv and tStyle == "pill" then tgtX = bx + TG_W + 12
-        elseif inv and tStyle == "dot" then tgtX = bx + 6 + 8 end
-        tc.Position = UDim2.fromOffset(tgtX, curY)
+        tc.Position = UDim2.fromOffset(bx, curY)
         tc.Size     = UDim2.fromOffset(cachedTgtW, CHIP_H)
         tc.Visible  = true
         local ts = pool.tStroke
@@ -599,11 +594,7 @@ local function renderInfo(cfg, bx, curY)
     elseif pct > 0.3 then hpCol = C.HPMid
     else hpCol = C.HPLow end
 
-    local inv    = cfg["Inverted"] == true
-    local tStyle = cfg["ToggleStyle"] or "pill"
     local chipX  = bx
-    if inv and tStyle == "pill" then chipX = bx + TG_W + 12
-    elseif inv and tStyle == "dot" then chipX = bx + 6 + 8 end
 
     local fontSize = (FONT_SIZE - 1)
     local sidePad  = 4
@@ -640,32 +631,32 @@ local function renderInfo(cfg, bx, curY)
     end
     curY = curY + INFO_CHIP_H + INFO_GAP
 
-    -- Row 2: Dist · Tool  (side by side)
+    -- Row 2: Tool · Dist  (side by side)
     local distText = dist and (tostring(dist) .. "m") or "--"
-    local distW    = tw(distText, fontSize) + PAD_X * 2
     local toolW    = tw(toolName, fontSize) + PAD_X * 2
+    local distW    = tw(distText, fontSize) + PAD_X * 2
     local r3 = pool.info[3]
     if r3 then
         r3.chip.BackgroundColor3       = C.ChipBg
         r3.chip.BackgroundTransparency = C.ChipAlpha + 0.08
         r3.chip.Position = UDim2.fromOffset(chipX, curY)
-        r3.chip.Size     = UDim2.fromOffset(distW, INFO_CHIP_H)
+        r3.chip.Size     = UDim2.fromOffset(toolW, INFO_CHIP_H)
         r3.chip.Visible  = true
         if r3.stroke then r3.stroke.Color = C.StrokeColor; r3.stroke.Transparency = C.StrokeAlpha + 0.1; r3.stroke.Thickness = C.StrokeThick end
-        r3.label.Text = distText; r3.label.TextColor3 = C.InfoValueText; r3.label.TextSize = fontSize
-        r3.label.Size = UDim2.fromOffset(distW - PAD_X, INFO_CHIP_H)
+        r3.label.Text = toolName; r3.label.TextColor3 = C.InfoValueText; r3.label.TextSize = fontSize
+        r3.label.Size = UDim2.fromOffset(toolW - PAD_X, INFO_CHIP_H)
         r3.value.Text = ""; r3.value.Visible = false
     end
     local r4 = pool.info[4]
     if r4 then
         r4.chip.BackgroundColor3       = C.ChipBg
         r4.chip.BackgroundTransparency = C.ChipAlpha + 0.08
-        r4.chip.Position = UDim2.fromOffset(chipX + distW + sidePad, curY)
-        r4.chip.Size     = UDim2.fromOffset(toolW, INFO_CHIP_H)
+        r4.chip.Position = UDim2.fromOffset(chipX + toolW + sidePad, curY)
+        r4.chip.Size     = UDim2.fromOffset(distW, INFO_CHIP_H)
         r4.chip.Visible  = true
         if r4.stroke then r4.stroke.Color = C.StrokeColor; r4.stroke.Transparency = C.StrokeAlpha + 0.1; r4.stroke.Thickness = C.StrokeThick end
-        r4.label.Text = toolName; r4.label.TextColor3 = C.InfoValueText; r4.label.TextSize = fontSize
-        r4.label.Size = UDim2.fromOffset(toolW - PAD_X, INFO_CHIP_H)
+        r4.label.Text = distText; r4.label.TextColor3 = C.InfoValueText; r4.label.TextSize = fontSize
+        r4.label.Size = UDim2.fromOffset(distW - PAD_X, INFO_CHIP_H)
         r4.value.Text = ""; r4.value.Visible = false
     end
     curY = curY + INFO_CHIP_H + INFO_GAP
