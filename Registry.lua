@@ -64,23 +64,25 @@ local SettingPaths = {
     VisualsEnabled              = {"Visuals", "Info", "Enabled"},
     VisualsAlias                = {"Visuals", "Info", "Alias"},
     VisualsOutline              = {"Visuals", "Info", "Outline"},
+    VisualsStyle                = {"Visuals", "Info", "Style"},
     VisualsSize                 = {"Visuals", "Info", "Position", "Size"},
     VisualsX                    = {"Visuals", "Info", "Position", "X"},
     VisualsY                    = {"Visuals", "Info", "Position", "Y"},
 
-    VisualsHeaderColor          = {"Visuals", "Info", "Colors", "Header"},          -- alias text
-    VisualsAccentColor          = {"Visuals", "Info", "Colors", "Accent"},           -- left bar & border stroke
-    VisualsTextColor            = {"Visuals", "Info", "Colors", "Text"},             -- distance numbers
-    VisualsTargetColor          = {"Visuals", "Info", "Colors", "Target"},           -- locked target name
-    VisualsActiveColor          = {"Visuals", "Info", "Colors", "Active"},           -- active ▎bar & status text
-    VisualsIdleColor            = {"Visuals", "Info", "Colors", "Idle"},             -- idle/off status text
-    VisualsBarIdleColor         = {"Visuals", "Info", "Colors", "Bar Idle"},         -- ▎bar when idle
-    VisualsInRangeColor         = {"Visuals", "Info", "Colors", "In Range"},         -- "in" indicator
-    VisualsOutRangeColor        = {"Visuals", "Info", "Colors", "Out Range"},        -- "out"/"wall" indicator
-    VisualsFeatureLabelColor    = {"Visuals", "Info", "Colors", "Feature Label"},    -- Triggerbot/Camlock/ForceHit text
-    VisualsStatLabelColor       = {"Visuals", "Info", "Colors", "Stat Label"},       -- "hp" & "armor" label text
-    VisualsArmorValueColor      = {"Visuals", "Info", "Colors", "Armor Value"},      -- armor number at full/high value
-    VisualsGhostColor           = {"Visuals", "Info", "Colors", "Ghost"},            -- no-target placeholder text
+    VisualsHeaderColor          = {"Visuals", "Info", "Colors", "Header"},
+    VisualsAccentColor          = {"Visuals", "Info", "Colors", "Accent"},
+    VisualsTextColor            = {"Visuals", "Info", "Colors", "Text"},
+    VisualsTargetColor          = {"Visuals", "Info", "Colors", "Target"},
+    VisualsActiveColor          = {"Visuals", "Info", "Colors", "Active"},
+    VisualsIdleColor            = {"Visuals", "Info", "Colors", "Idle"},
+    VisualsBarIdleColor         = {"Visuals", "Info", "Colors", "Bar Idle"},
+    VisualsInRangeColor         = {"Visuals", "Info", "Colors", "In Range"},
+    VisualsOutRangeColor        = {"Visuals", "Info", "Colors", "Out Range"},
+    VisualsFeatureLabelColor    = {"Visuals", "Info", "Colors", "Feature Label"},
+    VisualsStatLabelColor       = {"Visuals", "Info", "Colors", "Stat Label"},
+    VisualsArmorValueColor      = {"Visuals", "Info", "Colors", "Armor Value"},
+    VisualsGhostColor           = {"Visuals", "Info", "Colors", "Ghost"},
+    VisualsSeparatorColor       = {"Visuals", "Info", "Colors", "Separator"},
 
     ForceHitEnabled             = {"Weapon Modifications", "ForceHit", "Enabled"},
     ForceHitFullDamage          = {"Weapon Modifications", "ForceHit", "Full Damage"},
@@ -130,7 +132,7 @@ local Settings = setmetatable({}, {
 })
 
 return {
-    settings = settings,
-    Settings = Settings,
+    settings     = settings,
+    Settings     = Settings,
     getPathValue = getPathValue,
 }
