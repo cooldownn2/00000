@@ -30,6 +30,7 @@ local C = {}
 
 local function lighten(c, t) return Color3.new(c.R+(1-c.R)*t, c.G+(1-c.G)*t, c.B+(1-c.B)*t) end
 local function darken(c, t)  return Color3.new(c.R*(1-t), c.G*(1-t), c.B*(1-t)) end
+local function lerpC3(a, b, t) return Color3.new(a.R+(b.R-a.R)*t, a.G+(b.G-a.G)*t, a.B+(b.B-a.B)*t) end
 
 local function resolveColors(cfg)
     local co  = cfg["Colors"] or {}
@@ -65,6 +66,17 @@ local function resolveColors(cfg)
     C.GlassAlpha     = 0.38
     C.GlassEdge      = lighten(bdr, 0.1)
     C.GlassEdgeAlpha = 0.88
+
+    -- Info row colors
+    C.InfoLabelText  = darken(txt, 0.25)
+    C.InfoValueText  = txt
+    C.HPHigh         = Color3.fromRGB(80, 220, 110)
+    C.HPMid          = Color3.fromRGB(240, 200, 40)
+    C.HPLow          = Color3.fromRGB(225, 55, 55)
+    C.HPDead         = Color3.fromRGB(220, 50, 50)
+    C.Armor          = Color3.fromRGB(140, 200, 255)
+    C.InRange        = Color3.fromRGB(80, 220, 110)
+    C.OutRange       = Color3.fromRGB(225, 55, 55)
 end
 
 -- ═════════════════════════════════════════════════════════════════════════════
@@ -168,6 +180,27 @@ local featureDefs = {
 
 MAX_ROWS = #featureDefs
 
+-- ═════════════════════════════════════════════════════════════════════════════
+--  INFO ROW DEFINITIONS  (value rows shown when target is locked)
+-- ═════════════════════════════════════════════════════════════════════════════
+local INFO_ROW_COUNT = 5
+local INFO_CHIP_H    = 13
+local INFO_GAP       = 3
+
+local function getTargetPlayer()
+    local target = State.LockedTarget
+    if not target or not target.Parent then return nil, nil end
+    local char = target.Parent
+    if not char:FindFirstChildOfClass("Humanoid") then
+        char = target
+        if not char:FindFirstChildOfClass("Humanoid") then return nil, nil end
+    end
+    for _, p in ipairs(game:GetService("Players"):GetPlayers()) do
+        if p.Character == char then return p, char end
+    end
+    return nil, char
+end
+
 local fdByLabel = {}
 for i, fd in ipairs(featureDefs) do
     fdByLabel[fd.label] = { fd = fd, idx = i }
@@ -227,6 +260,9 @@ local function destroyPool()
     if pool.backdrop then pcall(function() pool.backdrop:Destroy() end) end
     if pool.hChip then pcall(function() pool.hChip:Destroy() end) end
     if pool.tChip then pcall(function() pool.tChip:Destroy() end) end
+    for _, inf in ipairs(pool.info or {}) do
+        pcall(function() inf.chip:Destroy() end)
+    end
     for _, r in ipairs(pool.rows or {}) do
         pcall(function() r.chip:Destroy() end)
         if r.toggleGlass then pcall(function() r.toggleGlass:Destroy() end) end
@@ -288,6 +324,22 @@ local function buildPool(cfg)
     pool.tChip   = tc
     pool.tText   = tt
     pool.tStroke = tc:FindFirstChildOfClass("UIStroke")
+
+    -- Info chips (HP, Armor, Dist, Tool, Range)
+    pool.info = {}
+    for i = 1, INFO_ROW_COUNT do
+        local ic = newFrame(10)
+        local il = newText(ic, C.InfoLabelText or C.LabelText, FONT_SIZE - 1, 11, Enum.TextXAlignment.Left)
+        il.Position = UDim2.fromOffset(PAD_X, -1)
+        local iv = newText(ic, C.InfoValueText or C.LabelText, FONT_SIZE - 1, 11, Enum.TextXAlignment.Right)
+        iv.Position = UDim2.fromOffset(0, -1)
+        pool.info[i] = {
+            chip   = ic,
+            label  = il,
+            value  = iv,
+            stroke = ic:FindFirstChildOfClass("UIStroke"),
+        }
+    end
 
     -- Row chips
     pool.rows = {}
@@ -379,6 +431,9 @@ local function hideAll()
         r.chip.Visible = false
         if r.toggleGlass then r.toggleGlass.Visible = false end
     end
+    for _, inf in ipairs(pool.info or {}) do
+        inf.chip.Visible = false
+    end
 end
 
 -- ═════════════════════════════════════════════════════════════════════════════
@@ -451,6 +506,113 @@ local function renderTarget(cfg, bx, curY)
         pool.tChip.Visible = false
         return curY
     end
+end
+
+local function renderInfo(cfg, bx, curY)
+    local hasTarget = State.LockedTarget ~= nil and State.LockedTarget.Parent ~= nil
+    if not hasTarget then
+        for _, inf in ipairs(pool.info or {}) do inf.chip.Visible = false end
+        return curY
+    end
+
+    local player, char = getTargetPlayer()
+    if not char then
+        for _, inf in ipairs(pool.info or {}) do inf.chip.Visible = false end
+        return curY
+    end
+
+    -- Gather stats
+    local hp, maxHp, arm = 0, 100, 0
+    local alive = false
+    if ESPModule and player then
+        local entry = ESPModule.getEspCharData(player)
+        if entry and entry.char == char then
+            hp, maxHp, arm = ESPModule.getEspStatsFromCache(entry)
+            alive = entry.hum and entry.hum.Health > 0
+        end
+    else
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hp = mathFloor(hum.Health); maxHp = mathFloor(hum.MaxHealth); alive = hum.Health > 0 end
+    end
+    local pct = math.clamp(hp / math.max(maxHp, 1), 0, 1)
+
+    -- Distance & range
+    local myChar = LP and LP.Character
+    local myHrp  = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local tHrp   = char:FindFirstChild("HumanoidRootPart")
+    local dist   = (myHrp and tHrp) and mathFloor((tHrp.Position - myHrp.Position).Magnitude) or nil
+
+    local inRange = true
+    if ForceHitModule and ForceHitModule.getDistanceInfo then
+        local fd, fr = ForceHitModule.getDistanceInfo()
+        if fd then dist = fd; inRange = fr end
+    end
+
+    local tool     = char:FindFirstChildOfClass("Tool")
+    local toolName = tool and tool.Name or "Unarmed"
+
+    -- HP color
+    local hpCol
+    if not alive then hpCol = C.HPDead
+    elseif pct > 0.6 then hpCol = C.HPHigh
+    elseif pct > 0.3 then hpCol = C.HPMid
+    else hpCol = C.HPLow end
+
+    local inv    = cfg["Inverted"] == true
+    local tStyle = cfg["ToggleStyle"] or "pill"
+    local chipX  = bx
+    if inv and tStyle == "pill" then chipX = bx + TG_W + 12
+    elseif inv and tStyle == "dot" then chipX = bx + 6 + 8 end
+
+    -- Build info entries: { label, value, valueColor }
+    local infos = {
+        { "HP",    alive and tostring(hp) .. "/" .. tostring(maxHp) or "DEAD", hpCol },
+        { "Armor", arm > 0 and tostring(arm) or "0",                          C.Armor },
+        { "Dist",  dist and (tostring(dist) .. "m") or "--",                  C.InfoValueText },
+        { "Tool",  toolName,                                                    C.InfoValueText },
+        { "Range", inRange and "In Range" or "Out",                            inRange and C.InRange or C.OutRange },
+    }
+
+    local fontSize = (FONT_SIZE - 1)
+    for i, info in ipairs(infos) do
+        local inf = pool.info[i]
+        if not inf then break end
+
+        local labelW = tw(info[1], fontSize) + PAD_X
+        local valW   = tw(info[2], fontSize) + PAD_X
+        local chipW  = labelW + valW + PAD_X * 2
+
+        inf.chip.BackgroundColor3       = C.ChipBg
+        inf.chip.BackgroundTransparency = C.ChipAlpha + 0.08
+        inf.chip.Position = UDim2.fromOffset(chipX, curY)
+        inf.chip.Size     = UDim2.fromOffset(chipW, INFO_CHIP_H)
+        inf.chip.Visible  = true
+        if inf.stroke then
+            inf.stroke.Color        = C.StrokeColor
+            inf.stroke.Transparency = C.StrokeAlpha + 0.1
+            inf.stroke.Thickness    = C.StrokeThick
+        end
+
+        inf.label.Text       = info[1]
+        inf.label.TextColor3 = C.InfoLabelText or C.LabelText
+        inf.label.TextSize   = fontSize
+        inf.label.Size       = UDim2.fromOffset(labelW, INFO_CHIP_H)
+
+        inf.value.Text       = info[2]
+        inf.value.TextColor3 = info[3]
+        inf.value.TextSize   = fontSize
+        inf.value.Size       = UDim2.fromOffset(chipW - PAD_X, INFO_CHIP_H)
+
+        curY = curY + INFO_CHIP_H + INFO_GAP
+    end
+
+    -- Hide unused info slots
+    for i = #infos + 1, INFO_ROW_COUNT do
+        local inf = pool.info[i]
+        if inf then inf.chip.Visible = false end
+    end
+
+    return curY + (ROW_GAP - INFO_GAP)
 end
 
 local function renderRows(cfg, bx, baseY, dt)
@@ -613,6 +775,7 @@ local function update()
     local titleStr = cfg["Title"] or "Hotkeys"
     local curY = renderHeader(cfg, bx, by, cachedHdrW, titleStr)
     curY = renderTarget(cfg, bx, curY)
+    curY = renderInfo(cfg, bx, curY)
     renderRows(cfg, bx, curY, dt)
 end
 
