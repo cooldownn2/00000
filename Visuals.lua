@@ -183,7 +183,7 @@ MAX_ROWS = #featureDefs
 -- ═════════════════════════════════════════════════════════════════════════════
 --  INFO ROW DEFINITIONS  (value rows shown when target is locked)
 -- ═════════════════════════════════════════════════════════════════════════════
-local INFO_ROW_COUNT = 5
+local INFO_ROW_COUNT = 6
 local INFO_CHIP_H    = 13
 local INFO_GAP       = 3
 
@@ -540,17 +540,17 @@ local function renderInfo(cfg, bx, curY)
     end
     local pct = math.clamp(hp / math.max(maxHp, 1), 0, 1)
 
-    -- Distance & range
+    -- Distance
     local myChar = LP and LP.Character
     local myHrp  = myChar and myChar:FindFirstChild("HumanoidRootPart")
     local tHrp   = char:FindFirstChild("HumanoidRootPart")
     local dist   = (myHrp and tHrp) and mathFloor((tHrp.Position - myHrp.Position).Magnitude) or nil
 
-    local inRange = true
-    if ForceHitModule and ForceHitModule.getDistanceInfo then
-        local fd, fr = ForceHitModule.getDistanceInfo()
-        if fd then dist = fd; inRange = fr end
-    end
+    -- Triggerbot / Camlock range check
+    local tbMax  = tonumber(settings["Triggerbot"] and settings["Triggerbot"]["Distance"]) or 215
+    local camMax = tonumber(settings["Camlock"] and settings["Camlock"]["Distance"]) or 300
+    local tbIn   = dist and dist <= tbMax
+    local camIn  = dist and dist <= camMax
 
     local tool     = char:FindFirstChildOfClass("Tool")
     local toolName = tool and tool.Name or "Unarmed"
@@ -568,53 +568,101 @@ local function renderInfo(cfg, bx, curY)
     if inv and tStyle == "pill" then chipX = bx + TG_W + 12
     elseif inv and tStyle == "dot" then chipX = bx + 6 + 8 end
 
-    -- Build info entries: { label, value, valueColor }
-    local infos = {
-        { "HP",    alive and tostring(hp) .. "/" .. tostring(maxHp) or "DEAD", hpCol },
-        { "Armor", arm > 0 and tostring(arm) or "0",                          C.Armor },
-        { "Dist",  dist and (tostring(dist) .. "m") or "--",                  C.InfoValueText },
-        { "Tool",  toolName,                                                    C.InfoValueText },
-        { "Range", inRange and "In Range" or "Out",                            inRange and C.InRange or C.OutRange },
-    }
-
     local fontSize = (FONT_SIZE - 1)
-    for i, info in ipairs(infos) do
-        local inf = pool.info[i]
-        if not inf then break end
+    local sidePad  = 4
 
-        local labelW = tw(info[1], fontSize) + PAD_X
-        local valW   = tw(info[2], fontSize) + PAD_X
-        local chipW  = labelW + valW + PAD_X * 2
-
-        inf.chip.BackgroundColor3       = C.ChipBg
-        inf.chip.BackgroundTransparency = C.ChipAlpha + 0.08
-        inf.chip.Position = UDim2.fromOffset(chipX, curY)
-        inf.chip.Size     = UDim2.fromOffset(chipW, INFO_CHIP_H)
-        inf.chip.Visible  = true
-        if inf.stroke then
-            inf.stroke.Color        = C.StrokeColor
-            inf.stroke.Transparency = C.StrokeAlpha + 0.1
-            inf.stroke.Thickness    = C.StrokeThick
-        end
-
-        inf.label.Text       = info[1]
-        inf.label.TextColor3 = C.InfoLabelText or C.LabelText
-        inf.label.TextSize   = fontSize
-        inf.label.Size       = UDim2.fromOffset(labelW, INFO_CHIP_H)
-
-        inf.value.Text       = info[2]
-        inf.value.TextColor3 = info[3]
-        inf.value.TextSize   = fontSize
-        inf.value.Size       = UDim2.fromOffset(chipW - PAD_X, INFO_CHIP_H)
-
-        curY = curY + INFO_CHIP_H + INFO_GAP
+    -- Row 1: HP  |  Armor
+    local hpText  = alive and tostring(hp) .. "/" .. tostring(maxHp) or "DEAD"
+    local armText = arm > 0 and ("ARM " .. tostring(arm)) or "ARM 0"
+    local hpW     = tw("HP", fontSize) + tw(hpText, fontSize) + PAD_X * 3
+    local armW    = tw(armText, fontSize) + PAD_X * 2
+    local r1 = pool.info[1]
+    if r1 then
+        r1.chip.BackgroundColor3       = C.ChipBg
+        r1.chip.BackgroundTransparency = C.ChipAlpha + 0.08
+        r1.chip.Position = UDim2.fromOffset(chipX, curY)
+        r1.chip.Size     = UDim2.fromOffset(hpW, INFO_CHIP_H)
+        r1.chip.Visible  = true
+        if r1.stroke then r1.stroke.Color = C.StrokeColor; r1.stroke.Transparency = C.StrokeAlpha + 0.1; r1.stroke.Thickness = C.StrokeThick end
+        r1.label.Text = "HP"; r1.label.TextColor3 = C.InfoLabelText; r1.label.TextSize = fontSize
+        r1.label.Size = UDim2.fromOffset(tw("HP", fontSize) + PAD_X, INFO_CHIP_H)
+        r1.value.Text = hpText; r1.value.TextColor3 = hpCol; r1.value.TextSize = fontSize
+        r1.value.Size = UDim2.fromOffset(hpW - PAD_X, INFO_CHIP_H)
     end
-
-    -- Hide unused info slots
-    for i = #infos + 1, INFO_ROW_COUNT do
-        local inf = pool.info[i]
-        if inf then inf.chip.Visible = false end
+    local r2 = pool.info[2]
+    if r2 then
+        r2.chip.BackgroundColor3       = C.ChipBg
+        r2.chip.BackgroundTransparency = C.ChipAlpha + 0.08
+        r2.chip.Position = UDim2.fromOffset(chipX + hpW + sidePad, curY)
+        r2.chip.Size     = UDim2.fromOffset(armW, INFO_CHIP_H)
+        r2.chip.Visible  = true
+        if r2.stroke then r2.stroke.Color = C.StrokeColor; r2.stroke.Transparency = C.StrokeAlpha + 0.1; r2.stroke.Thickness = C.StrokeThick end
+        r2.label.Text = armText; r2.label.TextColor3 = C.Armor; r2.label.TextSize = fontSize
+        r2.label.Size = UDim2.fromOffset(armW - PAD_X, INFO_CHIP_H)
+        r2.value.Text = ""; r2.value.Visible = false
     end
+    curY = curY + INFO_CHIP_H + INFO_GAP
+
+    -- Row 2: Dist · Tool  (side by side)
+    local distText = dist and (tostring(dist) .. "m") or "--"
+    local distW    = tw(distText, fontSize) + PAD_X * 2
+    local toolW    = tw(toolName, fontSize) + PAD_X * 2
+    local r3 = pool.info[3]
+    if r3 then
+        r3.chip.BackgroundColor3       = C.ChipBg
+        r3.chip.BackgroundTransparency = C.ChipAlpha + 0.08
+        r3.chip.Position = UDim2.fromOffset(chipX, curY)
+        r3.chip.Size     = UDim2.fromOffset(distW, INFO_CHIP_H)
+        r3.chip.Visible  = true
+        if r3.stroke then r3.stroke.Color = C.StrokeColor; r3.stroke.Transparency = C.StrokeAlpha + 0.1; r3.stroke.Thickness = C.StrokeThick end
+        r3.label.Text = distText; r3.label.TextColor3 = C.InfoValueText; r3.label.TextSize = fontSize
+        r3.label.Size = UDim2.fromOffset(distW - PAD_X, INFO_CHIP_H)
+        r3.value.Text = ""; r3.value.Visible = false
+    end
+    local r4 = pool.info[4]
+    if r4 then
+        r4.chip.BackgroundColor3       = C.ChipBg
+        r4.chip.BackgroundTransparency = C.ChipAlpha + 0.08
+        r4.chip.Position = UDim2.fromOffset(chipX + distW + sidePad, curY)
+        r4.chip.Size     = UDim2.fromOffset(toolW, INFO_CHIP_H)
+        r4.chip.Visible  = true
+        if r4.stroke then r4.stroke.Color = C.StrokeColor; r4.stroke.Transparency = C.StrokeAlpha + 0.1; r4.stroke.Thickness = C.StrokeThick end
+        r4.label.Text = toolName; r4.label.TextColor3 = C.InfoValueText; r4.label.TextSize = fontSize
+        r4.label.Size = UDim2.fromOffset(toolW - PAD_X, INFO_CHIP_H)
+        r4.value.Text = ""; r4.value.Visible = false
+    end
+    curY = curY + INFO_CHIP_H + INFO_GAP
+
+    -- Row 3: TB range · CAM range  (side by side) — uses extra pool slots 5+6
+    local tbText  = tbIn and "TB ✓" or "TB ✗"
+    local camText = camIn and "CAM ✓" or "CAM ✗"
+    local tbW     = tw(tbText, fontSize) + PAD_X * 2
+    local camW    = tw(camText, fontSize) + PAD_X * 2
+    local r5 = pool.info[5]
+    if r5 then
+        r5.chip.BackgroundColor3       = C.ChipBg
+        r5.chip.BackgroundTransparency = C.ChipAlpha + 0.08
+        r5.chip.Position = UDim2.fromOffset(chipX, curY)
+        r5.chip.Size     = UDim2.fromOffset(tbW, INFO_CHIP_H)
+        r5.chip.Visible  = true
+        if r5.stroke then r5.stroke.Color = C.StrokeColor; r5.stroke.Transparency = C.StrokeAlpha + 0.1; r5.stroke.Thickness = C.StrokeThick end
+        r5.label.Text = tbText; r5.label.TextColor3 = tbIn and C.InRange or C.OutRange; r5.label.TextSize = fontSize
+        r5.label.Size = UDim2.fromOffset(tbW - PAD_X, INFO_CHIP_H)
+        r5.value.Text = ""; r5.value.Visible = false
+    end
+    local r6 = pool.info[6]
+    if r6 then
+        r6.chip.BackgroundColor3       = C.ChipBg
+        r6.chip.BackgroundTransparency = C.ChipAlpha + 0.08
+        r6.chip.Position = UDim2.fromOffset(chipX + tbW + sidePad, curY)
+        r6.chip.Size     = UDim2.fromOffset(camW, INFO_CHIP_H)
+        r6.chip.Visible  = true
+        if r6.stroke then r6.stroke.Color = C.StrokeColor; r6.stroke.Transparency = C.StrokeAlpha + 0.1; r6.stroke.Thickness = C.StrokeThick end
+        r6.label.Text = camText; r6.label.TextColor3 = camIn and C.InRange or C.OutRange; r6.label.TextSize = fontSize
+        r6.label.Size = UDim2.fromOffset(camW - PAD_X, INFO_CHIP_H)
+        r6.value.Text = ""; r6.value.Visible = false
+    end
+    curY = curY + INFO_CHIP_H + INFO_GAP
 
     return curY + (ROW_GAP - INFO_GAP)
 end
