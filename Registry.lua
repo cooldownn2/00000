@@ -67,6 +67,9 @@ local SettingPaths = {
     VisualsSize                 = {"Visuals", "Info", "Position", "Size"},
     VisualsX                    = {"Visuals", "Info", "Position", "X"},
     VisualsY                    = {"Visuals", "Info", "Position", "Y"},
+    VisualsStyle                = {"Visuals", "Info", "Style"},
+    VisualsAlign                = {"Visuals", "Info", "Align"},
+    VisualsDynamicHeader        = {"Visuals", "Info", "Dynamic Header"},
 
     VisualsHeaderColor          = {"Visuals", "Info", "Colors", "Header"},          -- alias text
     VisualsAccentColor          = {"Visuals", "Info", "Colors", "Accent"},           -- left bar & border stroke

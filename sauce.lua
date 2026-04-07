@@ -149,6 +149,9 @@ if GENV.SauceConfig then
         { {"Visuals","Info","Position","X"},                 {"Visuals","Info","Position","X"} },
         { {"Visuals","Info","Position","Y"},                 {"Visuals","Info","Position","Y"} },
         { {"Visuals","Info","Outline"},                      {"Visuals","Info","Outline"} },
+        { {"Visuals","Info","Style"},                        {"Visuals","Info","Style"} },
+        { {"Visuals","Info","Align"},                        {"Visuals","Info","Align"} },
+        { {"Visuals","Info","Dynamic Header"},               {"Visuals","Info","Dynamic Header"} },
         { {"Visuals","Target Card"},                         {"Main","Target Card"} },
     }
 
@@ -216,6 +219,9 @@ do
     expectType("ForceHit.Full Damage", S.ForceHitFullDamage, "boolean")
     expectType("ESP.Enabled", S.ESPAllowed, "boolean")
     expectType("Visuals.Enabled", S.VisualsEnabled, "boolean")
+    expectEnum("Visuals.Info.Style", S.VisualsStyle, {"Normal","Inverted"})
+    expectEnum("Visuals.Info.Align", S.VisualsAlign, {"Left","Right"})
+    expectType("Visuals.Info.Dynamic Header", S.VisualsDynamicHeader, "boolean")
     expectEnum("Triggerbot.FOV.Type", S.TriggerbotFOVType, {"Box","Direct"})
     expectEnum("Camlock.FOV.Type", S.CamlockFOVType, {"Box","Direct"})
 end

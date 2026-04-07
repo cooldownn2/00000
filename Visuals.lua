@@ -2,571 +2,298 @@ local Visuals = {}
 
 local settings, State, Camera, LP, screenGui, ForceHitModule, ESPModule, KNOWN_BODY_PARTS
 
-local wallRayParams = RaycastParams.new()
-wallRayParams.FilterType  = Enum.RaycastFilterType.Exclude
-wallRayParams.IgnoreWater = true
-local wallRayFilter = {}
+local card, headerIcon, headerText, headerDiv
+local rowObjs    = {}
+local cardStroke = nil
 
-local infoLines        = {}
-local infoHeaderLabel  = nil
-local infoBg           = nil
-local infoAccentBar    = nil
-local infoBorderStroke = nil
-local infoDivider      = nil
 local infoLastUpdate   = 0
-
-local INFO_UPDATE_RATE        = 1 / 50
-local INFO_METRIC_UPDATE_RATE = 1 / 15
-local infoMetricLastUpdate    = 0
-local WALL_UPDATE_RATE        = 1 / 15
-local infoWallLastUpdate      = 0
+local INFO_UPDATE_RATE = 1 / 50
 
 local VISUALS_FONT = Enum.Font.GothamBold
-local LINE_COUNT   = 6
-local TARGET_GAP   = 6
+local CARD_W   = 178
+local PAD_H    = 12
+local PAD_V    = 8
+local CORNER_R = 6
 
+local DOT       = "\226\151\143"   -- U+25CF BLACK CIRCLE
+local ICON_CHAR = "\226\137\161"   -- U+2261 IDENTICAL TO
 
-local C_HP_HI  = Color3.fromRGB(74, 222, 128)
-local C_HP_MID = Color3.fromRGB(250, 200, 40)
-local C_HP_LO  = Color3.fromRGB(220, 65, 65)
+local C_BG       = Color3.fromRGB(18, 20, 28)
+local C_DIV      = Color3.fromRGB(40, 44, 55)
+local C_HEADER   = Color3.fromRGB(255, 255, 255)
+local C_ACTIVE   = Color3.fromRGB(74, 222, 128)
+local C_IDLE     = Color3.fromRGB(80, 88, 102)
+local C_GHOST    = Color3.fromRGB(62, 66, 78)
+local C_LABEL    = Color3.fromRGB(200, 200, 255)
+local C_TEXT     = Color3.fromRGB(195, 200, 210)
+local C_ACCENT   = Color3.fromRGB(180, 120, 255)
+local C_BAR_IDLE = Color3.fromRGB(55, 62, 78)
 
-local C_ACTIVE     = Color3.fromRGB(74, 222, 128)
-local C_IDLE       = Color3.fromRGB(80, 88, 102)
-local C_IN         = Color3.fromRGB(74, 222, 128)
-local C_OUT        = Color3.fromRGB(220, 65, 65)
-local C_TEXT       = Color3.fromRGB(195, 200, 210)
-local C_ARMOR      = Color3.fromRGB(140, 200, 255)
-local C_LABEL      = Color3.fromRGB(200, 200, 255)
-local C_STAT_LABEL = Color3.fromRGB(200, 200, 255)
-local C_GHOST      = Color3.fromRGB(62, 66, 78)
-local C_BAR_IDLE   = Color3.fromRGB(55, 62, 78)
-local C_ACCENT     = Color3.fromRGB(180, 120, 255)
-
-local S_SEP        = "rgb(255,255,255)"
-
-local S_ACTIVE, S_IDLE, S_IN, S_OUT, S_TEXT   = "", "", "", "", ""
-local S_LABEL, S_ARMOR, S_STAT_LABEL           = "", "", ""
-local S_GHOST, S_BAR_IDLE                      = "", ""
-
-local metricState = {
-    tbDist = nil,  tbInRange  = nil,
-    camDist = nil, camInRange = nil,
-    fhDist = nil,  fhInRange  = nil,
-}
-
-local cachedWallVisible = true
-local cachedWallText    = "vis"
-local cachedWallColorS  = ""
-
-local renderCtx = {
-    size    = 11,
-    outline = true,
-    baseX   = 0,
-    baseY   = 0,
-    lineH   = 15,
-}
-
+local overlayReady = false
 local cachedColors = {}
 
-local LINES = {
-    TRIGGERBOT = 1,
-    CAMLOCK    = 2,
-    FORCEHIT   = 3,
-    TARGET     = 4,
-    HP         = 5,
-    TOOL       = 6,
-}
-
-local function smoothMetric(prev, target, alpha)
-    if prev == nil then return target end
-    return prev + (target - prev) * alpha
-end
-
-local function c3s(c)
-    return string.format("rgb(%d,%d,%d)",
-        math.floor(c.R * 255 + 0.5),
-        math.floor(c.G * 255 + 0.5),
-        math.floor(c.B * 255 + 0.5))
-end
+local ROW_COUNT = 4
 
 local function syncColors(colors)
+    if type(colors) ~= "table" then return end
     local dirty = false
     for k, v in pairs(colors) do
-        if cachedColors[k] ~= v then
-            cachedColors[k] = v
-            dirty = true
-        end
+        if cachedColors[k] ~= v then cachedColors[k] = v; dirty = true end
     end
     if not dirty then return end
-
-    C_ACTIVE     = cachedColors["Active"]        or C_ACTIVE
-    C_IDLE       = cachedColors["Idle"]          or C_IDLE
-    C_IN         = cachedColors["In Range"]      or C_IN
-    C_OUT        = cachedColors["Out Range"]     or C_OUT
-    C_TEXT       = cachedColors["Text"]          or C_TEXT
-    C_LABEL      = cachedColors["Feature Label"] or C_LABEL
-    C_STAT_LABEL = cachedColors["Stat Label"]    or C_STAT_LABEL
-    C_ARMOR      = cachedColors["Armor Value"]   or C_ARMOR
-    C_GHOST      = cachedColors["Ghost"]         or C_GHOST
-    C_BAR_IDLE   = cachedColors["Bar Idle"]      or C_BAR_IDLE
-    C_ACCENT     = cachedColors["Accent"]        or C_ACCENT
-
-    S_ACTIVE     = c3s(C_ACTIVE)
-    S_IDLE       = c3s(C_IDLE)
-    S_IN         = c3s(C_IN)
-    S_OUT        = c3s(C_OUT)
-    S_TEXT       = c3s(C_TEXT)
-    S_LABEL      = c3s(C_LABEL)
-    S_ARMOR      = c3s(C_ARMOR)
-    S_STAT_LABEL = c3s(C_STAT_LABEL)
-    S_GHOST      = c3s(C_GHOST)
-    S_BAR_IDLE   = c3s(C_BAR_IDLE)
-
-    if infoAccentBar    then infoAccentBar.BackgroundColor3 = C_ACCENT end
-    if infoBorderStroke then infoBorderStroke.Color         = C_ACCENT end
-
-    cachedWallColorS = cachedWallVisible and S_ACTIVE or S_OUT
+    C_ACTIVE   = cachedColors["Active"]        or C_ACTIVE
+    C_IDLE     = cachedColors["Idle"]          or C_IDLE
+    C_GHOST    = cachedColors["Ghost"]         or C_GHOST
+    C_LABEL    = cachedColors["Feature Label"] or C_LABEL
+    C_TEXT     = cachedColors["Text"]          or C_TEXT
+    C_ACCENT   = cachedColors["Accent"]        or C_ACCENT
+    C_BAR_IDLE = cachedColors["Bar Idle"]      or C_BAR_IDLE
+    C_HEADER   = cachedColors["Header"]        or C_HEADER
+    if cardStroke then cardStroke.Color = C_ACCENT end
 end
 
-local function formatFeatureStatus(name, enabled, isActive, dist, inRange)
-    local barColor  = not enabled and S_GHOST    or (isActive and S_ACTIVE or S_BAR_IDLE)
-    local statColor = not enabled and S_IDLE     or (isActive and S_ACTIVE or S_IDLE)
-    local statTxt   = not enabled and "off"      or (isActive and "active" or "idle")
-
-    local line = '<font color="' .. barColor  .. '">\226\150\142</font>  '
-        .. '<font color="' .. S_LABEL   .. '">' .. name    .. '</font>'
-        .. '<font color="' .. S_SEP     .. '">  \194\183  </font>'
-        .. '<font color="' .. statColor .. '">' .. statTxt .. '</font>'
-
-    if dist then
-        local rangeStr = inRange and S_IN or S_OUT
-        line = line
-            .. '<font color="' .. S_SEP    .. '">  \194\183  </font>'
-            .. '<font color="' .. S_TEXT   .. '">' .. dist .. 'm</font>'
-            .. '  <font color="' .. rangeStr .. '">' .. (inRange and "in" or "out") .. '</font>'
-    end
-
-    return line
-end
-
-local function newBg()
-    local f = Instance.new("Frame")
-    f.Name                   = "VisualsBg"
-    f.BackgroundColor3       = Color3.fromRGB(6, 8, 12)
-    f.BackgroundTransparency = 0.3
-    f.BorderSizePixel        = 0
-    f.ZIndex                 = 9
-    f.Visible                = false
-    f.Parent                 = screenGui
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = f
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Color        = C_ACCENT
-    stroke.Transparency = 0.55
-    stroke.Thickness    = 1.5
-    stroke.Parent       = f
-
-    local accent = Instance.new("Frame")
-    accent.Name             = "AccentBar"
-    accent.BackgroundColor3 = C_ACCENT
-    accent.BorderSizePixel  = 0
-    accent.Size             = UDim2.new(0, 2, 1, -12)
-    accent.Position         = UDim2.new(0, 0, 0, 6)
-    accent.ZIndex           = 11
-    accent.Parent           = f
-    local ac = Instance.new("UICorner")
-    ac.CornerRadius = UDim.new(0, 2)
-    ac.Parent = accent
-
-    local div = Instance.new("Frame")
-    div.Name                   = "VisualsDivider"
-    div.BackgroundColor3       = Color3.fromRGB(60, 65, 80)
-    div.BackgroundTransparency = 0.2
-    div.BorderSizePixel        = 0
-    div.Size                   = UDim2.new(1, -24, 0, 1)
-    div.Position               = UDim2.fromOffset(12, 0)
-    div.ZIndex                 = 11
-    div.Parent                 = f
-
-    return { bg = f, accentBar = accent, stroke = stroke, divider = div }
-end
-
-local function newInfoText(size, outline)
+local function makeLabel(parent, props)
     local t = Instance.new("TextLabel")
-    t.Name                   = "VisualsInfoLine"
+    t.Name                   = props.Name or "Lbl"
     t.BackgroundTransparency = 1
-    t.Size                   = UDim2.fromOffset(340, size + 6)
     t.Font                   = VISUALS_FONT
-    t.TextSize               = size
-    t.TextColor3             = Color3.fromRGB(255, 255, 255)
+    t.TextSize               = props.TextSize or 11
+    t.TextColor3             = props.TextColor3 or C_TEXT
     t.TextStrokeColor3       = Color3.fromRGB(0, 0, 0)
-    t.TextStrokeTransparency = outline ~= false and 0.2 or 1
-    t.TextXAlignment         = Enum.TextXAlignment.Left
-    t.TextYAlignment         = Enum.TextYAlignment.Top
-    t.RichText               = true
-    t.ZIndex                 = 10
-    t.Visible                = false
-    t.Parent                 = screenGui
+    t.TextStrokeTransparency = props.Outline and 0.2 or 1
+    t.TextXAlignment         = props.XAlign or Enum.TextXAlignment.Left
+    t.TextYAlignment         = Enum.TextYAlignment.Center
+    t.RichText               = false
+    t.Text                   = props.Text or ""
+    t.Size                   = props.Size or UDim2.fromOffset(80, 22)
+    t.Position               = props.Position or UDim2.fromOffset(0, 0)
+    t.ZIndex                 = 11
+    t.Visible                = true
+    t.Parent                 = parent
     return t
 end
 
-local overlayReady = false
+local function makeDivider(parent, yPos)
+    local d = Instance.new("Frame")
+    d.Name                   = "Div"
+    d.BackgroundColor3       = C_DIV
+    d.BackgroundTransparency = 0.25
+    d.BorderSizePixel        = 0
+    d.Size                   = UDim2.new(1, -(PAD_H * 2), 0, 1)
+    d.Position               = UDim2.fromOffset(PAD_H, yPos)
+    d.ZIndex                 = 11
+    d.Parent                 = parent
+    return d
+end
 
-local function initOverlay()
-    for _, t in ipairs(infoLines) do
-        pcall(function() t:Destroy() end)
-    end
-    infoLines = {}
-    if infoHeaderLabel then
-        pcall(function() infoHeaderLabel:Destroy() end)
-        infoHeaderLabel = nil
-    end
-    if infoBg then
-        pcall(function() infoBg:Destroy() end)
-        infoBg = nil
-    end
-    infoAccentBar    = nil
-    infoBorderStroke = nil
-    infoDivider      = nil
+local function buildCard()
+    if card then pcall(function() card:Destroy() end) end
+    card = nil; rowObjs = {}; cardStroke = nil
+    headerIcon = nil; headerText = nil; headerDiv = nil
 
     local cfg     = settings["Visuals"]["Info"]
-    local size    = cfg["Position"]["Size"] or 11
+    local sz      = cfg["Position"]["Size"] or 11
     local outline = cfg["Outline"] ~= false
+    local rowH    = sz + 10
+    local headH   = sz + 12
 
-    metricState.tbDist,  metricState.tbInRange  = nil, nil
-    metricState.camDist, metricState.camInRange  = nil, nil
-    metricState.fhDist,  metricState.fhInRange   = nil, nil
-    cachedColors = {}
+    card = Instance.new("Frame")
+    card.Name                   = "VisualsCard"
+    card.BackgroundColor3       = C_BG
+    card.BackgroundTransparency = 0.15
+    card.BorderSizePixel        = 0
+    card.ZIndex                 = 9
+    card.Visible                = false
+    card.Parent                 = screenGui
 
-    local bgObj      = newBg()
-    infoBg           = bgObj.bg
-    infoAccentBar    = bgObj.accentBar
-    infoBorderStroke = bgObj.stroke
-    infoDivider      = bgObj.divider
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, CORNER_R)
+    corner.Parent = card
 
-    local header = Instance.new("TextLabel")
-    header.Name                   = "VisualsAlias"
-    header.BackgroundTransparency = 1
-    header.Size                   = UDim2.fromOffset(340, size + 6)
-    header.Text                   = cfg["Alias"] or "sauce"
-    header.TextColor3             = cfg["Colors"]["Header"] or Color3.fromRGB(180, 100, 255)
-    header.TextSize               = size
-    header.Font                   = VISUALS_FONT
-    header.TextXAlignment         = Enum.TextXAlignment.Left
-    header.TextYAlignment         = Enum.TextYAlignment.Top
-    header.TextStrokeColor3       = Color3.fromRGB(0, 0, 0)
-    header.TextStrokeTransparency = outline and 0.2 or 1
-    header.RichText               = true
-    header.ZIndex                 = 10
-    header.Visible                = false
-    header.Parent                 = screenGui
-    infoHeaderLabel = header
+    cardStroke = Instance.new("UIStroke")
+    cardStroke.Color        = C_ACCENT
+    cardStroke.Transparency = 0.6
+    cardStroke.Thickness    = 1.2
+    cardStroke.Parent       = card
 
-    for i = 1, LINE_COUNT do
-        infoLines[i] = newInfoText(size, outline)
+    local iconW = sz + 4
+    headerIcon = makeLabel(card, {
+        Name = "Icon", Text = ICON_CHAR, TextColor3 = C_ACCENT,
+        TextSize = sz + 2, Outline = outline,
+        Size = UDim2.fromOffset(iconW, headH),
+        Position = UDim2.fromOffset(PAD_H, PAD_V),
+    })
+
+    headerText = makeLabel(card, {
+        Name = "Header", Text = cfg["Alias"] or "sauce", TextColor3 = C_HEADER,
+        TextSize = sz, Outline = outline,
+        Size = UDim2.new(1, -(PAD_H * 2 + iconW + 4), 0, headH),
+        Position = UDim2.fromOffset(PAD_H + iconW + 4, PAD_V),
+    })
+
+    local divY = PAD_V + headH
+    headerDiv = makeDivider(card, divY)
+
+    local y = divY + 1
+    for i = 1, ROW_COUNT do
+        local ry = y + (i - 1) * (rowH + 1)
+
+        local left = makeLabel(card, {
+            Name = "R" .. i .. "L", TextColor3 = C_LABEL, TextSize = sz,
+            Outline = outline,
+            Size = UDim2.new(0.6, 0, 0, rowH),
+            Position = UDim2.fromOffset(PAD_H, ry),
+        })
+
+        local right = makeLabel(card, {
+            Name = "R" .. i .. "R", TextColor3 = C_TEXT, TextSize = sz,
+            Outline = outline,
+            Size = UDim2.new(0.4, -PAD_H, 0, rowH),
+            Position = UDim2.new(0.6, 0, 0, ry),
+            XAlign = Enum.TextXAlignment.Right,
+        })
+
+        local div = nil
+        if i < ROW_COUNT then
+            div = makeDivider(card, ry + rowH)
+        end
+
+        rowObjs[i] = { left = left, right = right, div = div }
     end
+
+    local totalH = PAD_V + headH + 1 + ROW_COUNT * rowH + (ROW_COUNT - 1) + PAD_V
+    card.Size = UDim2.fromOffset(CARD_W, totalH)
 
     overlayReady = true
 end
 
-local function setLine(i, text, color, yOffset)
-    local t = infoLines[i]
-    if not t then return end
-    t.Text                   = text
-    t.TextColor3             = color or C_TEXT
-    t.TextStrokeTransparency = renderCtx.outline and 0.2 or 1
-    t.Position               = UDim2.fromOffset(renderCtx.baseX, yOffset)
-    t.Visible                = true
+local function getDotColor(enabled, active)
+    if not enabled then return C_GHOST end
+    if active then return C_ACTIVE end
+    return C_BAR_IDLE
 end
 
-local function checkWall(tChar)
-    if not tChar or not Camera then return true, "vis" end
-    local part = tChar:FindFirstChild("Head") or tChar:FindFirstChild("HumanoidRootPart")
-    if not part then return true, "vis" end
-    local origin    = Camera.CFrame.Position
-    local direction = part.Position - origin
-    wallRayFilter[1] = LP.Character
-    wallRayParams.FilterDescendantsInstances = wallRayFilter
-    local result = workspace:Raycast(origin, direction, wallRayParams)
-    if not result then return true, "vis" end
-    local vis = result.Instance:IsDescendantOf(tChar)
-    return vis, vis and "vis" or "wall"
+local function getCurrentSpreadValue()
+    local wm = settings["Weapon Modifications"]
+    if type(wm) ~= "table" then return nil end
+    local raw = wm["Custom Spread"]
+    if type(raw) ~= "table" or raw["Enabled"] == false then return nil end
+    local char = LP and LP.Character
+    local tool = char and char:FindFirstChildOfClass("Tool")
+    if not tool then return nil end
+    local v = raw[tool.Name]
+    return type(v) == "number" and v or nil
 end
 
-local function getPlayerDistance(tChar)
-    local myChar = LP.Character
-    local myHrp  = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    local tHrp   = tChar and tChar:FindFirstChild("HumanoidRootPart")
-    if myHrp and tHrp then
-        return math.floor((tHrp.Position - myHrp.Position).Magnitude)
-    end
-    return nil
-end
-
-local function buildFeatureLine(name, enabled, isActive, armedAndHasTarget, tChar, maxDist, distKey, rangeKey, refreshMetrics)
-    local text = formatFeatureStatus(name, enabled, isActive, nil, nil)
-    if armedAndHasTarget and tChar then
-        local distRaw = getPlayerDistance(tChar)
-        if distRaw then
-            local inRangeRaw = distRaw <= maxDist
-            if refreshMetrics then
-                metricState[distKey]  = smoothMetric(metricState[distKey], distRaw, 0.35)
-                metricState[rangeKey] = inRangeRaw
-            end
-            local shownDist = metricState[distKey] and math.floor(metricState[distKey] + 0.5) or distRaw
-            local inRange   = metricState[rangeKey]
-            if inRange == nil then inRange = inRangeRaw end
-            text = formatFeatureStatus(name, enabled, isActive, shownDist, inRange)
-        end
+local function setRow(i, labelText, valueText, labelColor, valueColor, isInverted)
+    local row = rowObjs[i]
+    if not row then return end
+    if isInverted then
+        row.left.Text            = valueText
+        row.left.TextColor3      = valueColor
+        row.left.TextXAlignment  = Enum.TextXAlignment.Left
+        row.right.Text           = labelText
+        row.right.TextColor3     = labelColor
+        row.right.TextXAlignment = Enum.TextXAlignment.Right
     else
-        if refreshMetrics then
-            metricState[distKey]  = nil
-            metricState[rangeKey] = nil
-        end
+        row.left.Text            = labelText
+        row.left.TextColor3      = labelColor
+        row.left.TextXAlignment  = Enum.TextXAlignment.Left
+        row.right.Text           = valueText
+        row.right.TextColor3     = valueColor
+        row.right.TextXAlignment = Enum.TextXAlignment.Right
     end
-    return text
-end
-
-local function buildForceHitLine(fhEnabled, fhActive, hasTarget, tChar, refreshMetrics)
-    local text = formatFeatureStatus("ForceHit", fhEnabled, fhActive, nil, nil)
-    if fhActive and hasTarget and tChar and ForceHitModule and ForceHitModule.getDistanceInfo then
-        local distRaw, inRangeRaw = ForceHitModule.getDistanceInfo()
-        if distRaw then
-            if refreshMetrics then
-                metricState.fhDist    = smoothMetric(metricState.fhDist, distRaw, 0.35)
-                metricState.fhInRange = inRangeRaw
-            end
-            local shownDist = metricState.fhDist and math.floor(metricState.fhDist + 0.5) or distRaw
-            local inRange   = metricState.fhInRange
-            if inRange == nil then inRange = inRangeRaw end
-            text = formatFeatureStatus("ForceHit", fhEnabled, fhActive, shownDist, inRange)
-        end
-    else
-        if refreshMetrics then
-            metricState.fhDist    = nil
-            metricState.fhInRange = nil
-        end
-    end
-    return text
-end
-
-local function getHpColor(pct)
-    if pct > 0.6  then return C_HP_HI end
-    if pct > 0.25 then return C_HP_MID end
-    return C_HP_LO
-end
-
-local function getArmorColor(arm)
-    if arm > 75 then return C_ARMOR  end
-    if arm > 25 then return C_HP_MID end
-    if arm > 0  then return C_HP_LO  end
-    return C_GHOST
-end
-
-local function buildHealthLine(hasTarget, tChar)
-    if not hasTarget or not tChar then
-        return '<font color="' .. S_GHOST .. '">-- hp</font>'
-            .. '<font color="' .. S_SEP   .. '">  \194\183  </font>'
-            .. '<font color="' .. S_GHOST .. '">-- armor</font>'
-    end
-    local hp, maxHp, arm = 0, 100, 0
-    if ESPModule then
-        local entry = ESPModule.getEspCharData(State.LockedTarget)
-        if entry and entry.char == tChar then
-            hp, maxHp, arm = ESPModule.getEspStatsFromCache(entry)
-        end
-    else
-        local hum = tChar:FindFirstChildOfClass("Humanoid")
-        hp    = hum and math.floor(hum.Health)    or 0
-        maxHp = hum and math.floor(hum.MaxHealth) or 100
-    end
-    hp  = math.min(math.max(math.floor(hp),  0), 9999)
-    arm = math.min(math.max(math.floor(arm), 0), 9999)
-
-    local pct      = maxHp > 0 and (hp / maxHp) or 0
-    local hpColor  = c3s(getHpColor(pct))
-    local armColor = c3s(getArmorColor(arm))
-
-    return '<font color="' .. hpColor      .. '">' .. hp  .. '</font>'
-        .. '<font color="' .. S_STAT_LABEL .. '"> hp</font>'
-        .. '<font color="' .. S_SEP        .. '">  \194\183  </font>'
-        .. '<font color="' .. armColor     .. '">' .. arm .. '</font>'
-        .. '<font color="' .. S_STAT_LABEL .. '"> armor</font>'
-end
-
-local function buildToolLine(hasTarget, tChar)
-    if not hasTarget or not tChar then
-        return '<font color="' .. S_GHOST .. '">unarmed</font>'
-    end
-    local tool = tChar:FindFirstChildOfClass("Tool")
-    if tool then
-        return '<font color="' .. S_SEP  .. '">[</font>'
-            .. '<font color="' .. S_TEXT .. '">' .. tool.Name .. '</font>'
-            .. '<font color="' .. S_SEP  .. '">]</font>'
-    end
-    for _, child in ipairs(tChar:GetChildren()) do
-        if (child:IsA("Tool") or child:IsA("Model")) and not KNOWN_BODY_PARTS[child.Name] then
-            return '<font color="' .. S_SEP  .. '">[</font>'
-                .. '<font color="' .. S_TEXT .. '">' .. child.Name .. '</font>'
-                .. '<font color="' .. S_SEP  .. '">]</font>'
-        end
-    end
-    return '<font color="' .. S_GHOST .. '">unarmed</font>'
 end
 
 local function update()
     Camera = workspace.CurrentCamera
-    local cfg = settings["Visuals"]["Info"]
-    if not cfg["Enabled"] then
-        for _, t in ipairs(infoLines) do
-            if t.Visible then t.Visible = false end
-        end
-        if infoHeaderLabel then infoHeaderLabel.Visible = false end
-        if infoBg           then infoBg.Visible = false end
+    local cfg = settings["Visuals"] and settings["Visuals"]["Info"]
+    if not cfg or not cfg["Enabled"] then
+        if card and card.Visible then card.Visible = false end
         return
     end
 
-    if not overlayReady then initOverlay() end
+    if not overlayReady then buildCard() end
 
     local now = os.clock()
     if (now - infoLastUpdate) < INFO_UPDATE_RATE then return end
     infoLastUpdate = now
 
-    local refreshMetrics = false
-    if (now - infoMetricLastUpdate) >= INFO_METRIC_UPDATE_RATE then
-        infoMetricLastUpdate = now
-        refreshMetrics = true
-    end
-
-    local refreshWall = false
-    if (now - infoWallLastUpdate) >= WALL_UPDATE_RATE then
-        infoWallLastUpdate = now
-        refreshWall = true
-    end
-
-    local vp    = Camera and Camera.ViewportSize or Vector2.new(1920, 1080)
-    local pos   = cfg["Position"]
-    local size  = pos["Size"] or 11
-    local baseX = math.floor(vp.X * (pos["X"] or 0.0055))
-    local baseY = math.floor(vp.Y * (pos["Y"] or 0.65))
-    local lineH = size + 4
-
     syncColors(cfg["Colors"])
 
-    renderCtx.size    = size
-    renderCtx.outline = cfg["Outline"] ~= false
-    renderCtx.baseX   = baseX
-    renderCtx.baseY   = baseY
-    renderCtx.lineH   = lineH
+    local style   = string.lower(cfg["Style"] or "normal")
+    local align   = string.lower(cfg["Align"] or "left")
+    local dynHead = cfg["Dynamic Header"] ~= false
+    local pos     = cfg["Position"]
+    local vp      = Camera and Camera.ViewportSize or Vector2.new(1920, 1080)
+    local xPct    = pos["X"] or 0.0055
+    local yPct    = pos["Y"] or 0.65
 
-    local colorTarget = cachedColors["Target"] or Color3.fromRGB(255, 80, 80)
-    local S_TARGET    = c3s(colorTarget)
+    local cardX
+    if align == "right" then
+        cardX = math.floor(vp.X * (1 - xPct)) - CARD_W
+    else
+        cardX = math.floor(vp.X * xPct)
+    end
+    local cardY = math.floor(vp.Y * yPct)
+
+    card.Position = UDim2.fromOffset(cardX, cardY)
+    card.Visible  = true
 
     local hasTarget = State.LockedTarget ~= nil and State.LockedTarget.Parent ~= nil
-    local tChar     = hasTarget and State.LockedTarget.Character or nil
-
-    local y = baseY
-
-    if infoHeaderLabel then
-        infoHeaderLabel.Text                   = cfg["Alias"] or "sauce"
-        infoHeaderLabel.TextColor3             = cachedColors["Header"] or Color3.fromRGB(180, 100, 255)
-        infoHeaderLabel.TextSize               = size
-        infoHeaderLabel.TextStrokeTransparency = renderCtx.outline and 0.2 or 1
-        infoHeaderLabel.Position               = UDim2.fromOffset(baseX, y - lineH - 1)
-        infoHeaderLabel.Visible                = true
+    if dynHead and hasTarget then
+        headerText.Text       = State.LockedTarget.DisplayName or State.LockedTarget.Name
+        headerText.TextColor3 = cachedColors["Target"] or Color3.fromRGB(255, 80, 80)
+    else
+        headerText.Text       = cfg["Alias"] or "sauce"
+        headerText.TextColor3 = C_HEADER
     end
+    headerIcon.TextColor3 = C_ACCENT
 
-    local tbEnabled  = settings["Triggerbot"]["Enabled"]
-    local clickType  = string.lower(tostring(settings["Triggerbot"]["Click Type"] or "Hold"))
-    local tbArmed    = tbEnabled and (
-        (clickType == "toggle" and State.TriggerbotToggleActive) or
-        (clickType ~= "toggle" and State.TriggerbotHoldActive)
+    local isInv = style == "inverted"
+
+    -- Triggerbot
+    local tbEnabled   = settings["Triggerbot"] and settings["Triggerbot"]["Enabled"]
+    local tbClickType = string.lower(tostring((settings["Triggerbot"] and settings["Triggerbot"]["Click Type"]) or "Hold"))
+    local tbArmed     = tbEnabled and (
+        (tbClickType == "toggle" and State.TriggerbotToggleActive) or
+        (tbClickType ~= "toggle" and State.TriggerbotHoldActive)
     )
-    local tbMaxDist = tonumber(settings["Triggerbot"]["Distance"]) or 210
-    local tbText = buildFeatureLine("Triggerbot", tbEnabled, tbArmed, tbArmed and hasTarget, tChar, tbMaxDist, "tbDist", "tbInRange", refreshMetrics)
-    setLine(LINES.TRIGGERBOT, tbText, C_TEXT, y)
-    y = y + lineH
+    setRow(1, "Triggerbot", DOT, C_LABEL, getDotColor(tbEnabled, tbArmed), isInv)
 
+    -- Camlock
     local camEnabled   = settings["Camlock"] and settings["Camlock"]["Enabled"]
     local camClickType = string.lower(tostring((settings["Camlock"] and settings["Camlock"]["Click Type"]) or "Hold"))
     local camArmed     = camEnabled and (
         (camClickType == "toggle" and State.CamlockToggleActive) or
         (camClickType ~= "toggle" and State.CamlockHoldActive)
     )
-    local camMaxDist = tonumber(settings["Camlock"] and settings["Camlock"]["Distance"]) or 300
-    local camText = buildFeatureLine("Camlock", camEnabled, camArmed, camArmed and hasTarget, tChar, camMaxDist, "camDist", "camInRange", refreshMetrics)
-    setLine(LINES.CAMLOCK, camText, C_TEXT, y)
-    y = y + lineH
+    setRow(2, "Camlock", DOT, C_LABEL, getDotColor(camEnabled, camArmed), isInv)
 
-    local fhEnabled = settings["Weapon Modifications"] and settings["Weapon Modifications"]["ForceHit"] and settings["Weapon Modifications"]["ForceHit"]["Enabled"]
+    -- ForceHit
+    local fhEnabled = settings["Weapon Modifications"]
+        and settings["Weapon Modifications"]["ForceHit"]
+        and settings["Weapon Modifications"]["ForceHit"]["Enabled"]
     local fhActive  = ForceHitModule and ForceHitModule.isActive and ForceHitModule.isActive() or false
-    local fhText    = buildForceHitLine(fhEnabled, fhActive, hasTarget, tChar, refreshMetrics)
-    setLine(LINES.FORCEHIT, fhText, C_TEXT, y)
-    y = y + lineH
+    setRow(3, "ForceHit", DOT, C_LABEL, getDotColor(fhEnabled, fhActive), isInv)
 
-    if infoDivider then
-        infoDivider.Position = UDim2.fromOffset(12, math.floor(lineH * 4 + 8))
-    end
-
-    y = y + TARGET_GAP
-
-    if hasTarget then
-        local name = State.LockedTarget.DisplayName or State.LockedTarget.Name
-        if refreshWall then
-            cachedWallVisible, cachedWallText = checkWall(tChar)
-            cachedWallColorS = cachedWallVisible and S_ACTIVE or S_OUT
-        end
-        local targetLine = '<font color="' .. S_TARGET       .. '">' .. name            .. '</font>'
-            .. '<font color="' .. S_SEP            .. '">  \194\183  </font>'
-            .. '<font color="' .. cachedWallColorS .. '">' .. cachedWallText .. '</font>'
-        setLine(LINES.TARGET, targetLine, C_TEXT, y)
-    else
-        setLine(LINES.TARGET, '<font color="' .. S_GHOST .. '">no target</font>', C_GHOST, y)
-    end
-    y = y + lineH
-
-    setLine(LINES.HP,   buildHealthLine(hasTarget, tChar), C_TEXT, y)
-    y = y + lineH
-
-    setLine(LINES.TOOL, buildToolLine(hasTarget, tChar), C_TEXT, y)
-    y = y + lineH
-
-    if infoBg then
-        local PAD_X = 10
-        local PAD_T = lineH + 5
-        local PAD_B = 9
-        infoBg.Position = UDim2.fromOffset(baseX - PAD_X, baseY - PAD_T)
-        infoBg.Size     = UDim2.fromOffset(230, (y - baseY) + PAD_B + PAD_T)
-        infoBg.Visible  = true
-    end
+    -- Spread
+    local sv = getCurrentSpreadValue()
+    local spreadStr = sv and tostring(math.floor(sv)) or "--"
+    setRow(4, "Spread", spreadStr, C_LABEL, sv and C_TEXT or C_GHOST, isInv)
 end
 
 local function cleanup()
-    for _, t in ipairs(infoLines) do
-        pcall(function() t:Destroy() end)
-    end
-    infoLines = {}
-    if infoHeaderLabel then pcall(function() infoHeaderLabel:Destroy() end); infoHeaderLabel  = nil end
-    if infoBg          then pcall(function() infoBg:Destroy()          end); infoBg           = nil end
-    infoAccentBar    = nil
-    infoBorderStroke = nil
-    infoDivider      = nil
-
-    metricState.tbDist,  metricState.tbInRange  = nil, nil
-    metricState.camDist, metricState.camInRange  = nil, nil
-    metricState.fhDist,  metricState.fhInRange   = nil, nil
-    cachedWallVisible = true
-    cachedWallText    = "vis"
-    cachedWallColorS  = ""
-    infoLastUpdate       = 0
-    infoMetricLastUpdate = 0
-    infoWallLastUpdate   = 0
+    if card then pcall(function() card:Destroy() end) end
+    card         = nil
+    headerIcon   = nil
+    headerText   = nil
+    headerDiv    = nil
+    rowObjs      = {}
+    cardStroke   = nil
     cachedColors = {}
     overlayReady = false
-    renderCtx.size, renderCtx.outline, renderCtx.baseX, renderCtx.baseY, renderCtx.lineH = 11, true, 0, 0, 15
+    infoLastUpdate = 0
 end
 
 function Visuals.init(deps)
@@ -578,7 +305,7 @@ function Visuals.init(deps)
     ForceHitModule   = deps.ForceHitModule
     ESPModule        = deps.ESPModule
     KNOWN_BODY_PARTS = deps.BODY_PART_NAMES or {}
-    initOverlay()
+    buildCard()
 end
 
 function Visuals.update()
