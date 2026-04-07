@@ -189,12 +189,16 @@ local INFO_GAP       = 3
 
 local function getTargetPlayer()
     local target = State.LockedTarget
-    if not target or not target.Parent then return nil, nil end
-    local char = target.Parent
-    if not char:FindFirstChildOfClass("Humanoid") then
-        char = target
-        if not char:FindFirstChildOfClass("Humanoid") then return nil, nil end
+    if not target then return nil, nil end
+    -- LockedTarget is a Player object
+    if target:IsA("Player") then
+        local char = target.Character
+        if not char then return target, nil end
+        return target, char
     end
+    -- Fallback: might be a character model
+    local char = target
+    if not char:FindFirstChildOfClass("Humanoid") then return nil, nil end
     for _, p in ipairs(game:GetService("Players"):GetPlayers()) do
         if p.Character == char then return p, char end
     end
