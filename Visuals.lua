@@ -2,37 +2,51 @@ local Visuals = {}
 
 local settings, State, Camera, LP, screenGui, ForceHitModule, ESPModule, KNOWN_BODY_PARTS
 
-local card, headerIcon, headerText, headerDiv
-local rowObjs    = {}
-local cardStroke = nil
+-- UI references
+local container
+local headerPill, headerIcon, headerText
+local rowPills     = {}
+local cachedColors = {}
 
 local infoLastUpdate   = 0
 local INFO_UPDATE_RATE = 1 / 50
+local overlayReady     = false
 
+-- Layout
 local VISUALS_FONT = Enum.Font.GothamBold
-local CARD_W   = 178
-local PAD_H    = 12
-local PAD_V    = 8
-local CORNER_R = 6
+local PILL_W    = 182
+local PILL_H    = 28
+local HEADER_H  = 30
+local PILL_GAP  = 4
+local PAD_H     = 10
+local CORNER_R  = 10
+local BADGE_R   = 6
+local BADGE_H   = 20
+local BADGE_W   = 74
 
-local DOT       = "\226\151\143"   -- U+25CF BLACK CIRCLE
-local ICON_CHAR = "\226\137\161"   -- U+2261 IDENTICAL TO
+local ICON_CHAR = "\226\137\161"   -- U+2261 IDENTICAL TO (≡)
 
-local C_BG       = Color3.fromRGB(18, 20, 28)
-local C_DIV      = Color3.fromRGB(40, 44, 55)
-local C_HEADER   = Color3.fromRGB(255, 255, 255)
-local C_ACTIVE   = Color3.fromRGB(74, 222, 128)
-local C_IDLE     = Color3.fromRGB(80, 88, 102)
-local C_GHOST    = Color3.fromRGB(62, 66, 78)
-local C_LABEL    = Color3.fromRGB(200, 200, 255)
-local C_TEXT     = Color3.fromRGB(195, 200, 210)
-local C_ACCENT   = Color3.fromRGB(180, 120, 255)
-local C_BAR_IDLE = Color3.fromRGB(55, 62, 78)
+-- Default colours
+local defaults = {
+    Active  = Color3.fromRGB(74, 222, 128),
+    Idle    = Color3.fromRGB(80, 88, 102),
+    Ghost   = Color3.fromRGB(62, 66, 78),
+    Label   = Color3.fromRGB(200, 200, 220),
+    Text    = Color3.fromRGB(195, 200, 210),
+    Accent  = Color3.fromRGB(90, 110, 255),
+    Header  = Color3.fromRGB(255, 255, 255),
+    PillBG  = Color3.fromRGB(15, 17, 25),
+    BadgeBG = Color3.fromRGB(30, 34, 48),
+}
+local C = {}
+for k, v in pairs(defaults) do C[k] = v end
 
-local overlayReady = false
-local cachedColors = {}
+local PILL_TRANS  = 0.18
+local BADGE_TRANS = 0.35
 
 local ROW_COUNT = 4
+
+-- ── helpers ──────────────────────────────────────────────
 
 local function syncColors(colors)
     if type(colors) ~= "table" then return end
@@ -41,15 +55,9 @@ local function syncColors(colors)
         if cachedColors[k] ~= v then cachedColors[k] = v; dirty = true end
     end
     if not dirty then return end
-    C_ACTIVE   = cachedColors["Active"]        or C_ACTIVE
-    C_IDLE     = cachedColors["Idle"]          or C_IDLE
-    C_GHOST    = cachedColors["Ghost"]         or C_GHOST
-    C_LABEL    = cachedColors["Feature Label"] or C_LABEL
-    C_TEXT     = cachedColors["Text"]          or C_TEXT
-    C_ACCENT   = cachedColors["Accent"]        or C_ACCENT
-    C_BAR_IDLE = cachedColors["Bar Idle"]      or C_BAR_IDLE
-    C_HEADER   = cachedColors["Header"]        or C_HEADER
-    if cardStroke then cardStroke.Color = C_ACCENT end
+    for k, def in pairs(defaults) do
+        C[k] = cachedColors[k] or def
+    end
 end
 
 local function makeLabel(parent, props)
@@ -58,119 +66,142 @@ local function makeLabel(parent, props)
     t.BackgroundTransparency = 1
     t.Font                   = VISUALS_FONT
     t.TextSize               = props.TextSize or 11
-    t.TextColor3             = props.TextColor3 or C_TEXT
+    t.TextColor3             = props.TextColor3 or C.Text
     t.TextStrokeColor3       = Color3.fromRGB(0, 0, 0)
-    t.TextStrokeTransparency = props.Outline and 0.2 or 1
+    t.TextStrokeTransparency = props.Outline and 0.15 or 1
     t.TextXAlignment         = props.XAlign or Enum.TextXAlignment.Left
     t.TextYAlignment         = Enum.TextYAlignment.Center
     t.RichText               = false
     t.Text                   = props.Text or ""
-    t.Size                   = props.Size or UDim2.fromOffset(80, 22)
+    t.Size                   = props.Size or UDim2.new(1, 0, 1, 0)
     t.Position               = props.Position or UDim2.fromOffset(0, 0)
-    t.ZIndex                 = 11
+    t.ZIndex                 = 12
     t.Visible                = true
     t.Parent                 = parent
     return t
 end
 
-local function makeDivider(parent, yPos)
-    local d = Instance.new("Frame")
-    d.Name                   = "Div"
-    d.BackgroundColor3       = C_DIV
-    d.BackgroundTransparency = 0.25
-    d.BorderSizePixel        = 0
-    d.Size                   = UDim2.new(1, -(PAD_H * 2), 0, 1)
-    d.Position               = UDim2.fromOffset(PAD_H, yPos)
-    d.ZIndex                 = 11
-    d.Parent                 = parent
-    return d
+local function makePill(parent, name, w, h, yOff)
+    local pill = Instance.new("Frame")
+    pill.Name                   = name
+    pill.BackgroundColor3       = C.PillBG
+    pill.BackgroundTransparency = PILL_TRANS
+    pill.BorderSizePixel        = 0
+    pill.Size                   = UDim2.fromOffset(w, h)
+    pill.Position               = UDim2.fromOffset(0, yOff)
+    pill.ZIndex                 = 10
+    pill.Visible                = true
+    pill.Parent                 = parent
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, CORNER_R)
+    corner.Parent = pill
+
+    return pill
 end
 
+local function makeBadge(parent, sz, outline)
+    local badge = Instance.new("Frame")
+    badge.Name                   = "Badge"
+    badge.BackgroundColor3       = C.BadgeBG
+    badge.BackgroundTransparency = BADGE_TRANS
+    badge.BorderSizePixel        = 0
+    badge.Size                   = UDim2.fromOffset(BADGE_W, BADGE_H)
+    badge.AnchorPoint            = Vector2.new(1, 0.5)
+    badge.Position               = UDim2.new(1, -6, 0.5, 0)
+    badge.ZIndex                 = 11
+    badge.Parent                 = parent
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, BADGE_R)
+    corner.Parent = badge
+
+    local label = makeLabel(badge, {
+        Name = "Txt", TextSize = sz, TextColor3 = C.Text,
+        Outline = outline, XAlign = Enum.TextXAlignment.Center,
+        Size = UDim2.new(1, 0, 1, 0),
+        Position = UDim2.fromOffset(0, 0),
+    })
+    label.TextXAlignment = Enum.TextXAlignment.Center
+
+    return badge, label
+end
+
+-- ── build ────────────────────────────────────────────────
+
 local function buildCard()
-    if card then pcall(function() card:Destroy() end) end
-    card = nil; rowObjs = {}; cardStroke = nil
-    headerIcon = nil; headerText = nil; headerDiv = nil
+    if container then pcall(function() container:Destroy() end) end
+    container = nil; headerPill = nil; headerIcon = nil; headerText = nil
+    rowPills = {}
 
     local cfg     = settings["Visuals"]["Info"]
     local sz      = cfg["Position"]["Size"] or 11
     local outline = cfg["Outline"] ~= false
-    local rowH    = sz + 10
-    local headH   = sz + 12
 
-    card = Instance.new("Frame")
-    card.Name                   = "VisualsCard"
-    card.BackgroundColor3       = C_BG
-    card.BackgroundTransparency = 0.15
-    card.BorderSizePixel        = 0
-    card.ZIndex                 = 9
-    card.Visible                = false
-    card.Parent                 = screenGui
+    -- invisible wrapper
+    container = Instance.new("Frame")
+    container.Name                   = "VisualsContainer"
+    container.BackgroundTransparency = 1
+    container.BorderSizePixel        = 0
+    container.ZIndex                 = 9
+    container.Visible                = false
+    container.Parent                 = screenGui
 
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, CORNER_R)
-    corner.Parent = card
+    local y = 0
 
-    cardStroke = Instance.new("UIStroke")
-    cardStroke.Color        = C_ACCENT
-    cardStroke.Transparency = 0.6
-    cardStroke.Thickness    = 1.2
-    cardStroke.Parent       = card
-
+    -- header pill
+    headerPill = makePill(container, "Header", PILL_W, HEADER_H, y)
     local iconW = sz + 4
-    headerIcon = makeLabel(card, {
-        Name = "Icon", Text = ICON_CHAR, TextColor3 = C_ACCENT,
+
+    headerIcon = makeLabel(headerPill, {
+        Name = "Icon", Text = ICON_CHAR, TextColor3 = C.Accent,
         TextSize = sz + 2, Outline = outline,
-        Size = UDim2.fromOffset(iconW, headH),
-        Position = UDim2.fromOffset(PAD_H, PAD_V),
+        Size = UDim2.fromOffset(iconW, HEADER_H),
+        Position = UDim2.fromOffset(PAD_H, 0),
     })
 
-    headerText = makeLabel(card, {
-        Name = "Header", Text = cfg["Alias"] or "sauce", TextColor3 = C_HEADER,
+    headerText = makeLabel(headerPill, {
+        Name = "Title", Text = cfg["Alias"] or "sauce", TextColor3 = C.Header,
         TextSize = sz, Outline = outline,
-        Size = UDim2.new(1, -(PAD_H * 2 + iconW + 4), 0, headH),
-        Position = UDim2.fromOffset(PAD_H + iconW + 4, PAD_V),
+        Size = UDim2.new(1, -(PAD_H * 2 + iconW + 4), 0, HEADER_H),
+        Position = UDim2.fromOffset(PAD_H + iconW + 4, 0),
     })
 
-    local divY = PAD_V + headH
-    headerDiv = makeDivider(card, divY)
+    y = y + HEADER_H + PILL_GAP
 
-    local y = divY + 1
+    -- row pills
     for i = 1, ROW_COUNT do
-        local ry = y + (i - 1) * (rowH + 1)
+        local pill = makePill(container, "Row" .. i, PILL_W, PILL_H, y)
 
-        local left = makeLabel(card, {
-            Name = "R" .. i .. "L", TextColor3 = C_LABEL, TextSize = sz,
+        local leftLabel = makeLabel(pill, {
+            Name = "Left", TextColor3 = C.Label, TextSize = sz,
             Outline = outline,
-            Size = UDim2.new(0.6, 0, 0, rowH),
-            Position = UDim2.fromOffset(PAD_H, ry),
+            Size = UDim2.new(0.5, -PAD_H, 1, 0),
+            Position = UDim2.fromOffset(PAD_H, 0),
         })
 
-        local right = makeLabel(card, {
-            Name = "R" .. i .. "R", TextColor3 = C_TEXT, TextSize = sz,
-            Outline = outline,
-            Size = UDim2.new(0.4, -PAD_H, 0, rowH),
-            Position = UDim2.new(0.6, 0, 0, ry),
-            XAlign = Enum.TextXAlignment.Right,
-        })
+        local badge, badgeLabel = makeBadge(pill, sz, outline)
 
-        local div = nil
-        if i < ROW_COUNT then
-            div = makeDivider(card, ry + rowH)
-        end
+        rowPills[i] = {
+            pill       = pill,
+            leftLabel  = leftLabel,
+            badge      = badge,
+            badgeLabel = badgeLabel,
+        }
 
-        rowObjs[i] = { left = left, right = right, div = div }
+        y = y + PILL_H + PILL_GAP
     end
 
-    local totalH = PAD_V + headH + 1 + ROW_COUNT * rowH + (ROW_COUNT - 1) + PAD_V
-    card.Size = UDim2.fromOffset(CARD_W, totalH)
-
+    container.Size = UDim2.fromOffset(PILL_W, y - PILL_GAP)
     overlayReady = true
 end
 
-local function getDotColor(enabled, active)
-    if not enabled then return C_GHOST end
-    if active then return C_ACTIVE end
-    return C_BAR_IDLE
+-- ── per-frame ────────────────────────────────────────────
+
+local function statusColor(enabled, active)
+    if not enabled then return C.Ghost end
+    if active     then return C.Active end
+    return C.Idle
 end
 
 local function getCurrentSpreadValue()
@@ -185,31 +216,20 @@ local function getCurrentSpreadValue()
     return type(v) == "number" and v or nil
 end
 
-local function setRow(i, labelText, valueText, labelColor, valueColor, isInverted)
-    local row = rowObjs[i]
+local function setRow(i, label, badgeText, badgeColor)
+    local row = rowPills[i]
     if not row then return end
-    if isInverted then
-        row.left.Text            = valueText
-        row.left.TextColor3      = valueColor
-        row.left.TextXAlignment  = Enum.TextXAlignment.Left
-        row.right.Text           = labelText
-        row.right.TextColor3     = labelColor
-        row.right.TextXAlignment = Enum.TextXAlignment.Right
-    else
-        row.left.Text            = labelText
-        row.left.TextColor3      = labelColor
-        row.left.TextXAlignment  = Enum.TextXAlignment.Left
-        row.right.Text           = valueText
-        row.right.TextColor3     = valueColor
-        row.right.TextXAlignment = Enum.TextXAlignment.Right
-    end
+    row.leftLabel.Text       = label
+    row.leftLabel.TextColor3 = C.Label
+    row.badgeLabel.Text       = badgeText
+    row.badgeLabel.TextColor3 = badgeColor
 end
 
 local function update()
     Camera = workspace.CurrentCamera
     local cfg = settings["Visuals"] and settings["Visuals"]["Info"]
     if not cfg or not cfg["Enabled"] then
-        if card and card.Visible then card.Visible = false end
+        if container and container.Visible then container.Visible = false end
         return
     end
 
@@ -221,7 +241,6 @@ local function update()
 
     syncColors(cfg["Colors"])
 
-    local style   = string.lower(cfg["Style"] or "normal")
     local align   = string.lower(cfg["Align"] or "left")
     local dynHead = cfg["Dynamic Header"] ~= false
     local pos     = cfg["Position"]
@@ -231,66 +250,66 @@ local function update()
 
     local cardX
     if align == "right" then
-        cardX = math.floor(vp.X * (1 - xPct)) - CARD_W
+        cardX = math.floor(vp.X * (1 - xPct)) - PILL_W
     else
         cardX = math.floor(vp.X * xPct)
     end
     local cardY = math.floor(vp.Y * yPct)
 
-    card.Position = UDim2.fromOffset(cardX, cardY)
-    card.Visible  = true
+    container.Position = UDim2.fromOffset(cardX, cardY)
+    container.Visible  = true
 
+    -- header
     local hasTarget = State.LockedTarget ~= nil and State.LockedTarget.Parent ~= nil
     if dynHead and hasTarget then
         headerText.Text       = State.LockedTarget.DisplayName or State.LockedTarget.Name
         headerText.TextColor3 = cachedColors["Target"] or Color3.fromRGB(255, 80, 80)
     else
         headerText.Text       = cfg["Alias"] or "sauce"
-        headerText.TextColor3 = C_HEADER
+        headerText.TextColor3 = C.Header
     end
-    headerIcon.TextColor3 = C_ACCENT
+    headerIcon.TextColor3 = C.Accent
 
-    local isInv = style == "inverted"
-
-    -- Triggerbot
+    -- Row 1 – Triggerbot
     local tbEnabled   = settings["Triggerbot"] and settings["Triggerbot"]["Enabled"]
-    local tbClickType = string.lower(tostring((settings["Triggerbot"] and settings["Triggerbot"]["Click Type"]) or "Hold"))
+    local tbClickType = tostring((settings["Triggerbot"] and settings["Triggerbot"]["Click Type"]) or "Hold")
     local tbArmed     = tbEnabled and (
-        (tbClickType == "toggle" and State.TriggerbotToggleActive) or
-        (tbClickType ~= "toggle" and State.TriggerbotHoldActive)
+        (string.lower(tbClickType) == "toggle" and State.TriggerbotToggleActive) or
+        (string.lower(tbClickType) ~= "toggle" and State.TriggerbotHoldActive)
     )
-    setRow(1, "Triggerbot", DOT, C_LABEL, getDotColor(tbEnabled, tbArmed), isInv)
+    setRow(1, "Triggerbot", tbEnabled and tbClickType or "Off", statusColor(tbEnabled, tbArmed))
 
-    -- Camlock
+    -- Row 2 – Camlock
     local camEnabled   = settings["Camlock"] and settings["Camlock"]["Enabled"]
-    local camClickType = string.lower(tostring((settings["Camlock"] and settings["Camlock"]["Click Type"]) or "Hold"))
+    local camClickType = tostring((settings["Camlock"] and settings["Camlock"]["Click Type"]) or "Hold")
     local camArmed     = camEnabled and (
-        (camClickType == "toggle" and State.CamlockToggleActive) or
-        (camClickType ~= "toggle" and State.CamlockHoldActive)
+        (string.lower(camClickType) == "toggle" and State.CamlockToggleActive) or
+        (string.lower(camClickType) ~= "toggle" and State.CamlockHoldActive)
     )
-    setRow(2, "Camlock", DOT, C_LABEL, getDotColor(camEnabled, camArmed), isInv)
+    setRow(2, "Camlock", camEnabled and camClickType or "Off", statusColor(camEnabled, camArmed))
 
-    -- ForceHit
+    -- Row 3 – ForceHit
     local fhEnabled = settings["Weapon Modifications"]
         and settings["Weapon Modifications"]["ForceHit"]
         and settings["Weapon Modifications"]["ForceHit"]["Enabled"]
-    local fhActive  = ForceHitModule and ForceHitModule.isActive and ForceHitModule.isActive() or false
-    setRow(3, "ForceHit", DOT, C_LABEL, getDotColor(fhEnabled, fhActive), isInv)
+    local fhActive = ForceHitModule and ForceHitModule.isActive and ForceHitModule.isActive() or false
+    setRow(3, "ForceHit", fhEnabled and (fhActive and "Active" or "Enabled") or "Off", statusColor(fhEnabled, fhActive))
 
-    -- Spread
+    -- Row 4 – Spread
     local sv = getCurrentSpreadValue()
     local spreadStr = sv and tostring(math.floor(sv)) or "--"
-    setRow(4, "Spread", spreadStr, C_LABEL, sv and C_TEXT or C_GHOST, isInv)
+    setRow(4, "Spread", spreadStr, sv and C.Text or C.Ghost)
 end
 
+-- ── lifecycle ────────────────────────────────────────────
+
 local function cleanup()
-    if card then pcall(function() card:Destroy() end) end
-    card         = nil
+    if container then pcall(function() container:Destroy() end) end
+    container    = nil
+    headerPill   = nil
     headerIcon   = nil
     headerText   = nil
-    headerDiv    = nil
-    rowObjs      = {}
-    cardStroke   = nil
+    rowPills     = {}
     cachedColors = {}
     overlayReady = false
     infoLastUpdate = 0
