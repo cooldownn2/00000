@@ -132,25 +132,22 @@ if GENV.SauceConfig then
         -- Hotkeys
         { {"Hotkeys","Enabled"},                               {"Hotkeys","Enabled"} },
         { {"Hotkeys","Title"},                                 {"Hotkeys","Title"} },
-        { {"Hotkeys","Dynamic Header"},                        {"Hotkeys","Dynamic Header"} },
         { {"Hotkeys","Position","X"},                          {"Hotkeys","Position","X"} },
         { {"Hotkeys","Position","Y"},                          {"Hotkeys","Position","Y"} },
-        { {"Hotkeys","Colors","HeaderBg"},                     {"Hotkeys","Colors","HeaderBg"} },
-        { {"Hotkeys","Colors","HeaderAlpha"},                  {"Hotkeys","Colors","HeaderAlpha"} },
-        { {"Hotkeys","Colors","ChipBg"},                       {"Hotkeys","Colors","ChipBg"} },
-        { {"Hotkeys","Colors","ChipAlpha"},                    {"Hotkeys","Colors","ChipAlpha"} },
-        { {"Hotkeys","Colors","StrokeColor"},                  {"Hotkeys","Colors","StrokeColor"} },
-        { {"Hotkeys","Colors","StrokeAlpha"},                  {"Hotkeys","Colors","StrokeAlpha"} },
-        { {"Hotkeys","Colors","StrokeThick"},                  {"Hotkeys","Colors","StrokeThick"} },
-        { {"Hotkeys","Colors","LabelText"},                    {"Hotkeys","Colors","LabelText"} },
-        { {"Hotkeys","Colors","ValueText"},                    {"Hotkeys","Colors","ValueText"} },
-        { {"Hotkeys","Colors","HeaderText"},                   {"Hotkeys","Colors","HeaderText"} },
-        { {"Hotkeys","Colors","HeaderIcon"},                   {"Hotkeys","Colors","HeaderIcon"} },
-        { {"Hotkeys","Colors","TargetText"},                   {"Hotkeys","Colors","TargetText"} },
-        { {"Hotkeys","Colors","ToggleOnBg"},                   {"Hotkeys","Colors","ToggleOnBg"} },
-        { {"Hotkeys","Colors","ToggleOnThumb"},                {"Hotkeys","Colors","ToggleOnThumb"} },
-        { {"Hotkeys","Colors","ToggleOffBg"},                  {"Hotkeys","Colors","ToggleOffBg"} },
-        { {"Hotkeys","Colors","ToggleOffThumb"},               {"Hotkeys","Colors","ToggleOffThumb"} },
+        { {"Hotkeys","Icon"},                                  {"Hotkeys","Icon"} },
+        { {"Hotkeys","Draggable"},                             {"Hotkeys","Draggable"} },
+        { {"Hotkeys","Inverted"},                              {"Hotkeys","Inverted"} },
+        { {"Hotkeys","Outline"},                               {"Hotkeys","Outline"} },
+        { {"Hotkeys","FontSize"},                              {"Hotkeys","FontSize"} },
+        { {"Hotkeys","Roundness"},                             {"Hotkeys","Roundness"} },
+        { {"Hotkeys","ToggleStyle"},                           {"Hotkeys","ToggleStyle"} },
+        { {"Hotkeys","Colors","Background"},                   {"Hotkeys","Colors","Background"} },
+        { {"Hotkeys","Colors","Header"},                       {"Hotkeys","Colors","Header"} },
+        { {"Hotkeys","Colors","Text"},                         {"Hotkeys","Colors","Text"} },
+        { {"Hotkeys","Colors","Accent"},                       {"Hotkeys","Colors","Accent"} },
+        { {"Hotkeys","Colors","Border"},                       {"Hotkeys","Colors","Border"} },
+        { {"Hotkeys","Colors","Target"},                       {"Hotkeys","Colors","Target"} },
+        { {"Hotkeys","Colors","ToggleOn"},                     {"Hotkeys","Colors","ToggleOn"} },
         -- Visuals (non-hotkeys)
         { {"Visuals","Target Card"},                         {"Main","Target Card"} },
     }
@@ -219,7 +216,7 @@ do
     expectType("ForceHit.Full Damage", S.ForceHitFullDamage, "boolean")
     expectType("ESP.Enabled", S.ESPAllowed, "boolean")
     expectType("Hotkeys.Enabled", S.HotkeysEnabled, "boolean")
-    expectType("Hotkeys.Dynamic Header", S.HotkeysDynamicHeader, "boolean")
+    expectEnum("Hotkeys.ToggleStyle", S.HotkeysToggleStyle, {"pill","dot","none"})
     expectEnum("Triggerbot.FOV.Type", S.TriggerbotFOVType, {"Box","Direct"})
     expectEnum("Camlock.FOV.Type", S.CamlockFOVType, {"Box","Direct"})
 end

@@ -2,50 +2,91 @@ local Visuals = {}
 
 local settings, State, Camera, LP, screenGui, ForceHitModule, ESPModule, KNOWN_BODY_PARTS
 
+local mathExp   = math.exp
+local mathAbs   = math.abs
+local mathFloor = math.floor
+
 -- ═════════════════════════════════════════════════════════════════════════════
---  LAYOUT CONSTANTS
+--  LAYOUT CONSTANTS  (overridden by cfg in init)
 -- ═════════════════════════════════════════════════════════════════════════════
 local FONT      = Enum.Font.GothamBold
-local CORNER    = 6
-local PAD_X     = 10
-local CHIP_H    = 22
-local HEADER_H  = 26
-local ROW_GAP   = 3
-local VAL_PAD   = 8
-local FONT_SIZE = 11
-local HDR_SIZE  = 12
-local TOG_W     = 36
-local MAX_ROWS  = 16
+local CORNER    = 4
+local PAD_X     = 6
+local CHIP_H    = 15
+local HEADER_H  = 18
+local ROW_GAP   = 5
+local FONT_SIZE = 10
+local HDR_SIZE  = 10
+local MAX_ROWS  = 3
+local TOGGLE_W  = 18
+local TOGGLE_H  = 10
+local TOGGLE_DOT = 8
+local TOGGLE_PAD = 1
 
 -- ═════════════════════════════════════════════════════════════════════════════
 --  LIVE COLOUR TABLE
 -- ═════════════════════════════════════════════════════════════════════════════
-local C = {
-    HeaderBg    = Color3.fromRGB(30, 28, 35),
-    HeaderAlpha = 0.10,
-    ChipBg      = Color3.fromRGB(30, 28, 35),
-    ChipAlpha   = 0.10,
-    StrokeColor = Color3.fromRGB(255, 255, 255),
-    StrokeAlpha = 0.91,
-    StrokeThick = 0.6,
-    LabelText   = Color3.fromRGB(200, 210, 220),
-    ValueText   = Color3.fromRGB(240, 245, 255),
-    HeaderText  = Color3.fromRGB(220, 228, 238),
-    HeaderIcon  = Color3.fromRGB(120, 160, 190),
-    ToggleOnBg     = Color3.fromRGB(46, 168, 126),
-    ToggleOnThumb  = Color3.fromRGB(255, 255, 255),
-    ToggleOffBg    = Color3.fromRGB(70,  70,  88),
-    ToggleOffThumb = Color3.fromRGB(195, 195, 205),
-}
+local C = {}
 
-local function syncColors(co)
-    if not co or type(co) ~= "table" then return end
-    for k, v in pairs(co) do C[k] = v end
+local function lighten(c, t) return Color3.new(c.R+(1-c.R)*t, c.G+(1-c.G)*t, c.B+(1-c.B)*t) end
+local function darken(c, t)  return Color3.new(c.R*(1-t), c.G*(1-t), c.B*(1-t)) end
+
+local function resolveColors(cfg)
+    local co  = cfg["Colors"] or {}
+    local bg  = co.Background or Color3.fromRGB(45, 38, 30)
+    local hdr = co.Header     or Color3.fromRGB(35, 30, 25)
+    local txt = co.Text       or Color3.fromRGB(230, 225, 218)
+    local acc = co.Accent     or Color3.fromRGB(45, 100, 220)
+    local bdr = co.Border     or Color3.fromRGB(200, 188, 170)
+    local tgt = co.Target     or Color3.fromRGB(255, 70, 70)
+    local outl = cfg["Outline"] ~= false
+
+    C.HeaderBg       = hdr
+    C.HeaderAlpha    = 0.03
+    C.ChipBg         = bg
+    C.ChipAlpha      = 0.38
+    C.StrokeColor    = bdr
+    C.StrokeAlpha    = outl and 0.52 or 1
+    C.StrokeThick    = outl and 1 or 0
+    C.LabelText      = txt
+    C.ValueText      = txt
+    C.HeaderText     = lighten(txt, 0.05)
+    C.HeaderIcon     = lighten(acc, 0.35)
+    C.ToggleOnBg     = co.ToggleOn or acc
+    C.ToggleOnAlpha  = 0.25
+    C.ToggleOffBg    = co.ToggleOff or Color3.fromRGB(70, 68, 80)
+    C.ToggleOffAlpha = 0.50
+    C.ToggleDot      = Color3.fromRGB(255, 255, 255)
+    C.ToggleDotGlow  = lighten(co.ToggleOn or acc, 0.35)
+    C.TargetBg       = darken(tgt, 0.78)
+    C.TargetAlpha    = 0.35
+    C.TargetText     = tgt
+    C.GlassBg        = bg
+    C.GlassAlpha     = 0.38
+    C.GlassEdge      = lighten(bdr, 0.1)
+    C.GlassEdgeAlpha = 0.88
 end
 
 -- ═════════════════════════════════════════════════════════════════════════════
 --  HELPERS
 -- ═════════════════════════════════════════════════════════════════════════════
+local function addGlassGradient(f)
+    local g = Instance.new("UIGradient")
+    g.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.45, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 195, 185)),
+    })
+    g.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.60),
+        NumberSequenceKeypoint.new(0.35, 0.80),
+        NumberSequenceKeypoint.new(1, 0.92),
+    })
+    g.Rotation = 90
+    g.Parent = f
+    return g
+end
+
 local function addCorner(f, r)
     local c = Instance.new("UICorner")
     c.CornerRadius = UDim.new(0, r or CORNER)
@@ -61,15 +102,6 @@ local function applyStroke(f)
     s.Parent          = f
 end
 
-local function refreshStroke(f)
-    local s = f:FindFirstChildOfClass("UIStroke")
-    if s then
-        s.Color        = C.StrokeColor
-        s.Transparency = C.StrokeAlpha
-        s.Thickness    = C.StrokeThick
-    end
-end
-
 local function newFrame(z)
     local f = Instance.new("Frame")
     f.BackgroundColor3       = C.ChipBg
@@ -80,6 +112,7 @@ local function newFrame(z)
     f.Parent                 = screenGui
     addCorner(f)
     applyStroke(f)
+    addGlassGradient(f)
     return f
 end
 
@@ -93,49 +126,97 @@ local function newText(parent, color, size, z, xAlign)
     t.TextXAlignment         = xAlign or Enum.TextXAlignment.Left
     t.TextYAlignment         = Enum.TextYAlignment.Center
     t.TextStrokeColor3       = Color3.fromRGB(0, 0, 0)
-    t.TextStrokeTransparency = 0.55
+    t.TextStrokeTransparency = 0.65
     t.ZIndex                 = z or 11
     t.Size                   = UDim2.fromScale(1, 1)
     t.Parent                 = parent
     return t
 end
 
+local TxtSvc = game:GetService("TextService")
 local function tw(s, sz)
-    return math.ceil(#tostring(s) * ((sz or FONT_SIZE) >= 12 and 7.2 or 6.8))
+    local ok, bounds = pcall(function()
+        return TxtSvc:GetTextSize(tostring(s), sz or FONT_SIZE, FONT, Vector2.new(1000, 100))
+    end)
+    if ok and bounds then return bounds.X end
+    return math.ceil(#tostring(s) * ((sz or FONT_SIZE) >= 12 and 7.0 or 6.4))
 end
 
-local function newTogglePill(parent, z)
-    local track = Instance.new("Frame")
-    track.BorderSizePixel  = 0
-    track.BackgroundColor3 = C.ToggleOffBg
-    track.Size             = UDim2.fromOffset(26, 13)
-    track.ZIndex           = z or 11
-    track.Parent           = parent
-    addCorner(track, 99)
+-- ═════════════════════════════════════════════════════════════════════════════
+--  FEATURE DEFINITIONS  (wired to real settings/State)
+-- ═════════════════════════════════════════════════════════════════════════════
+local featureDefs = {
+    {
+        label = "Triggerbot",
+        getOn = function()
+            return settings["Triggerbot"] and settings["Triggerbot"]["Enabled"] == true
+        end,
+    },
+    {
+        label = "Camlock",
+        getOn = function()
+            return settings["Camlock"] and settings["Camlock"]["Enabled"] == true
+        end,
+    },
+    {
+        label = "Force Shot",
+        getOn = function()
+            local wm = settings["Weapon Modifications"]
+            return wm and wm["ForceHit"] and wm["ForceHit"]["Enabled"] == true
+        end,
+    },
+}
 
-    local thumb = Instance.new("Frame")
-    thumb.BorderSizePixel  = 0
-    thumb.BackgroundColor3 = C.ToggleOffThumb
-    thumb.Size             = UDim2.fromOffset(9, 9)
-    thumb.Position         = UDim2.fromOffset(2, 2)
-    thumb.ZIndex           = (z or 11) + 1
-    thumb.Parent           = track
-    addCorner(thumb, 99)
+MAX_ROWS = #featureDefs
 
-    return { track = track, thumb = thumb }
+local fdByLabel = {}
+for i, fd in ipairs(featureDefs) do
+    fdByLabel[fd.label] = { fd = fd, idx = i }
 end
 
-local function setPill(pill, on)
-    if on then
-        pill.track.BackgroundColor3 = C.ToggleOnBg
-        pill.thumb.BackgroundColor3 = C.ToggleOnThumb
-        pill.thumb.Position         = UDim2.fromOffset(15, 2)
-    else
-        pill.track.BackgroundColor3 = C.ToggleOffBg
-        pill.thumb.BackgroundColor3 = C.ToggleOffThumb
-        pill.thumb.Position         = UDim2.fromOffset(2, 2)
+-- Pre-compute label widths (updated after cfg FontSize is known)
+local labelWidthCache = {}
+local maxLabelWCache  = 0
+local cachedHdrW      = 0
+local cachedTgtName   = ""
+local cachedTgtW      = 0
+
+local function rebuildLabelWidths(cfg)
+    FONT_SIZE = cfg["FontSize"] or 10
+    HDR_SIZE  = FONT_SIZE
+    CORNER    = cfg["Roundness"] or 4
+    maxLabelWCache = 0
+    for _, fd in ipairs(featureDefs) do
+        local lw = tw(fd.label, FONT_SIZE) + PAD_X * 2
+        labelWidthCache[fd.label] = lw
+        if lw > maxLabelWCache then maxLabelWCache = lw end
+    end
+    cachedHdrW = tw(cfg["Title"] or "Hotkeys", HDR_SIZE) + 20 + PAD_X
+end
+
+-- Animation state
+local fadeAlphas      = {}
+local prevOn          = {}
+local rowYSmoothed    = {}
+local activationOrder = {}
+local FADE_SPEED      = 10
+
+local function resetAnimState()
+    fadeAlphas = {}; prevOn = {}; rowYSmoothed = {}; activationOrder = {}
+    for _, fd in ipairs(featureDefs) do
+        local on = fd.getOn()
+        fadeAlphas[fd.label] = on and 1 or 0
+        prevOn[fd.label]     = on
+        activationOrder[#activationOrder + 1] = fd.label
     end
 end
+
+-- Module-level helpers
+local function ft(base, fa) return 1 - (1 - base) * fa end
+local ROW_STEP = CHIP_H + ROW_GAP
+local TG_PAD   = 2
+local TG_W     = TOGGLE_W + TG_PAD * 2
+local TG_H     = TOGGLE_H + TG_PAD * 2
 
 -- ═════════════════════════════════════════════════════════════════════════════
 --  POOL
@@ -144,262 +225,343 @@ local pool  = {}
 local ready = false
 
 local function destroyPool()
+    if pool.backdrop then pcall(function() pool.backdrop:Destroy() end) end
     if pool.hChip then pcall(function() pool.hChip:Destroy() end) end
+    if pool.tChip then pcall(function() pool.tChip:Destroy() end) end
     for _, r in ipairs(pool.rows or {}) do
-        pcall(function() r.lblChip:Destroy() end)
-        pcall(function() r.valChip:Destroy() end)
-        pcall(function() r.togChip:Destroy() end)
+        pcall(function() r.chip:Destroy() end)
+        if r.toggleGlass then pcall(function() r.toggleGlass:Destroy() end) end
     end
     pool  = {}
     ready = false
 end
 
-local function buildPool()
+local function buildPool(cfg)
     destroyPool()
+    rowYSmoothed = {}
 
+    -- Glass backdrop
+    local bd = Instance.new("Frame")
+    bd.BackgroundColor3       = C.GlassBg or Color3.fromRGB(60, 52, 45)
+    bd.BackgroundTransparency = C.GlassAlpha or 0.45
+    bd.BorderSizePixel        = 0
+    bd.ZIndex                 = 9
+    bd.Visible                = false
+    bd.Parent                 = screenGui
+    addCorner(bd, 7)
+    addGlassGradient(bd)
+
+    local bdEdge = Instance.new("UIStroke")
+    bdEdge.Color           = C.GlassEdge or Color3.fromRGB(220, 210, 195)
+    bdEdge.Transparency    = C.GlassEdgeAlpha or 0.88
+    bdEdge.Thickness       = 1
+    bdEdge.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    bdEdge.Parent          = bd
+
+    pool.backdrop = bd
+    pool.bdEdge   = bdEdge
+
+    -- Header
     local hc = newFrame(10)
     hc.BackgroundColor3       = C.HeaderBg
     hc.BackgroundTransparency = C.HeaderAlpha
-    local hi = newText(hc, C.HeaderIcon, 14, 12, Enum.TextXAlignment.Left)
-    hi.Text     = "\226\137\161"
-    hi.Size     = UDim2.fromOffset(20, HEADER_H)
-    hi.Position = UDim2.fromOffset(6, 0)
+    local hcCorner = hc:FindFirstChildOfClass("UICorner")
+    if hcCorner then hcCorner.CornerRadius = UDim.new(0, CORNER + 3) end
+    local hi = newText(hc, C.HeaderIcon, 16, 12, Enum.TextXAlignment.Left)
+    hi.Text     = (cfg and cfg["Icon"]) or "\226\152\133"
+    hi.Size     = UDim2.fromOffset(16, HEADER_H)
+    hi.Position = UDim2.fromOffset(4, -1)
     local ht = newText(hc, C.HeaderText, HDR_SIZE, 12, Enum.TextXAlignment.Left)
-    ht.Position = UDim2.fromOffset(26, 0)
+    ht.Position = UDim2.fromOffset(20, -1)
 
-    pool.hChip  = hc
-    pool.hIcon  = hi
-    pool.hTitle = ht
+    pool.hChip   = hc
+    pool.hIcon   = hi
+    pool.hTitle  = ht
+    pool.hStroke = hc:FindFirstChildOfClass("UIStroke")
 
+    -- Target chip
+    local tc = newFrame(10)
+    tc.BackgroundColor3       = C.TargetBg or C.ChipBg
+    tc.BackgroundTransparency = C.TargetAlpha or C.ChipAlpha
+    local tt = newText(tc, C.TargetText, FONT_SIZE, 11, Enum.TextXAlignment.Left)
+    tt.Position = UDim2.fromOffset(PAD_X, -1)
+
+    pool.tChip   = tc
+    pool.tText   = tt
+    pool.tStroke = tc:FindFirstChildOfClass("UIStroke")
+
+    -- Row chips
     pool.rows = {}
     for i = 1, MAX_ROWS do
-        local lc = newFrame(10)
-        local lt = newText(lc, C.LabelText, FONT_SIZE, 11, Enum.TextXAlignment.Left)
-        lt.Position = UDim2.fromOffset(PAD_X, 0)
+        local chip = newFrame(10)
+        local lt   = newText(chip, C.LabelText, FONT_SIZE, 11, Enum.TextXAlignment.Left)
+        lt.Position = UDim2.fromOffset(PAD_X, -1)
 
-        local vc = newFrame(10)
-        local vt = newText(vc, C.ValueText, FONT_SIZE, 11, Enum.TextXAlignment.Center)
+        local vt = newText(chip, C.ValueText or C.LabelText, FONT_SIZE, 11, Enum.TextXAlignment.Right)
+        vt.Position = UDim2.fromOffset(PAD_X, 0)
+        vt.Visible  = false
 
-        local tc   = newFrame(10)
-        local pill = newTogglePill(tc, 11)
-        pill.track.Position = UDim2.fromOffset(
-            math.floor((TOG_W - 26) / 2),
-            math.floor((CHIP_H - 13) / 2)
-        )
+        -- Toggle pill
+        local togglePill = Instance.new("Frame")
+        togglePill.BackgroundColor3       = C.ToggleOnBg or Color3.fromRGB(55, 120, 255)
+        togglePill.BackgroundTransparency = C.ToggleOnAlpha or 0.25
+        togglePill.BorderSizePixel        = 0
+        togglePill.ZIndex                 = 12
+        togglePill.Size                   = UDim2.fromOffset(TOGGLE_W, TOGGLE_H)
+        togglePill.Visible                = false
+        togglePill.Parent                 = chip
+        addCorner(togglePill, TOGGLE_H / 2)
+        addGlassGradient(togglePill)
 
-        pool.rows[i] = { lblChip = lc, lt = lt, valChip = vc, vt = vt, togChip = tc, pill = pill }
+        local pillStroke = Instance.new("UIStroke")
+        pillStroke.Color           = Color3.fromRGB(255, 255, 255)
+        pillStroke.Transparency    = 0.55
+        pillStroke.Thickness       = 1
+        pillStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        pillStroke.Parent          = togglePill
+
+        local toggleDot = Instance.new("Frame")
+        toggleDot.BackgroundColor3       = C.ToggleDot or Color3.fromRGB(255, 255, 255)
+        toggleDot.BackgroundTransparency = 0.05
+        toggleDot.BorderSizePixel        = 0
+        toggleDot.ZIndex                 = 13
+        toggleDot.Size                   = UDim2.fromOffset(TOGGLE_DOT, TOGGLE_DOT)
+        toggleDot.Position               = UDim2.fromOffset(TOGGLE_W - TOGGLE_DOT - TOGGLE_PAD, TOGGLE_PAD)
+        toggleDot.Parent                 = togglePill
+        addCorner(toggleDot, TOGGLE_DOT / 2)
+        local dotHL = Instance.new("UIGradient")
+        dotHL.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0,    0.00),
+            NumberSequenceKeypoint.new(0.40, 0.25),
+            NumberSequenceKeypoint.new(1,    0.55),
+        })
+        dotHL.Rotation = 90
+        dotHL.Parent = toggleDot
+
+        -- Glass backing for toggle
+        local tGlass = Instance.new("Frame")
+        tGlass.BackgroundColor3       = C.GlassBg or Color3.fromRGB(35, 33, 42)
+        tGlass.BackgroundTransparency = C.GlassAlpha or 0.75
+        tGlass.BorderSizePixel        = 0
+        tGlass.ZIndex                 = 10
+        tGlass.Visible                = false
+        tGlass.Parent                 = screenGui
+        addCorner(tGlass, 6)
+        applyStroke(tGlass)
+        addGlassGradient(tGlass)
+
+        togglePill.Parent = tGlass
+
+        pool.rows[i] = {
+            chip        = chip,
+            lt          = lt,
+            vt          = vt,
+            togglePill  = togglePill,
+            toggleDot   = toggleDot,
+            toggleGlass = tGlass,
+            chipStroke  = chip:FindFirstChildOfClass("UIStroke"),
+            glassStroke = tGlass:FindFirstChildOfClass("UIStroke"),
+            glassCorner = tGlass:FindFirstChildOfClass("UICorner"),
+            pillStroke  = togglePill:FindFirstChildOfClass("UIStroke"),
+        }
     end
 
     ready = true
 end
 
 -- ═════════════════════════════════════════════════════════════════════════════
---  DEFAULT BINDS  (structural — not user config)
--- ═════════════════════════════════════════════════════════════════════════════
-local DEFAULT_BINDS = {
-    { label = "Triggerbot",  type = "bool",   source = "Triggerbot", valueKey = "Enabled" },
-    { label = "Camlock",     type = "bool",   source = "Camlock",    valueKey = "Enabled" },
-    { label = "Force Shot",  type = "bool",   path = {"Weapon Modifications", "ForceHit", "Enabled"} },
-    { label = "Triggerbot",  type = "toggle", stateKey = "TriggerbotToggleActive", parentSource = "Triggerbot" },
-    { label = "Camlock",     type = "toggle", stateKey = "CamlockToggleActive",    parentSource = "Camlock" },
-}
-
--- ═════════════════════════════════════════════════════════════════════════════
---  GATHER VISIBLE ROWS  (wired to real settings/State)
--- ═════════════════════════════════════════════════════════════════════════════
-local function getCurrentSpreadValue()
-    local wm = settings["Weapon Modifications"]
-    if type(wm) ~= "table" then return nil end
-    local raw = wm["Custom Spread"]
-    if type(raw) ~= "table" or raw["Enabled"] == false then return nil end
-    local char = LP and LP.Character
-    local tool = char and char:FindFirstChildOfClass("Tool")
-    if not tool then return nil end
-    local v = raw[tool.Name]
-    return type(v) == "number" and v or nil
-end
-
-local function gatherVisible(cfg)
-    local out   = {}
-    local binds = (cfg and cfg["Binds"]) or DEFAULT_BINDS
-    if not binds then return out end
-
-    for _, def in ipairs(binds) do
-        local function resolve()
-            if def.path then
-                local cur = settings
-                for _, k in ipairs(def.path) do cur = cur and cur[k] end
-                return cur
-            end
-            if def.resolver then return def.resolver() end
-            return settings[def.source] and settings[def.source][def.valueKey]
-        end
-
-        local parentOk = true
-        if def.parentSource then
-            parentOk = settings[def.parentSource]
-                and settings[def.parentSource]["Enabled"] == true
-        end
-        if not parentOk then continue end
-
-        if def.type == "bool" then
-            if resolve() == true then
-                out[#out + 1] = { label = def.label, type = "bool" }
-            end
-
-        elseif def.type == "value" then
-            local v = resolve()
-            if v ~= nil then
-                out[#out + 1] = { label = def.label, type = "value", value = v }
-            end
-
-        elseif def.type == "toggle" then
-            if State[def.stateKey] == true then
-                out[#out + 1] = { label = def.label, type = "toggle" }
-            end
-        end
-    end
-    return out
-end
-
--- ═════════════════════════════════════════════════════════════════════════════
 --  HIDE ALL
 -- ═════════════════════════════════════════════════════════════════════════════
 local function hideAll()
+    if pool.backdrop then pool.backdrop.Visible = false end
     if pool.hChip then pool.hChip.Visible = false end
+    if pool.tChip then pool.tChip.Visible = false end
     for _, r in ipairs(pool.rows or {}) do
-        r.lblChip.Visible = false
-        r.valChip.Visible = false
-        r.togChip.Visible = false
+        r.chip.Visible = false
+        if r.toggleGlass then r.toggleGlass.Visible = false end
     end
 end
 
 -- ═════════════════════════════════════════════════════════════════════════════
 --  RENDER
 -- ═════════════════════════════════════════════════════════════════════════════
-local function render(cfg, visRows)
-    local vp  = Camera and Camera.ViewportSize or Vector2.new(1920, 1080)
-    local pos = cfg["Position"] or {}
-    local bx  = math.floor(vp.X * (pos["X"] or 0.015))
-    local by  = math.floor(vp.Y * (pos["Y"] or 0.38))
-
-    local titleStr = cfg["Title"] or cfg["Alias"] or "Hotkeys"
-
-    -- Dynamic header (locked target)
-    local dynHead  = cfg["Dynamic Header"] ~= false
-    local hasTarget = State.LockedTarget ~= nil and State.LockedTarget.Parent ~= nil
-    if dynHead and hasTarget then
-        titleStr = State.LockedTarget.DisplayName or State.LockedTarget.Name
-    end
-
-    -- Measure widest row → shared column width
-    local colW = tw(titleStr, HDR_SIZE) + 20 + PAD_X * 2
-
-    for _, rd in ipairs(visRows) do
-        local rowW
-        if rd.type == "bool" then
-            rowW = tw(rd.label, FONT_SIZE) + PAD_X * 2
-        elseif rd.type == "value" then
-            local vw = tw(tostring(rd.value), FONT_SIZE) + VAL_PAD * 2
-            rowW = vw + ROW_GAP + tw(rd.label, FONT_SIZE) + PAD_X * 2
-        elseif rd.type == "toggle" then
-            rowW = tw(rd.label, FONT_SIZE) + PAD_X * 2 + ROW_GAP + TOG_W
-        end
-        if rowW and rowW > colW then colW = rowW end
-    end
-
-    -- Header
+local function renderHeader(cfg, bx, by, hdrW, titleStr)
     local hc = pool.hChip
     hc.BackgroundColor3       = C.HeaderBg
     hc.BackgroundTransparency = C.HeaderAlpha
     hc.Position               = UDim2.fromOffset(bx, by)
-    hc.Size                   = UDim2.fromOffset(colW, HEADER_H)
+    hc.Size                   = UDim2.fromOffset(hdrW, HEADER_H)
     hc.Visible                = true
-    refreshStroke(hc)
+
+    local hs = pool.hStroke
+    if hs then
+        hs.Color        = C.StrokeColor
+        hs.Transparency = C.StrokeAlpha
+        hs.Thickness    = C.StrokeThick
+    end
+    pool.hIcon.Text        = cfg["Icon"] or "\226\152\133"
     pool.hIcon.TextColor3  = C.HeaderIcon
-    pool.hTitle.TextColor3 = (dynHead and hasTarget)
-        and (C.TargetText or Color3.fromRGB(255, 80, 80))
-        or C.HeaderText
-    pool.hTitle.Text = titleStr
-    pool.hTitle.Size = UDim2.fromOffset(colW - 28, HEADER_H)
+    pool.hTitle.TextColor3 = C.HeaderText
+    pool.hTitle.Text       = titleStr
+    pool.hTitle.Size       = UDim2.fromOffset(hdrW - 22, HEADER_H)
 
-    local curY = by + HEADER_H + ROW_GAP
-
-    for i, rd in ipairs(visRows) do
-        local r = pool.rows[i]
-        if not r then break end
-
-        local function styleChip(chip)
-            chip.BackgroundColor3       = C.ChipBg
-            chip.BackgroundTransparency = C.ChipAlpha
-            refreshStroke(chip)
-        end
-
-        if rd.type == "bool" then
-            styleChip(r.lblChip)
-            r.lblChip.Position = UDim2.fromOffset(bx, curY)
-            r.lblChip.Size     = UDim2.fromOffset(colW, CHIP_H)
-            r.lblChip.Visible  = true
-            r.lt.Text          = rd.label
-            r.lt.TextColor3    = C.LabelText
-            r.lt.Size          = UDim2.fromOffset(colW - PAD_X, CHIP_H)
-            r.lt.Position      = UDim2.fromOffset(PAD_X, 0)
-            r.valChip.Visible  = false
-            r.togChip.Visible  = false
-
-        elseif rd.type == "value" then
-            local valStr = tostring(rd.value)
-            local vw     = tw(valStr, FONT_SIZE) + VAL_PAD * 2
-            local lw     = colW - vw - ROW_GAP
-
-            styleChip(r.valChip)
-            r.valChip.Position = UDim2.fromOffset(bx, curY)
-            r.valChip.Size     = UDim2.fromOffset(vw, CHIP_H)
-            r.valChip.Visible  = true
-            r.vt.Text          = valStr
-            r.vt.TextColor3    = C.ValueText
-            r.vt.Size          = UDim2.fromOffset(vw, CHIP_H)
-            r.vt.Position      = UDim2.fromOffset(0, 0)
-
-            styleChip(r.lblChip)
-            r.lblChip.Position = UDim2.fromOffset(bx + vw + ROW_GAP, curY)
-            r.lblChip.Size     = UDim2.fromOffset(lw, CHIP_H)
-            r.lblChip.Visible  = true
-            r.lt.Text          = rd.label
-            r.lt.TextColor3    = C.LabelText
-            r.lt.Size          = UDim2.fromOffset(lw - PAD_X, CHIP_H)
-            r.lt.Position      = UDim2.fromOffset(PAD_X, 0)
-            r.togChip.Visible  = false
-
-        elseif rd.type == "toggle" then
-            local lw = colW - TOG_W - ROW_GAP
-
-            styleChip(r.lblChip)
-            r.lblChip.Position = UDim2.fromOffset(bx, curY)
-            r.lblChip.Size     = UDim2.fromOffset(lw, CHIP_H)
-            r.lblChip.Visible  = true
-            r.lt.Text          = rd.label
-            r.lt.TextColor3    = C.LabelText
-            r.lt.Size          = UDim2.fromOffset(lw - PAD_X, CHIP_H)
-            r.lt.Position      = UDim2.fromOffset(PAD_X, 0)
-
-            styleChip(r.togChip)
-            r.togChip.Position = UDim2.fromOffset(bx + lw + ROW_GAP, curY)
-            r.togChip.Size     = UDim2.fromOffset(TOG_W, CHIP_H)
-            r.togChip.Visible  = true
-            setPill(r.pill, true)
-            r.valChip.Visible  = false
-        end
-
-        curY = curY + CHIP_H + ROW_GAP
+    -- Glass backdrop
+    local glassPad = 1
+    local bd = pool.backdrop
+    bd.Position = UDim2.fromOffset(bx - glassPad, by - glassPad)
+    bd.Size     = UDim2.fromOffset(hdrW + glassPad * 2, HEADER_H + glassPad * 2)
+    bd.BackgroundColor3       = C.GlassBg or Color3.fromRGB(60, 52, 45)
+    bd.BackgroundTransparency = C.GlassAlpha or 0.45
+    bd.Visible                = true
+    local edge = pool.bdEdge
+    if edge then
+        edge.Color        = C.GlassEdge or Color3.fromRGB(220, 210, 195)
+        edge.Transparency = C.GlassEdgeAlpha or 0.88
+        edge.Thickness    = 1
     end
 
-    for i = #visRows + 1, MAX_ROWS do
-        local r = pool.rows[i]
-        if r then
-            r.lblChip.Visible = false
-            r.valChip.Visible = false
-            r.togChip.Visible = false
+    return by + HEADER_H + ROW_GAP + 2
+end
+
+local function renderTarget(cfg, bx, curY)
+    local hasTarget = State.LockedTarget ~= nil and State.LockedTarget.Parent ~= nil
+    if hasTarget then
+        local tn = State.LockedTarget.DisplayName or State.LockedTarget.Name
+        if tn ~= cachedTgtName then
+            cachedTgtName = tn
+            cachedTgtW    = tw(tn, FONT_SIZE) + PAD_X * 2
+        end
+        local tc = pool.tChip
+        tc.BackgroundColor3       = C.TargetBg or C.ChipBg
+        tc.BackgroundTransparency = C.TargetAlpha or C.ChipAlpha
+        local inv    = cfg["Inverted"] == true
+        local tStyle = cfg["ToggleStyle"] or "pill"
+        local tgtX   = bx
+        if inv and tStyle == "pill" then tgtX = bx + TG_W + 12
+        elseif inv and tStyle == "dot" then tgtX = bx + 6 + 8 end
+        tc.Position = UDim2.fromOffset(tgtX, curY)
+        tc.Size     = UDim2.fromOffset(cachedTgtW, CHIP_H)
+        tc.Visible  = true
+        local ts = pool.tStroke
+        if ts then ts.Color = C.StrokeColor; ts.Transparency = C.StrokeAlpha; ts.Thickness = C.StrokeThick end
+        pool.tText.Text       = tn
+        pool.tText.TextColor3 = C.TargetText
+        pool.tText.Size       = UDim2.fromOffset(cachedTgtW - PAD_X, CHIP_H)
+        return curY + CHIP_H + ROW_GAP
+    else
+        pool.tChip.Visible = false
+        return curY
+    end
+end
+
+local function renderRows(cfg, bx, baseY, dt)
+    local maxLabelW = maxLabelWCache
+    local runningH  = 0
+    local yFactor   = 1 - mathExp(-FADE_SPEED * dt)
+    local inv       = cfg["Inverted"] == true
+
+    for _, label in ipairs(activationOrder) do
+        local fa      = fadeAlphas[label] or 0
+        local targetY = baseY + runningH
+        if rowYSmoothed[label] == nil then rowYSmoothed[label] = targetY end
+        local sy  = rowYSmoothed[label]
+        local nsy = sy + (targetY - sy) * yFactor
+        rowYSmoothed[label] = (mathAbs(nsy - targetY) < 0.5) and targetY or nsy
+        runningH = runningH + ROW_STEP * fa
+
+        local entry = fdByLabel[label]
+        local fd    = entry.fd
+        local r     = pool.rows[entry.idx]
+        if not r then break end
+
+        if fa < 0.005 then
+            r.chip.Visible        = false
+            r.toggleGlass.Visible = false
+        else
+            local smoothY = mathFloor(rowYSmoothed[label])
+            local labelW  = labelWidthCache[fd.label]
+            local on      = fd.getOn()
+            local tStyle  = cfg["ToggleStyle"] or "pill"
+
+            local chipX = bx
+            if inv and tStyle == "pill" then chipX = bx + TG_W + 12
+            elseif inv and tStyle == "dot" then chipX = bx + 6 + 8 end
+
+            -- Label chip
+            r.chip.BackgroundColor3       = C.ChipBg
+            r.chip.BackgroundTransparency = ft(C.ChipAlpha, fa)
+            if r.chipStroke then r.chipStroke.Color = C.StrokeColor; r.chipStroke.Transparency = ft(C.StrokeAlpha, fa); r.chipStroke.Thickness = C.StrokeThick end
+            r.chip.Position = UDim2.fromOffset(chipX, smoothY)
+            r.chip.Size     = UDim2.fromOffset(labelW, CHIP_H)
+            r.chip.Visible  = true
+            r.lt.Text       = fd.label
+            r.lt.TextColor3 = C.LabelText
+            r.lt.TextTransparency       = ft(0, fa)
+            r.lt.TextStrokeTransparency = ft(0.65, fa)
+            r.lt.Size = UDim2.fromOffset(labelW - PAD_X * 2, CHIP_H)
+
+            -- Toggle indicator
+            if tStyle == "none" then
+                r.toggleGlass.Visible = false
+                r.togglePill.Visible  = false
+            elseif tStyle == "dot" then
+                local DOT_SZ = 6
+                local dotX = inv and bx or (bx + maxLabelW + 8)
+                r.toggleGlass.Position = UDim2.fromOffset(dotX - 1, smoothY + (CHIP_H - DOT_SZ) / 2 - 1)
+                r.toggleGlass.Size     = UDim2.fromOffset(DOT_SZ + 2, DOT_SZ + 2)
+                local dotCol = on and C.ToggleDotGlow or C.ToggleOffBg
+                r.toggleGlass.BackgroundColor3       = dotCol
+                r.toggleGlass.BackgroundTransparency = ft(on and 0.55 or 0.85, fa)
+                r.toggleGlass.Visible = true
+                if r.glassCorner then r.glassCorner.CornerRadius = UDim.new(0, (DOT_SZ + 2) / 2) end
+                if r.glassStroke then
+                    r.glassStroke.Color        = on and C.ToggleDotGlow or C.StrokeColor
+                    r.glassStroke.Transparency = ft(on and 0.15 or C.StrokeAlpha, fa)
+                    r.glassStroke.Thickness    = on and 2 or C.StrokeThick
+                end
+                r.togglePill.Parent   = r.toggleGlass
+                r.togglePill.Size     = UDim2.fromOffset(DOT_SZ, DOT_SZ)
+                r.togglePill.Position = UDim2.fromOffset(1, 1)
+                r.togglePill.BackgroundColor3       = on and C.ToggleDotGlow or C.ToggleOffBg
+                r.togglePill.BackgroundTransparency = ft(on and 0.0 or 0.45, fa)
+                r.togglePill.Visible  = true
+                if r.pillStroke then
+                    r.pillStroke.Color        = on and C.ToggleDotGlow or C.ToggleOffBg
+                    r.pillStroke.Transparency = ft(on and 0.10 or 0.80, fa)
+                    r.pillStroke.Thickness    = on and 1 or 0
+                end
+                r.toggleDot.Visible = false
+            else -- "pill"
+                local pillX = inv and bx or (bx + maxLabelW + 12)
+                r.toggleGlass.Position = UDim2.fromOffset(pillX, smoothY + (CHIP_H - TG_H) / 2)
+                r.toggleGlass.Size     = UDim2.fromOffset(TG_W, TG_H)
+                r.toggleGlass.BackgroundColor3       = on and C.ToggleOnBg or C.ToggleOffBg
+                r.toggleGlass.BackgroundTransparency = ft(on and 0.72 or 0.90, fa)
+                r.toggleGlass.Visible = true
+                if r.glassCorner then r.glassCorner.CornerRadius = UDim.new(0, TG_H / 2) end
+                if r.glassStroke then
+                    r.glassStroke.Color        = on and C.ToggleDotGlow or C.StrokeColor
+                    r.glassStroke.Transparency = ft(on and 0.35 or C.StrokeAlpha, fa)
+                    r.glassStroke.Thickness    = C.StrokeThick
+                end
+                r.togglePill.Parent   = r.toggleGlass
+                r.togglePill.Position = UDim2.fromOffset(TG_PAD, TG_PAD)
+                r.togglePill.Visible  = true
+                if on then
+                    r.togglePill.BackgroundColor3       = C.ToggleOnBg
+                    r.togglePill.BackgroundTransparency = ft(0.05, fa)
+                    r.toggleDot.Position = UDim2.fromOffset(TOGGLE_W - TOGGLE_DOT - TOGGLE_PAD, TOGGLE_PAD)
+                    r.toggleDot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                else
+                    r.togglePill.BackgroundColor3       = C.ToggleOffBg
+                    r.togglePill.BackgroundTransparency = ft(0.15, fa)
+                    r.toggleDot.Position = UDim2.fromOffset(TOGGLE_PAD, TOGGLE_PAD)
+                    r.toggleDot.BackgroundColor3 = Color3.fromRGB(160, 158, 165)
+                end
+                r.toggleDot.BackgroundTransparency = ft(0.0, fa)
+                if r.pillStroke then r.pillStroke.Transparency = ft(0.55, fa) end
+            end
+            r.vt.Visible = false
         end
     end
 end
@@ -407,7 +569,7 @@ end
 -- ═════════════════════════════════════════════════════════════════════════════
 --  UPDATE
 -- ═════════════════════════════════════════════════════════════════════════════
-local INFO_UPDATE_RATE = 1 / 50
+local INFO_UPDATE_RATE = 1 / 60
 local infoLastUpdate   = 0
 
 local function update()
@@ -416,16 +578,43 @@ local function update()
     if not cfg or cfg["Enabled"] ~= true then hideAll(); return end
 
     local now = os.clock()
-    if (now - infoLastUpdate) < INFO_UPDATE_RATE then return end
+    local dt  = now - infoLastUpdate
+    if dt < INFO_UPDATE_RATE then return end
     infoLastUpdate = now
 
-    syncColors(cfg["Colors"])
-    if not ready then buildPool() end
+    -- Animate fades
+    local fadeFactor = 1 - mathExp(-FADE_SPEED * dt)
+    for _, fd in ipairs(featureDefs) do
+        local on = fd.getOn()
+        if on and not prevOn[fd.label] then
+            for j = #activationOrder, 1, -1 do
+                if activationOrder[j] == fd.label then
+                    table.remove(activationOrder, j)
+                    break
+                end
+            end
+            activationOrder[#activationOrder + 1] = fd.label
+        end
+        prevOn[fd.label] = on
+        local target = on and 1 or 0
+        local cur = fadeAlphas[fd.label] or 0
+        local new = cur + (target - cur) * fadeFactor
+        fadeAlphas[fd.label] = (mathAbs(new - target) < 0.005) and target or new
+    end
+
+    resolveColors(cfg)
+    if not ready then buildPool(cfg) end
     if not ready then return end
 
-    local visRows = gatherVisible(cfg)
-    hideAll()
-    render(cfg, visRows)
+    local vp  = Camera and Camera.ViewportSize or Vector2.new(1920, 1080)
+    local pos = cfg["Position"] or {}
+    local bx  = mathFloor(vp.X * (pos["X"] or 0.0055))
+    local by  = mathFloor(vp.Y * (pos["Y"] or 0.60))
+
+    local titleStr = cfg["Title"] or "Hotkeys"
+    local curY = renderHeader(cfg, bx, by, cachedHdrW, titleStr)
+    curY = renderTarget(cfg, bx, curY)
+    renderRows(cfg, bx, curY, dt)
 end
 
 -- ═════════════════════════════════════════════════════════════════════════════
@@ -434,6 +623,7 @@ end
 local function cleanup()
     destroyPool()
     infoLastUpdate = 0
+    fadeAlphas = {}; prevOn = {}; rowYSmoothed = {}; activationOrder = {}
 end
 
 function Visuals.init(deps)
@@ -445,7 +635,12 @@ function Visuals.init(deps)
     ForceHitModule   = deps.ForceHitModule
     ESPModule        = deps.ESPModule
     KNOWN_BODY_PARTS = deps.BODY_PART_NAMES or {}
-    buildPool()
+
+    local cfg = settings["Hotkeys"] or {}
+    resolveColors(cfg)
+    rebuildLabelWidths(cfg)
+    resetAnimState()
+    buildPool(cfg)
 end
 
 function Visuals.update()
