@@ -129,29 +129,29 @@ if GENV.SauceConfig then
         { {"Speed","Panic Ground","Enabled"},                {"Character","Panic Ground","Enabled"} },
         { {"Speed","Panic Ground","Keybind"},                {"Character","Panic Ground","Key"} },
         { {"Speed","Data"},                                  {"Character","Speed Override","Data"} },
-        -- Visuals
-        { {"Visuals","Info","Enabled"},                      {"Visuals","Info","Enabled"} },
-        { {"Visuals","Info","Alias"},                        {"Visuals","Info","Alias"} },
-        { {"Visuals","Info","Colors","Header"},              {"Visuals","Info","Colors","Header"} },
-        { {"Visuals","Info","Colors","Accent"},              {"Visuals","Info","Colors","Accent"} },
-        { {"Visuals","Info","Colors","Text"},                {"Visuals","Info","Colors","Text"} },
-        { {"Visuals","Info","Colors","Target"},              {"Visuals","Info","Colors","Target"} },
-        { {"Visuals","Info","Colors","Active"},              {"Visuals","Info","Colors","Active"} },
-        { {"Visuals","Info","Colors","Idle"},                {"Visuals","Info","Colors","Idle"} },
-        { {"Visuals","Info","Colors","Bar Idle"},            {"Visuals","Info","Colors","Bar Idle"} },
-        { {"Visuals","Info","Colors","In Range"},            {"Visuals","Info","Colors","In Range"} },
-        { {"Visuals","Info","Colors","Out Range"},           {"Visuals","Info","Colors","Out Range"} },
-        { {"Visuals","Info","Colors","Feature Label"},       {"Visuals","Info","Colors","Feature Label"} },
-        { {"Visuals","Info","Colors","Stat Label"},          {"Visuals","Info","Colors","Stat Label"} },
-        { {"Visuals","Info","Colors","Armor Value"},         {"Visuals","Info","Colors","Armor Value"} },
-        { {"Visuals","Info","Colors","Ghost"},               {"Visuals","Info","Colors","Ghost"} },
-        { {"Visuals","Info","Position","Size"},              {"Visuals","Info","Position","Size"} },
-        { {"Visuals","Info","Position","X"},                 {"Visuals","Info","Position","X"} },
-        { {"Visuals","Info","Position","Y"},                 {"Visuals","Info","Position","Y"} },
-        { {"Visuals","Info","Outline"},                      {"Visuals","Info","Outline"} },
-        { {"Visuals","Info","Style"},                        {"Visuals","Info","Style"} },
-        { {"Visuals","Info","Align"},                        {"Visuals","Info","Align"} },
-        { {"Visuals","Info","Dynamic Header"},               {"Visuals","Info","Dynamic Header"} },
+        -- Hotkeys
+        { {"Hotkeys","Enabled"},                               {"Hotkeys","Enabled"} },
+        { {"Hotkeys","Title"},                                 {"Hotkeys","Title"} },
+        { {"Hotkeys","Dynamic Header"},                        {"Hotkeys","Dynamic Header"} },
+        { {"Hotkeys","Position","X"},                          {"Hotkeys","Position","X"} },
+        { {"Hotkeys","Position","Y"},                          {"Hotkeys","Position","Y"} },
+        { {"Hotkeys","Colors","HeaderBg"},                     {"Hotkeys","Colors","HeaderBg"} },
+        { {"Hotkeys","Colors","HeaderAlpha"},                  {"Hotkeys","Colors","HeaderAlpha"} },
+        { {"Hotkeys","Colors","ChipBg"},                       {"Hotkeys","Colors","ChipBg"} },
+        { {"Hotkeys","Colors","ChipAlpha"},                    {"Hotkeys","Colors","ChipAlpha"} },
+        { {"Hotkeys","Colors","StrokeColor"},                  {"Hotkeys","Colors","StrokeColor"} },
+        { {"Hotkeys","Colors","StrokeAlpha"},                  {"Hotkeys","Colors","StrokeAlpha"} },
+        { {"Hotkeys","Colors","StrokeThick"},                  {"Hotkeys","Colors","StrokeThick"} },
+        { {"Hotkeys","Colors","LabelText"},                    {"Hotkeys","Colors","LabelText"} },
+        { {"Hotkeys","Colors","ValueText"},                    {"Hotkeys","Colors","ValueText"} },
+        { {"Hotkeys","Colors","HeaderText"},                   {"Hotkeys","Colors","HeaderText"} },
+        { {"Hotkeys","Colors","HeaderIcon"},                   {"Hotkeys","Colors","HeaderIcon"} },
+        { {"Hotkeys","Colors","TargetText"},                   {"Hotkeys","Colors","TargetText"} },
+        { {"Hotkeys","Colors","ToggleOnBg"},                   {"Hotkeys","Colors","ToggleOnBg"} },
+        { {"Hotkeys","Colors","ToggleOnThumb"},                {"Hotkeys","Colors","ToggleOnThumb"} },
+        { {"Hotkeys","Colors","ToggleOffBg"},                  {"Hotkeys","Colors","ToggleOffBg"} },
+        { {"Hotkeys","Colors","ToggleOffThumb"},               {"Hotkeys","Colors","ToggleOffThumb"} },
+        -- Visuals (non-hotkeys)
         { {"Visuals","Target Card"},                         {"Main","Target Card"} },
     }
 
@@ -218,10 +218,8 @@ do
     expectType("ForceHit.Enabled", S.ForceHitEnabled, "boolean")
     expectType("ForceHit.Full Damage", S.ForceHitFullDamage, "boolean")
     expectType("ESP.Enabled", S.ESPAllowed, "boolean")
-    expectType("Visuals.Enabled", S.VisualsEnabled, "boolean")
-    expectEnum("Visuals.Info.Style", S.VisualsStyle, {"Normal","Inverted"})
-    expectEnum("Visuals.Info.Align", S.VisualsAlign, {"Left","Right"})
-    expectType("Visuals.Info.Dynamic Header", S.VisualsDynamicHeader, "boolean")
+    expectType("Hotkeys.Enabled", S.HotkeysEnabled, "boolean")
+    expectType("Hotkeys.Dynamic Header", S.HotkeysDynamicHeader, "boolean")
     expectEnum("Triggerbot.FOV.Type", S.TriggerbotFOVType, {"Box","Direct"})
     expectEnum("Camlock.FOV.Type", S.CamlockFOVType, {"Box","Direct"})
 end

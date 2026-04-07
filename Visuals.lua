@@ -194,6 +194,17 @@ local function buildPool()
 end
 
 -- ═════════════════════════════════════════════════════════════════════════════
+--  DEFAULT BINDS  (structural — not user config)
+-- ═════════════════════════════════════════════════════════════════════════════
+local DEFAULT_BINDS = {
+    { label = "Triggerbot",  type = "bool",   source = "Triggerbot", valueKey = "Enabled" },
+    { label = "Camlock",     type = "bool",   source = "Camlock",    valueKey = "Enabled" },
+    { label = "Force Shot",  type = "bool",   path = {"Weapon Modifications", "ForceHit", "Enabled"} },
+    { label = "Triggerbot",  type = "toggle", stateKey = "TriggerbotToggleActive", parentSource = "Triggerbot" },
+    { label = "Camlock",     type = "toggle", stateKey = "CamlockToggleActive",    parentSource = "Camlock" },
+}
+
+-- ═════════════════════════════════════════════════════════════════════════════
 --  GATHER VISIBLE ROWS  (wired to real settings/State)
 -- ═════════════════════════════════════════════════════════════════════════════
 local function getCurrentSpreadValue()
@@ -210,7 +221,7 @@ end
 
 local function gatherVisible(cfg)
     local out   = {}
-    local binds = cfg and cfg["Binds"]
+    local binds = (cfg and cfg["Binds"]) or DEFAULT_BINDS
     if not binds then return out end
 
     for _, def in ipairs(binds) do
