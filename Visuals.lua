@@ -1,5 +1,6 @@
 local Visuals = {}
 
+local UIS = game:GetService("UserInputService")
 local settings, State, Camera, LP, screenGui, ForceHitModule, ESPModule, KNOWN_BODY_PARTS
 
 local mathExp   = math.exp
@@ -237,6 +238,23 @@ local rowYSmoothed    = {}
 local activationOrder = {}
 local FADE_SPEED      = 10
 
+-- Drag state
+local dragPosX    = nil
+local dragPosY    = nil
+local dragTargetX = nil
+local dragTargetY = nil
+local dragActive  = false
+local dragOffX    = 0
+local dragOffY    = 0
+local hoverHeader = false
+local lastHdrX    = 0
+local lastHdrY    = 0
+local lastHdrW    = 0
+local DRAG_SMOOTH = 22
+local mouseX      = 0
+local mouseY      = 0
+local dragConnections = {}
+
 local function resetAnimState()
     fadeAlphas = {}; prevOn = {}; rowYSmoothed = {}; activationOrder = {}
     for _, fd in ipairs(featureDefs) do
@@ -441,6 +459,21 @@ local function hideAll()
 end
 
 -- ═════════════════════════════════════════════════════════════════════════════
+--  DRAG
+-- ═════════════════════════════════════════════════════════════════════════════
+local function updateDragSmooth(dt, pos, vp)
+    if dragTargetX ~= nil then
+        if dragPosX == nil then dragPosX = dragTargetX; dragPosY = dragTargetY end
+        local factor = 1 - mathExp(-DRAG_SMOOTH * dt)
+        local dx, dy = dragTargetX - dragPosX, dragTargetY - dragPosY
+        dragPosX = mathAbs(dx) < 0.4 and dragTargetX or (dragPosX + dx * factor)
+        dragPosY = mathAbs(dy) < 0.4 and dragTargetY or (dragPosY + dy * factor)
+    end
+    return mathFloor(dragPosX or (vp.X * (pos["X"] or 0.0055))),
+           mathFloor(dragPosY or (vp.Y * (pos["Y"] or 0.60)))
+end
+
+-- ═════════════════════════════════════════════════════════════════════════════
 --  RENDER
 -- ═════════════════════════════════════════════════════════════════════════════
 local function renderHeader(cfg, bx, by, hdrW, titleStr)
@@ -451,10 +484,14 @@ local function renderHeader(cfg, bx, by, hdrW, titleStr)
     hc.Size                   = UDim2.fromOffset(hdrW, HEADER_H)
     hc.Visible                = true
 
+    lastHdrX = bx;  lastHdrY = by;  lastHdrW = hdrW
+    local canDrag = cfg["Draggable"] ~= false
+    hoverHeader = canDrag and mouseX >= bx and mouseX <= bx + hdrW and mouseY >= by and mouseY <= by + HEADER_H
+
     local hs = pool.hStroke
     if hs then
         hs.Color        = C.StrokeColor
-        hs.Transparency = C.StrokeAlpha
+        hs.Transparency = (hoverHeader or dragActive) and 0.08 or C.StrokeAlpha
         hs.Thickness    = C.StrokeThick
     end
     pool.hIcon.Text        = cfg["Icon"] or "\226\152\133"
@@ -821,8 +858,7 @@ local function update()
 
     local vp  = Camera and Camera.ViewportSize or Vector2.new(1920, 1080)
     local pos = cfg["Position"] or {}
-    local bx  = mathFloor(vp.X * (pos["X"] or 0.0055))
-    local by  = mathFloor(vp.Y * (pos["Y"] or 0.60))
+    local bx, by = updateDragSmooth(dt, pos, vp)
 
     local titleStr = cfg["Title"] or "Hotkeys"
     local curY = renderHeader(cfg, bx, by, cachedHdrW, titleStr)
@@ -835,6 +871,12 @@ end
 --  LIFECYCLE
 -- ═════════════════════════════════════════════════════════════════════════════
 local function cleanup()
+    for _, conn in ipairs(dragConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    dragConnections = {}
+    dragPosX = nil; dragPosY = nil; dragTargetX = nil; dragTargetY = nil
+    dragActive = false; hoverHeader = false
     destroyPool()
     infoLastUpdate = 0
     fadeAlphas = {}; prevOn = {}; rowYSmoothed = {}; activationOrder = {}
@@ -855,6 +897,44 @@ function Visuals.init(deps)
     rebuildLabelWidths(cfg)
     resetAnimState()
     buildPool(cfg)
+
+    -- Drag input connections
+    dragConnections[#dragConnections + 1] = UIS.InputBegan:Connect(function(input, gpe)
+        if gpe then return end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 and cfg["Draggable"] ~= false then
+            local mp = UIS:GetMouseLocation()
+            if mp.X >= lastHdrX and mp.X <= lastHdrX + lastHdrW
+               and mp.Y >= lastHdrY and mp.Y <= lastHdrY + HEADER_H then
+                dragActive  = true
+                local startX = dragPosX or lastHdrX
+                local startY = dragPosY or lastHdrY
+                dragPosX    = startX
+                dragPosY    = startY
+                dragTargetX = startX
+                dragTargetY = startY
+                dragOffX    = mp.X - startX
+                dragOffY    = mp.Y - startY
+            end
+        end
+    end)
+
+    dragConnections[#dragConnections + 1] = UIS.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            local mp = UIS:GetMouseLocation()
+            mouseX = mp.X
+            mouseY = mp.Y
+            if dragActive then
+                dragTargetX = mp.X - dragOffX
+                dragTargetY = mp.Y - dragOffY
+            end
+        end
+    end)
+
+    dragConnections[#dragConnections + 1] = UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragActive = false
+        end
+    end)
 end
 
 function Visuals.update()
