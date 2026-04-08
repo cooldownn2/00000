@@ -13,6 +13,8 @@ local BASE_WALK_SPEED = 16
 
 local lerpedSpeed = 0
 local wasSpeedActive = false
+local antiTripPatched = false
+
 local function getEquippedTool()
     local char = LP.Character
     return char and char:FindFirstChildOfClass("Tool") or nil
@@ -47,34 +49,27 @@ local function resolveSpeedState(humanoid, tool, isReloading)
     return mode
 end
 
-local function resetSpeedModification()
-    lerpedSpeed = 0
-    wasSpeedActive = false
-    if State.SpeedStatesPatched then
-        local char = LP.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
-            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
-        end
-        State.SpeedStatesPatched = false
+-- Restores ragdoll/fallingdown states on the given humanoid and clears the patch flag.
+local function restoreAntiTripStates(hum)
+    if not antiTripPatched then return end
+    if hum then
+        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+        hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
     end
+    antiTripPatched = false
 end
 
+-- Runs every frame independently of speed. Keeps the character upright.
 local function applyAntiTrip(hum)
     if Settings.AntiTripEnabled == false then
-        if State.SpeedStatesPatched then
-            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
-            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
-            State.SpeedStatesPatched = false
-        end
+        restoreAntiTripStates(hum)
         return
     end
 
-    if not State.SpeedStatesPatched then
+    if not antiTripPatched then
         hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
         hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-        State.SpeedStatesPatched = true
+        antiTripPatched = true
     end
 
     if hum.PlatformStand then hum.PlatformStand = false end
@@ -90,23 +85,36 @@ local function applyAntiTrip(hum)
     end
 end
 
+local function resetSpeedModification()
+    lerpedSpeed = 0
+    wasSpeedActive = false
+    -- Restore anti-trip states on unload or if anti-trip config is disabled
+    if antiTripPatched and (State.Unloaded or Settings.AntiTripEnabled == false) then
+        local char = LP.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        restoreAntiTripStates(hum)
+    end
+end
+
 local function applySpeedModification(tool, deltaTime)
     local char = LP.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if not char or not hum then
         State.SpeedCharacter = nil
         State.DefaultWalkSpeed = nil
-        State.SpeedStatesPatched = false
         return
     end
 
     if State.SpeedCharacter ~= char then
         State.SpeedCharacter = char
         State.DefaultWalkSpeed = hum.WalkSpeed
-        State.SpeedStatesPatched = false
         lerpedSpeed = 0
         wasSpeedActive = false
+        antiTripPatched = false
     end
+
+    -- Anti-trip always runs when char exists, regardless of speed toggle
+    applyAntiTrip(hum)
 
     if not Settings.SpeedEnabled or not State.SpeedActive then
         resetSpeedModification()
@@ -118,12 +126,10 @@ local function applySpeedModification(tool, deltaTime)
     local mode = resolveSpeedState(hum, tool, getReloadingFlag(char))
     local multiplier = speedData[mode] or speedData["Normal"] or 1
     local targetSpeed = math.max(0, BASE_WALK_SPEED * multiplier)
-    -- Smoothly lerp toward target so mode transitions feel seamless
     local alpha = math.min(1, (deltaTime or (1 / 60)) * 30)
     lerpedSpeed = lerpedSpeed + (targetSpeed - lerpedSpeed) * alpha
     local grounded = hum.FloorMaterial ~= Enum.Material.Air
 
-    applyAntiTrip(hum)
     hum.WalkSpeed = lerpedSpeed
 
     local root = char:FindFirstChild("HumanoidRootPart")
@@ -137,7 +143,6 @@ local function applySpeedModification(tool, deltaTime)
                 root.AssemblyLinearVelocity = Vector3.new(targetVel.X, vel.Y, targetVel.Z)
             end
         elseif grounded and not injecting then
-            -- Brake only when injection is off (injection mode lets Roblox physics handle stopping)
             local dtScale = math.max((deltaTime or (1 / 60)) * 60, 0)
             local brakeFactor = GROUND_BRAKE_FACTOR ^ dtScale
             root.AssemblyLinearVelocity = Vector3.new(vel.X * brakeFactor, vel.Y, vel.Z * brakeFactor)
