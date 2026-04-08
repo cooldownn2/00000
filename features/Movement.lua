@@ -7,11 +7,21 @@ local LP = Players.LocalPlayer
 local Settings, State
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
-local ACCEL_RATE = 14           -- ramp-up speed (exp decay rate per second)
-local DECEL_RATE = 8            -- ramp-down speed when mode changes or disabling
-local GROUND_BRAKE_FACTOR = 0.88 -- velocity damping per frame when not moving (snappier stop)
+local ACCEL_RATE = 14
+local DECEL_RATE = 8
+local GROUND_BRAKE_FACTOR = 0.88
 local MOVE_INPUT_THRESHOLD = 0.05
 local BASE_WALK_SPEED = 16
+
+-- Per-character cache — refreshed once whenever the character instance changes,
+-- so FindFirstChild/FindFirstChildOfClass are not called every RenderStepped frame.
+local cachedHum, cachedRoot, cachedBodyEffects
+
+local function refreshCharacterCache(char)
+    cachedHum         = char:FindFirstChildOfClass("Humanoid")
+    cachedRoot        = char:FindFirstChild("HumanoidRootPart")
+    cachedBodyEffects = char:FindFirstChild("BodyEffects")
+end
 
 local function getEquippedTool()
     local char = LP.Character
@@ -22,9 +32,8 @@ local function isKnifeTool(tool)
     return tool and string.find(string.lower(tool.Name), "knife", 1, true) ~= nil
 end
 
-local function getReloadingFlag(char)
-    if not char then return false end
-    local bodyEffects = char:FindFirstChild("BodyEffects")
+local function getReloadingFlag()
+    local bodyEffects = cachedBodyEffects
     if not bodyEffects then return false end
     local flag = bodyEffects:FindFirstChild("Reload") or bodyEffects:FindFirstChild("Reloading")
     if not flag then return false end
@@ -48,15 +57,16 @@ local function resolveSpeedState(humanoid, tool, isReloading)
 end
 
 local function resetSpeedModification()
-    local char = LP.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum and State.DefaultWalkSpeed and hum.WalkSpeed ~= State.DefaultWalkSpeed then
-        hum.WalkSpeed = State.DefaultWalkSpeed
-    end
-    if hum and State.SpeedStatesPatched then
-        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
-        hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
-        State.SpeedStatesPatched = false
+    local hum = cachedHum
+    if hum then
+        if State.DefaultWalkSpeed and hum.WalkSpeed ~= State.DefaultWalkSpeed then
+            hum.WalkSpeed = State.DefaultWalkSpeed
+        end
+        if State.SpeedStatesPatched then
+            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+            State.SpeedStatesPatched = false
+        end
     end
 end
 
@@ -91,8 +101,8 @@ end
 
 local function applySpeedModification(tool, deltaTime)
     local char = LP.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if not char or not hum then
+    if not char then
+        cachedHum, cachedRoot, cachedBodyEffects = nil, nil, nil
         State.SpeedCharacter = nil
         State.DefaultWalkSpeed = nil
         State.SpeedStatesPatched = false
@@ -101,57 +111,64 @@ local function applySpeedModification(tool, deltaTime)
 
     if State.SpeedCharacter ~= char then
         State.SpeedCharacter = char
-        State.DefaultWalkSpeed = hum.WalkSpeed
+        refreshCharacterCache(char)
+        State.DefaultWalkSpeed = cachedHum and cachedHum.WalkSpeed or BASE_WALK_SPEED
         State.SpeedStatesPatched = false
     end
 
+    local hum = cachedHum
+    if not hum then return end
+
+    local dt = deltaTime or (1 / 60)
+
     if not Settings.SpeedEnabled or not State.SpeedActive then
+        -- Smooth deceleration back to base speed before fully resetting.
+        -- Anti-trip stays active during the ramp so the player doesn't trip at high speed.
+        if hum.WalkSpeed > BASE_WALK_SPEED + 0.5 then
+            local newSpeed = hum.WalkSpeed + (BASE_WALK_SPEED - hum.WalkSpeed) * (1 - math.exp(-DECEL_RATE * dt))
+            if math.abs(newSpeed - BASE_WALK_SPEED) < 0.5 then newSpeed = BASE_WALK_SPEED end
+            hum.WalkSpeed = newSpeed
+            return
+        end
         resetSpeedModification()
         return
     end
 
     local speedData = Settings.SpeedData or {}
-    local mode = resolveSpeedState(hum, tool, getReloadingFlag(char))
+    local mode = resolveSpeedState(hum, tool, getReloadingFlag())
     local multiplier = speedData[mode] or speedData["Normal"] or 1
     local targetSpeed = math.max(0, BASE_WALK_SPEED * multiplier)
     local grounded = hum.FloorMaterial ~= Enum.Material.Air
 
     applyAntiTrip(hum)
 
-    -- Framerate-independent lerp: accelerates faster than it decelerates
-    local dt = deltaTime or (1 / 60)
     local rate = targetSpeed > hum.WalkSpeed and ACCEL_RATE or DECEL_RATE
     local newSpeed = hum.WalkSpeed + (targetSpeed - hum.WalkSpeed) * (1 - math.exp(-rate * dt))
     if math.abs(newSpeed - targetSpeed) < 0.5 then newSpeed = targetSpeed end
     hum.WalkSpeed = newSpeed
 
     if grounded then
-        local moveDir = hum.MoveDirection
-        if moveDir.Magnitude < MOVE_INPUT_THRESHOLD then
-            local root = char:FindFirstChild("HumanoidRootPart")
-            if root then
-                local vel = root.AssemblyLinearVelocity
-                local brakeFactor = GROUND_BRAKE_FACTOR ^ (dt * 60)
-                root.AssemblyLinearVelocity = Vector3.new(vel.X * brakeFactor, vel.Y, vel.Z * brakeFactor)
-            end
+        local root = cachedRoot
+        if root and hum.MoveDirection.Magnitude < MOVE_INPUT_THRESHOLD then
+            local vel = root.AssemblyLinearVelocity
+            local brakeFactor = GROUND_BRAKE_FACTOR ^ (dt * 60)
+            root.AssemblyLinearVelocity = Vector3.new(vel.X * brakeFactor, vel.Y, vel.Z * brakeFactor)
         end
     end
 end
 
 local function panicGround()
     if Settings.PanicGroundEnabled == false then return end
-    local char = LP.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not char or not hum or not root then return end
+    local hum = cachedHum
+    local root = cachedRoot
+    if not hum or not root then return end
     if hum.FloorMaterial ~= Enum.Material.Air then return end
 
     local currentVel = root.AssemblyLinearVelocity
     local horizontal = Vector3.new(currentVel.X, 0, currentVel.Z)
     local moveDir = hum.MoveDirection
     if moveDir.Magnitude > 0.05 then
-        local baseWalk = State.DefaultWalkSpeed or 16
-        local desiredHorizontal = moveDir.Unit * math.max(baseWalk * 2.4, hum.WalkSpeed, 48)
+        local desiredHorizontal = moveDir.Unit * math.max((State.DefaultWalkSpeed or BASE_WALK_SPEED) * 2.4, hum.WalkSpeed, 48)
         horizontal = desiredHorizontal
     end
 
