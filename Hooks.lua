@@ -63,11 +63,10 @@ local function buildNamecallHook()
                 return oldNamecall(self, ...)
             end
             local args = {...}
-            local argsValid = isStoredShootArgsValid(args)
-            if argsValid then
+            if isStoredShootArgsValid(args) then
                 State.LastShootArgs = cloneArgs(args)
             end
-            if State.FakePart and argsValid and isTargetFeatureAllowed() then
+            if State.FakePart and isStoredShootArgsValid(args) and isTargetFeatureAllowed() then
                 local headPos = State.FakePos or State.FakePart.Position
                 args[3] = headPos
                 args[4] = State.FakePart; args[6] = headPos
@@ -80,7 +79,7 @@ local function buildNamecallHook()
                 end
                 return result
             end
-            if argsValid then
+            if isStoredShootArgsValid(args) then
                 local result = oldNamecall(self, ...)
                 local extra = getTapCount(args) - 1
                 for _ = 1, extra do
