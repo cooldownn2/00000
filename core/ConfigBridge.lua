@@ -95,6 +95,7 @@ local function applyUserConfig(settings, userConfig)
 
         -- Speed
         { {"Speed Modification","Enabled"},                  {"Character","Speed Override","Enabled"} },
+        { {"Speed Modification","Velocity Injection"},        {"Character","Speed Override","Velocity Injection"} },
         { {"Main","Keybinds","Speed"},                     {"Main","Keybinds","Speed"} },
         { {"Speed Modification","Anti Trip"},                {"Character","Anti Trip","Enabled"} },
         { {"Speed Modification","Data"},                     {"Character","Speed Override","Data"} },

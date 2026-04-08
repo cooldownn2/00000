@@ -133,8 +133,10 @@ local function applySpeedModification(tool, deltaTime)
         local vel = root.AssemblyLinearVelocity
         if moveDir.Magnitude > MOVE_INPUT_THRESHOLD then
             -- Inject velocity directly so character moves at full speed instantly
-            local targetVel = moveDir.Unit * lerpedSpeed
-            root.AssemblyLinearVelocity = Vector3.new(targetVel.X, vel.Y, targetVel.Z)
+            if Settings.SpeedVelocityInjection ~= false then
+                local targetVel = moveDir.Unit * lerpedSpeed
+                root.AssemblyLinearVelocity = Vector3.new(targetVel.X, vel.Y, targetVel.Z)
+            end
         elseif grounded then
             -- Brake when standing still on ground
             local dtScale = math.max((deltaTime or (1 / 60)) * 60, 0)

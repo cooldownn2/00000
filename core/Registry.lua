@@ -31,6 +31,7 @@ local SettingPaths = {
     LineColor                   = {"ESP", "Line", "Line Color"},
 
     SpeedEnabled                = {"Character", "Speed Override", "Enabled"},
+    SpeedVelocityInjection      = {"Character", "Speed Override", "Velocity Injection"},
     SpeedData                   = {"Character", "Speed Override", "Data"},
     AntiTripEnabled             = {"Character", "Anti Trip", "Enabled"},
     PanicGroundEnabled          = {"Character", "Panic Ground", "Enabled"},
