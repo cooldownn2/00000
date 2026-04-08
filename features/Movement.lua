@@ -85,12 +85,12 @@ local function applyAntiTrip(hum, root)
         hum:ChangeState(Enum.HumanoidStateType.Running)
     end
 
-    -- Clamp upward velocity spikes caused by hitting geometry at high speed.
-    -- When grounded, any Y velocity above a small threshold means a collision
-    -- flung us — zero it out immediately so we stay on the ground.
+    -- Only clamp upward fling spikes when moving at high speed (150+ studs/s horizontal).
+    -- Below that threshold the player can still fling themselves intentionally.
     if root and hum.FloorMaterial ~= Enum.Material.Air then
         local vel = root.AssemblyLinearVelocity
-        if vel.Y > 10 then
+        local horizontalSpeed = Vector3.new(vel.X, 0, vel.Z).Magnitude
+        if horizontalSpeed >= 150 and vel.Y > 10 then
             root.AssemblyLinearVelocity = Vector3.new(vel.X, 0, vel.Z)
         end
     end
