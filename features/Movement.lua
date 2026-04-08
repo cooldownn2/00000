@@ -106,6 +106,7 @@ local function applySpeedModification(tool, deltaTime)
         State.DefaultWalkSpeed = hum.WalkSpeed
         State.SpeedStatesPatched = false
         lerpedSpeed = 0
+        wasSpeedActive = false
     end
 
     if not Settings.SpeedEnabled or not State.SpeedActive then
@@ -138,14 +139,14 @@ local function applySpeedModification(tool, deltaTime)
     if root then
         local moveDir = hum.MoveDirection
         local vel = root.AssemblyLinearVelocity
+        local injecting = Settings.SpeedVelocityInjection ~= false
         if moveDir.Magnitude > MOVE_INPUT_THRESHOLD then
-            -- Inject velocity directly so character moves at full speed instantly
-            if Settings.SpeedVelocityInjection ~= false then
+            if injecting then
                 local targetVel = moveDir.Unit * lerpedSpeed
                 root.AssemblyLinearVelocity = Vector3.new(targetVel.X, vel.Y, targetVel.Z)
             end
-        elseif grounded then
-            -- Brake when standing still on ground
+        elseif grounded and not injecting then
+            -- Brake only when injection is off (injection mode lets Roblox physics handle stopping)
             local dtScale = math.max((deltaTime or (1 / 60)) * 60, 0)
             local brakeFactor = GROUND_BRAKE_FACTOR ^ dtScale
             root.AssemblyLinearVelocity = Vector3.new(vel.X * brakeFactor, vel.Y, vel.Z * brakeFactor)
