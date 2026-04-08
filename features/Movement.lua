@@ -10,7 +10,7 @@ local MOUSE1 = Enum.UserInputType.MouseButton1
 local GROUND_BRAKE_FACTOR = 0.93
 local MOVE_INPUT_THRESHOLD = 0.05
 local BASE_WALK_SPEED = 16
-
+local lerpedSpeed = 0
 local function getEquippedTool()
     local char = LP.Character
     return char and char:FindFirstChildOfClass("Tool") or nil
@@ -46,10 +46,16 @@ local function resolveSpeedState(humanoid, tool, isReloading)
 end
 
 local function resetSpeedModification()
+    lerpedSpeed = 0
     local char = LP.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if hum and State.DefaultWalkSpeed and hum.WalkSpeed ~= State.DefaultWalkSpeed then
         hum.WalkSpeed = State.DefaultWalkSpeed
+    end
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if root then
+        local vel = root.AssemblyLinearVelocity
+        root.AssemblyLinearVelocity = Vector3.new(0, vel.Y, 0)
     end
     if hum and State.SpeedStatesPatched then
         hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
@@ -101,6 +107,7 @@ local function applySpeedModification(tool, deltaTime)
         State.SpeedCharacter = char
         State.DefaultWalkSpeed = hum.WalkSpeed
         State.SpeedStatesPatched = false
+        lerpedSpeed = 0
     end
 
     if not Settings.SpeedEnabled or not State.SpeedActive then
@@ -112,21 +119,27 @@ local function applySpeedModification(tool, deltaTime)
     local mode = resolveSpeedState(hum, tool, getReloadingFlag(char))
     local multiplier = speedData[mode] or speedData["Normal"] or 1
     local targetSpeed = math.max(0, BASE_WALK_SPEED * multiplier)
+    -- Smoothly lerp toward target so mode transitions feel seamless
+    local alpha = math.min(1, (deltaTime or (1 / 60)) * 30)
+    lerpedSpeed = lerpedSpeed + (targetSpeed - lerpedSpeed) * alpha
     local grounded = hum.FloorMaterial ~= Enum.Material.Air
 
     applyAntiTrip(hum)
-    if hum.WalkSpeed ~= targetSpeed then hum.WalkSpeed = targetSpeed end
+    hum.WalkSpeed = lerpedSpeed
 
-    if grounded then
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if root then
         local moveDir = hum.MoveDirection
-        if moveDir.Magnitude < MOVE_INPUT_THRESHOLD then
-            local root = char:FindFirstChild("HumanoidRootPart")
-            if root then
-                local vel = root.AssemblyLinearVelocity
-                local dtScale = math.max((deltaTime or (1 / 60)) * 60, 0)
-                local brakeFactor = GROUND_BRAKE_FACTOR ^ dtScale
-                root.AssemblyLinearVelocity = Vector3.new(vel.X * brakeFactor, vel.Y, vel.Z * brakeFactor)
-            end
+        local vel = root.AssemblyLinearVelocity
+        if moveDir.Magnitude > MOVE_INPUT_THRESHOLD then
+            -- Inject velocity directly so character moves at full speed instantly
+            local targetVel = moveDir.Unit * lerpedSpeed
+            root.AssemblyLinearVelocity = Vector3.new(targetVel.X, vel.Y, targetVel.Z)
+        elseif grounded then
+            -- Brake when standing still on ground
+            local dtScale = math.max((deltaTime or (1 / 60)) * 60, 0)
+            local brakeFactor = GROUND_BRAKE_FACTOR ^ dtScale
+            root.AssemblyLinearVelocity = Vector3.new(vel.X * brakeFactor, vel.Y, vel.Z * brakeFactor)
         end
     end
 end
