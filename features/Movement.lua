@@ -7,7 +7,9 @@ local LP = Players.LocalPlayer
 local Settings, State
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
-local GROUND_BRAKE_FACTOR = 0.93
+local ACCEL_RATE = 14           -- ramp-up speed (exp decay rate per second)
+local DECEL_RATE = 8            -- ramp-down speed when mode changes or disabling
+local GROUND_BRAKE_FACTOR = 0.88 -- velocity damping per frame when not moving (snappier stop)
 local MOVE_INPUT_THRESHOLD = 0.05
 local BASE_WALK_SPEED = 16
 
@@ -115,7 +117,13 @@ local function applySpeedModification(tool, deltaTime)
     local grounded = hum.FloorMaterial ~= Enum.Material.Air
 
     applyAntiTrip(hum)
-    if hum.WalkSpeed ~= targetSpeed then hum.WalkSpeed = targetSpeed end
+
+    -- Framerate-independent lerp: accelerates faster than it decelerates
+    local dt = deltaTime or (1 / 60)
+    local rate = targetSpeed > hum.WalkSpeed and ACCEL_RATE or DECEL_RATE
+    local newSpeed = hum.WalkSpeed + (targetSpeed - hum.WalkSpeed) * (1 - math.exp(-rate * dt))
+    if math.abs(newSpeed - targetSpeed) < 0.5 then newSpeed = targetSpeed end
+    hum.WalkSpeed = newSpeed
 
     if grounded then
         local moveDir = hum.MoveDirection
@@ -123,8 +131,7 @@ local function applySpeedModification(tool, deltaTime)
             local root = char:FindFirstChild("HumanoidRootPart")
             if root then
                 local vel = root.AssemblyLinearVelocity
-                local dtScale = math.max((deltaTime or (1 / 60)) * 60, 0)
-                local brakeFactor = GROUND_BRAKE_FACTOR ^ dtScale
+                local brakeFactor = GROUND_BRAKE_FACTOR ^ (dt * 60)
                 root.AssemblyLinearVelocity = Vector3.new(vel.X * brakeFactor, vel.Y, vel.Z * brakeFactor)
             end
         end
