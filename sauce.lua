@@ -38,6 +38,7 @@ local BodyParts     = load("core/BodyParts")
 local ClosestPoint  = load("aim/ClosestPoint")
 local DelayChanger  = load("core/DelayChanger")
 local Spread        = load("aim/Spread")
+local Taps          = load("aim/Taps")
 local Targeting     = load("core/Targeting")
 
 local settings   = Config.settings
@@ -227,10 +228,12 @@ Features.init(mergeDeps({
     FOVBoxes = FOVBoxes,
 }))
 
+Taps.init(mergeDeps({}))
 Hooks.init(mergeDeps({
     oldShoot       = oldShoot,
     mt             = mt,
     oldNamecall    = oldNamecall,
+    Taps           = Taps,
 }))
 
 Hooks.install()
@@ -248,6 +251,19 @@ Targeting.init(mergeDeps({
     resolveLockPartForCharacter = resolveLockPartForCharacter,
 }))
 
+local function watchCharacterTools(char)
+    if not char then return end
+    for _, child in ipairs(char:GetChildren()) do
+        if child:IsA("Tool") then Spread.applySpreadMod(child) end
+    end
+    connect(char.ChildAdded, function(child)
+        if State.Unloaded then return end
+        if child:IsA("Tool") then Spread.applySpreadMod(child) end
+    end)
+end
+
+if LP.Character then watchCharacterTools(LP.Character) end
+
 local function cleanup()
     if State.Unloaded then return end
     State.Unloaded = true
@@ -255,6 +271,7 @@ local function cleanup()
     TargetCard.bumpToggleId()
     ForceHit.cleanup()
     DelayChanger.cleanup()
+    Spread.cleanup()
     State.FakePart, State.FakePos = nil, nil
     State.CurrentPart = nil; State.LockedTarget = nil; State.LastShootData = nil
     State.TriggerbotHoldActive = false; State.TriggerbotToggleActive = false
@@ -386,10 +403,11 @@ connect(UIS.InputEnded, function(input, gpe)
     end
 end)
 
-connect(LP.CharacterAdded, function()
+connect(LP.CharacterAdded, function(char)
     if State.Unloaded then return end
     clearCombatState(true)
     State.SpeedCharacter = nil; State.DefaultWalkSpeed = nil; State.SpeedStatesPatched = false
+    watchCharacterTools(char)
 end)
 
 connect(RunService.RenderStepped, function(deltaTime)

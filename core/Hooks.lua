@@ -2,6 +2,7 @@ local State, Settings, safeCall
 local GH, MainEvent, oldShoot, mt, oldNamecall
 local cloneArgs, applyRangePolicy, getSpreadAimPosition
 local isTargetFeatureAllowed, isStoredShootArgsValid
+local Taps
 local hookedShoot, hookedNamecall
 
 local function setReadOnlySafe(value)
@@ -40,20 +41,6 @@ local function buildShootHook()
     end
 end
 
-local function getTapCount(args)
-    local taps = Settings.Taps
-    if type(taps) ~= "table" then return 1 end
-    local handle = args[2]
-    if not handle or not handle.Parent then return 1 end
-    local toolName = handle.Parent.Name
-    local entry = taps[toolName]
-    if type(entry) ~= "table" then return 1 end
-    if not entry["Enabled"] then return 1 end
-    local value = tonumber(entry["Value"])
-    if not value or value < 2 then return 1 end
-    return math.floor(value)
-end
-
 local function buildNamecallHook()
     hookedNamecall = function(self, ...)
         if State.Unloaded then return oldNamecall(self, ...) end
@@ -72,7 +59,7 @@ local function buildNamecallHook()
                 args[4] = State.FakePart; args[6] = headPos
                 State.FakePart, State.FakePos = nil, nil
                 local result = oldNamecall(self, table.unpack(args))
-                local extra = getTapCount(args) - 1
+                local extra = Taps.getTapCount(args) - 1
                 for _ = 1, extra do
                     State.SkipNextFireServer = true
                     oldNamecall(self, table.unpack(args))
@@ -81,7 +68,7 @@ local function buildNamecallHook()
             end
             if isStoredShootArgsValid(args) then
                 local result = oldNamecall(self, ...)
-                local extra = getTapCount(args) - 1
+                local extra = Taps.getTapCount(args) - 1
                 for _ = 1, extra do
                     State.SkipNextFireServer = true
                     oldNamecall(self, table.unpack(args))
@@ -125,6 +112,7 @@ local function init(deps)
     getSpreadAimPosition   = deps.getSpreadAimPosition
     isTargetFeatureAllowed = deps.isTargetFeatureAllowed
     isStoredShootArgsValid = deps.isStoredShootArgsValid
+    Taps                   = deps.Taps
 end
 
 return {
