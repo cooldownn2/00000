@@ -7,7 +7,6 @@ local LP = Players.LocalPlayer
 local Settings, State
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
-local SPEED_MULTIPLIER = 15
 local GROUND_BRAKE_FACTOR = 0.93
 local MOVE_INPUT_THRESHOLD = 0.05
 
@@ -111,7 +110,7 @@ local function applySpeedModification(tool, deltaTime)
     local speedData = Settings.SpeedData or {}
     local mode = resolveSpeedState(hum, tool, getReloadingFlag(char))
     local baseSpeed = speedData[mode] or speedData["Normal"] or State.DefaultWalkSpeed or hum.WalkSpeed
-    local targetSpeed = math.max(0, baseSpeed * SPEED_MULTIPLIER)
+    local targetSpeed = math.max(0, baseSpeed)
     local grounded = hum.FloorMaterial ~= Enum.Material.Air
 
     applyAntiTrip(hum)

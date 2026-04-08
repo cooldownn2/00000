@@ -94,12 +94,10 @@ local function applyUserConfig(settings, userConfig)
         { {"Weapon Modifications","ForceHit","Full Damage Shots"}, {"Weapon Modifications","ForceHit","Full Damage Shots"} },
 
         -- Speed
-        { {"Speed","Enabled"},                               {"Character","Speed Override","Enabled"} },
+        { {"Speed Modification","Enabled"},                  {"Character","Speed Override","Enabled"} },
         { {"Main","Keybinds","Speed"},                     {"Main","Keybinds","Speed"} },
-        { {"Speed","Anti Trip"},                             {"Character","Anti Trip","Enabled"} },
-        { {"Speed","Panic Ground","Enabled"},              {"Character","Panic Ground","Enabled"} },
-        { {"Speed","Panic Ground","Keybind"},              {"Character","Panic Ground","Key"} },
-        { {"Speed","Data"},                                  {"Character","Speed Override","Data"} },
+        { {"Speed Modification","Anti Trip"},                {"Character","Anti Trip","Enabled"} },
+        { {"Speed Modification","Data"},                     {"Character","Speed Override","Data"} },
 
         -- Hotkeys
         { {"Hotkeys","Enabled"},                             {"Hotkeys","Enabled"} },
