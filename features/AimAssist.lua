@@ -1,36 +1,32 @@
 local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
+local UIS     = game:GetService("UserInputService")
 
 local AimAssist = {}
 
-local LP = Players.LocalPlayer
+local LP       = Players.LocalPlayer
 local Settings, State, safeCall, Camera
 local getCamlockAimPosition
 local Movement
 
-local _cachedFocalLen = nil
-local _cachedFOV = nil
-local _cachedVpY = nil
-
-local function getTriggerbotBounds()
-    local width = Settings.TriggerbotFOVWidth
-    local height = Settings.TriggerbotFOVHeight
-    local left = type(width) == "table" and tonumber(width[1]) or tonumber(width)
-    local right = type(width) == "table" and tonumber(width[2]) or tonumber(width)
-    local up = type(height) == "table" and tonumber(height[1]) or tonumber(height)
-    local down = type(height) == "table" and tonumber(height[2]) or tonumber(height)
-    return math.max(left or 1, 0), math.max(right or 1, 0), math.max(up or 1, 0), math.max(down or 1, 0)
+-- ── Fixed-pixel FOV helpers ───────────────────────────────────────────────────
+-- FOV boxes are a fixed pixel size centred on the cursor — distance-independent.
+local function isInsideFixedBox(cam, part, halfW, halfH)
+    local sp, onScreen = cam:WorldToViewportPoint(part.Position)
+    if not onScreen or sp.Z <= 0 then return false end
+    local mp = UIS:GetMouseLocation()
+    return math.abs(sp.X - mp.X) <= halfW
+        and math.abs(sp.Y - mp.Y) <= halfH
 end
 
-local function getCamlockBounds()
-    local width = Settings.CamlockFOVWidth
-    local height = Settings.CamlockFOVHeight
-    local left = type(width) == "table" and tonumber(width[1]) or tonumber(width)
-    local right = type(width) == "table" and tonumber(width[2]) or tonumber(width)
-    local up = type(height) == "table" and tonumber(height[1]) or tonumber(height)
-    local down = type(height) == "table" and tonumber(height[2]) or tonumber(height)
-    return math.max(left or 6, 0), math.max(right or 6, 0), math.max(up or 6, 0), math.max(down or 6, 0)
+local function isInsideDirect(cam, part)
+    local sp, onScreen = cam:WorldToViewportPoint(part.Position)
+    if not onScreen or sp.Z <= 0 then return false end
+    local mp = UIS:GetMouseLocation()
+    local dx, dy = sp.X - mp.X, sp.Y - mp.Y
+    return (dx * dx + dy * dy) <= 9
 end
+
+-- ── Triggerbot ────────────────────────────────────────────────────────────────
 
 local function getTriggerbotDelaySeconds()
     local raw = tonumber(Settings.TriggerbotDelay) or 0
@@ -55,115 +51,72 @@ local function isCamlockArmed()
     return State.CamlockHoldActive
 end
 
-local function studsToPixels(studs, depth)
-    local vpY = Camera.ViewportSize.Y
-    local fov = Camera.FieldOfView
-    if fov ~= _cachedFOV or vpY ~= _cachedVpY then
-        _cachedFOV = fov
-        _cachedVpY = vpY
-        _cachedFocalLen = vpY / (2 * math.tan(math.rad(fov) * 0.5))
+local function isPartInsideTriggerFOV(part)
+    if not part then return false end
+    local cam = workspace.CurrentCamera
+    if not cam then return false end
+    if string.lower(tostring(Settings.TriggerbotFOVType or "Box")) == "direct" then
+        return isInsideDirect(cam, part)
     end
-    return (studs / depth) * _cachedFocalLen
+    local w = tonumber(Settings.TriggerbotFOVWidth)  or 200
+    local h = tonumber(Settings.TriggerbotFOVHeight) or 200
+    return isInsideFixedBox(cam, part, w * 0.5, h * 0.5)
 end
 
-local function getRootAnchoredBoxForPart(part, padLeft, padRight, padUp, padDown)
-    if not part or not Camera then return nil end
-    local char = part.Parent
-    if not char then return nil end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return nil end
-
-    local screenRoot, onScreen = Camera:WorldToViewportPoint(root.Position)
-    if not onScreen or screenRoot.Z <= 0 then return nil end
-
-    local depth = screenRoot.Z
-    local cx = screenRoot.X
-    local cy = screenRoot.Y
-    local pixTop = studsToPixels(3.0 + padUp, depth)
-    local pixBottom = studsToPixels(2.0 + padDown, depth)
-    local pixLeft = studsToPixels(1.0 + padLeft, depth)
-    local pixRight = studsToPixels(1.0 + padRight, depth)
-
-    return {
-        left = cx - pixLeft,
-        top = cy - pixTop,
-        width = pixLeft + pixRight,
-        height = pixTop + pixBottom,
-        centerX = cx,
-        centerY = cy,
-    }
-end
-
-local function getTriggerbotBoxForPart(part)
-    local padLeft, padRight, padUp, padDown = getTriggerbotBounds()
-    return getRootAnchoredBoxForPart(part, padLeft, padRight, padUp, padDown)
-end
-
-local function getCamlockBoxForPart(part)
-    local padLeft, padRight, padUp, padDown = getCamlockBounds()
-    return getRootAnchoredBoxForPart(part, padLeft, padRight, padUp, padDown)
-end
-
-local function isPartInsideTriggerFOV(part, precomputedBox)
-    if not part or not Camera then return false end
-    local mode = string.lower(tostring(Settings.TriggerbotFOVType or "Box"))
-    local mousePos = UIS:GetMouseLocation()
-    local box = precomputedBox or getTriggerbotBoxForPart(part)
-    if not box then return false end
-
-    if mode == "direct" then
-        local dx = box.centerX - mousePos.X
-        local dy = box.centerY - mousePos.Y
-        return (dx * dx + dy * dy) <= 9
+local function isPartInsideCamlockFOV(part)
+    if not part then return false end
+    local cam = workspace.CurrentCamera
+    if not cam then return false end
+    if string.lower(tostring(Settings.CamlockFOVType or "Box")) == "direct" then
+        return isInsideDirect(cam, part)
     end
-
-    return mousePos.X >= box.left and mousePos.X <= (box.left + box.width)
-        and mousePos.Y >= box.top and mousePos.Y <= (box.top + box.height)
-end
-
-local function isPartInsideCamlockFOV(part, precomputedBox)
-    if not part or not Camera then return false end
-    local mode = string.lower(tostring(Settings.CamlockFOVType or "Box"))
-    local mousePos = UIS:GetMouseLocation()
-    local box = precomputedBox or getCamlockBoxForPart(part)
-    if not box then return false end
-
-    if mode == "direct" then
-        local dx = box.centerX - mousePos.X
-        local dy = box.centerY - mousePos.Y
-        return (dx * dx + dy * dy) <= 9
-    end
-
-    return mousePos.X >= box.left and mousePos.X <= (box.left + box.width)
-        and mousePos.Y >= box.top and mousePos.Y <= (box.top + box.height)
+    local w = tonumber(Settings.CamlockFOVWidth)  or 200
+    local h = tonumber(Settings.CamlockFOVHeight) or 200
+    return isInsideFixedBox(cam, part, w * 0.5, h * 0.5)
 end
 
 local function isPartInTriggerDistance(part)
     if not part then return false end
     local maxDistance = tonumber(Settings.TriggerbotDistance) or 210
     if maxDistance <= 0 then return true end
-
-    local char = LP.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local char   = LP.Character
+    local root   = char and char:FindFirstChild("HumanoidRootPart")
     local origin = root and root.Position or (Camera and Camera.CFrame.Position)
     if not origin then return false end
-
-    local diff = part.Position - origin
-    return (diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z) <= (maxDistance * maxDistance)
+    local d = part.Position - origin
+    return (d.X * d.X + d.Y * d.Y + d.Z * d.Z) <= (maxDistance * maxDistance)
 end
 
 local function isPartInCamlockDistance(part)
     if not part then return false end
     local maxDistance = tonumber(Settings.CamlockDistance) or 300
     if maxDistance <= 0 then return true end
-
-    local char = LP.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local char   = LP.Character
+    local root   = char and char:FindFirstChild("HumanoidRootPart")
     local origin = root and root.Position or (Camera and Camera.CFrame.Position)
     if not origin then return false end
+    local d = part.Position - origin
+    return (d.X * d.X + d.Y * d.Y + d.Z * d.Z) <= (maxDistance * maxDistance)
+end
 
-    local diff = part.Position - origin
-    return (diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z) <= (maxDistance * maxDistance)
+-- ── Silent Aim FOV ────────────────────────────────────────────────────────────
+-- Gates whether the shot redirect should fire:
+--   SilentAimFOVEnabled = false  → no gate, always redirect (default behaviour)
+--   SilentAimFOVEnabled = true   → only redirect when target is inside the box
+--   SilentAimIgnoreFOV  = true   → bypass — always redirect regardless of box
+local function isPartInsideSilentAimFOV(part)
+    if not Settings.SilentAimFOVEnabled then return true end
+    if Settings.SilentAimIgnoreFOV       then return true end
+    if not part then return false end
+    local cam = workspace.CurrentCamera
+    if not cam then return false end
+    local sp, onScreen = cam:WorldToViewportPoint(part.Position)
+    if not onScreen or sp.Z <= 0 then return false end
+    local mp = UIS:GetMouseLocation()
+    local hw = (tonumber(Settings.SilentAimFOVWidth)  or 200) * 0.5
+    local hh = (tonumber(Settings.SilentAimFOVHeight) or 200) * 0.5
+    return math.abs(sp.X - mp.X) <= hw
+        and math.abs(sp.Y - mp.Y) <= hh
 end
 
 local function applyEase(t, style, direction)
@@ -215,13 +168,10 @@ end
 
 local function fireTriggerbotAtPart(part)
     if not part then return end
-
     local equippedTool = Movement.getEquippedTool()
     if not equippedTool then return end
     if Movement.isKnifeTool(equippedTool) then return end
-
-    local char = LP.Character
-    if Movement.getReloadingFlag(char) then return end
+    if Movement.getReloadingFlag() then return end
     if not canTriggerbotShootNow() then return end
 
     local now = os.clock()
@@ -236,45 +186,32 @@ local function fireTriggerbotAtPart(part)
 end
 
 local function runTriggerbot(part)
-    if not Settings.TriggerbotEnabled then return nil end
-    if not isTriggerbotArmed() then return nil end
-    if not part then return nil end
-
-    Camera = workspace.CurrentCamera
-    if not isPartInTriggerDistance(part) then return nil end
-
-    local box = getTriggerbotBoxForPart(part)
-    if not isPartInsideTriggerFOV(part, box) then return box end
-    if not canTriggerbotShootNow() then return box end
-
+    if not Settings.TriggerbotEnabled then return end
+    if not isTriggerbotArmed() then return end
+    if not part then return end
+    if not isPartInTriggerDistance(part) then return end
+    if not isPartInsideTriggerFOV(part) then return end
+    if not canTriggerbotShootNow() then return end
     fireTriggerbotAtPart(part)
-    return box
 end
 
 local function runCamlock(part)
-    if not Settings.CamlockEnabled then return nil end
-    if not isCamlockArmed() then return nil end
-    if not part then return nil end
-    if not isPartInCamlockDistance(part) then return nil end
-
-    Camera = workspace.CurrentCamera
-
+    if not Settings.CamlockEnabled then return end
+    if not isCamlockArmed() then return end
+    if not part then return end
+    if not isPartInCamlockDistance(part) then return end
+    if not isPartInsideCamlockFOV(part) then return end
+    local cam = workspace.CurrentCamera
+    if not cam then return end
+    Camera = cam
     local lookAtPos = part.Position
     local resolvedPos, resolvedPart = getCamlockAimPosition(part)
     if resolvedPos then lookAtPos = resolvedPos end
     if resolvedPart then part = resolvedPart end
-
-    local box = getCamlockBoxForPart(part)
-    if not isPartInsideCamlockFOV(part, box) then return box end
-
-    local camPos = Camera and Camera.CFrame.Position
-    if not camPos then return box end
-
-    local desired = CFrame.new(camPos, lookAtPos)
-    local smooth = tonumber(Settings.CamlockSmoothness) or 0.043
-    local alpha = applyEase(smooth, Settings.CamlockEasingStyle, Settings.CamlockEasingDirection)
-    Camera.CFrame = Camera.CFrame:Lerp(desired, math.clamp(alpha, 0, 1))
-    return box
+    local desired = CFrame.new(cam.CFrame.Position, lookAtPos)
+    local smooth  = tonumber(Settings.CamlockSmoothness) or 0.043
+    local alpha   = applyEase(smooth, Settings.CamlockEasingStyle, Settings.CamlockEasingDirection)
+    cam.CFrame    = cam.CFrame:Lerp(desired, math.clamp(alpha, 0, 1))
 end
 
 local function init(deps)
@@ -286,12 +223,13 @@ local function init(deps)
     Movement = deps.Movement
 end
 
-AimAssist.init = init
-AimAssist.runTriggerbot = runTriggerbot
-AimAssist.runCamlock = runCamlock
-AimAssist.getTriggerbotBoxForPart = getTriggerbotBoxForPart
-AimAssist.getCamlockBoxForPart = getCamlockBoxForPart
-AimAssist.isPartInTriggerDistance = isPartInTriggerDistance
-AimAssist.isPartInCamlockDistance = isPartInCamlockDistance
+AimAssist.init                     = init
+AimAssist.runTriggerbot            = runTriggerbot
+AimAssist.runCamlock               = runCamlock
+AimAssist.isPartInsideTriggerFOV   = isPartInsideTriggerFOV
+AimAssist.isPartInsideCamlockFOV   = isPartInsideCamlockFOV
+AimAssist.isPartInsideSilentAimFOV = isPartInsideSilentAimFOV
+AimAssist.isPartInTriggerDistance  = isPartInTriggerDistance
+AimAssist.isPartInCamlockDistance  = isPartInCamlockDistance
 
 return AimAssist

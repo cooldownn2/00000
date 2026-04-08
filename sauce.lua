@@ -230,10 +230,11 @@ Features.init(mergeDeps({
 
 Taps.init(mergeDeps({}))
 Hooks.init(mergeDeps({
-    oldShoot       = oldShoot,
-    mt             = mt,
-    oldNamecall    = oldNamecall,
-    Taps           = Taps,
+    oldShoot                 = oldShoot,
+    mt                       = mt,
+    oldNamecall              = oldNamecall,
+    Taps                     = Taps,
+    isPartInsideSilentAimFOV = AimAssist.isPartInsideSilentAimFOV,
 }))
 
 Hooks.install()
@@ -420,27 +421,16 @@ connect(RunService.RenderStepped, function(deltaTime)
     local equippedTool = (Settings.SpeedEnabled and State.SpeedActive) and Features.getEquippedTool() or nil
     Features.applySpeedModification(equippedTool, deltaTime)
 
-    local needCamlockScan = Settings.CamlockEnabled
-        and (Settings.CamlockFOVVisualizeEnabled
-            or State.CamlockHoldActive
-            or State.CamlockToggleActive)
-    local camlockPart, camlockBox = nil, nil
-    if needCamlockScan then
-        camlockPart = getClosestCamlockPart()
-        camlockBox  = Features.runCamlock(camlockPart)
+    if Settings.CamlockEnabled and (State.CamlockHoldActive or State.CamlockToggleActive) then
+        Features.runCamlock(getClosestCamlockPart())
     end
-    Features.updateCamlockFOVBox(camlockPart, camlockBox)
+    Features.updateCamlockFOVBox()
 
-    local needTriggerbotScan = Settings.TriggerbotEnabled
-        and (Settings.TriggerbotFOVVisualizeEnabled
-            or State.TriggerbotHoldActive
-            or State.TriggerbotToggleActive)
-    local triggerbotPart, triggerbotBox = nil, nil
-    if needTriggerbotScan then
-        triggerbotPart = getClosestTriggerbotPart()
-        triggerbotBox  = Features.runTriggerbot(triggerbotPart)
+    if Settings.TriggerbotEnabled and (State.TriggerbotHoldActive or State.TriggerbotToggleActive) then
+        Features.runTriggerbot(getClosestTriggerbotPart())
     end
-    Features.updateTriggerbotFOVBox(triggerbotPart, triggerbotBox)
+    Features.updateTriggerbotFOVBox()
+    Features.updateSilentAimFOVBox()
     if not isTargetFeatureAllowed() then
         hideUI()
         if State.Enabled or State.LockedTarget then

@@ -34,6 +34,14 @@ local function applyUserConfig(settings, userConfig)
         { {"Silent Aim","Checks","Persist Lock On Death"}, {"Main","Checks","Target","Persist Lock On Death"} },
         { {"Silent Aim","Checks","Death Check"},         {"Main","Checks","Target","Death Check"} },
 
+        -- Silent Aim FOV
+        { {"Silent Aim","FOV","Enabled"},                  {"Silent Aim","FOV","Enabled"} },
+        { {"Silent Aim","FOV","Width"},                    {"Silent Aim","FOV","Width"} },
+        { {"Silent Aim","FOV","Height"},                   {"Silent Aim","FOV","Height"} },
+        { {"Silent Aim","FOV","Visualize","Enabled"},      {"Silent Aim","FOV","Visualize","Enabled"} },
+        { {"Silent Aim","FOV","Visualize","Color"},        {"Silent Aim","FOV","Visualize","Color"} },
+        { {"Silent Aim","FOV","Ignore"},                   {"Silent Aim","FOV","Ignore"} },
+
         -- Camlock
         { {"Camlock","Enabled"},                             {"Camlock","Enabled"} },
         { {"Camlock","Distance"},                            {"Camlock","Distance"} },
@@ -206,6 +214,8 @@ local function validateSettings(Settings)
     expectEnum("Hotkeys.ToggleStyle", S.HotkeysToggleStyle, {"pill","dot","none"})
     expectEnum("Triggerbot.FOV.Type", S.TriggerbotFOVType, {"Box","Direct"})
     expectEnum("Camlock.FOV.Type", S.CamlockFOVType, {"Box","Direct"})
+    expectType("Silent Aim.FOV.Enabled", S.SilentAimFOVEnabled, "boolean")
+    expectType("Silent Aim.FOV.Ignore",  S.SilentAimIgnoreFOV,  "boolean")
 
     if type(S.Taps) == "table" then
         for weaponName, entry in pairs(S.Taps) do

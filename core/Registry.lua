@@ -62,6 +62,13 @@ local SettingPaths = {
     CamlockFOVVisualizeColor    = {"Camlock", "Visualize", "Color"},
     CamlockFOVVisualizeHover    = {"Camlock", "Visualize", "Change Color On Hover"},
 
+    SilentAimFOVEnabled          = {"Silent Aim", "FOV", "Enabled"},
+    SilentAimFOVWidth            = {"Silent Aim", "FOV", "Width"},
+    SilentAimFOVHeight           = {"Silent Aim", "FOV", "Height"},
+    SilentAimFOVVisualizeEnabled = {"Silent Aim", "FOV", "Visualize", "Enabled"},
+    SilentAimFOVVisualizeColor   = {"Silent Aim", "FOV", "Visualize", "Color"},
+    SilentAimIgnoreFOV           = {"Silent Aim", "FOV", "Ignore"},
+
     HotkeysEnabled              = {"Hotkeys", "Enabled"},
     HotkeysTitle                = {"Hotkeys", "Title"},
     HotkeysX                    = {"Hotkeys", "Position", "X"},
