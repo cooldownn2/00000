@@ -2,126 +2,118 @@ local DrawingLib = rawget(_G, "Drawing")
 
 local FOVBoxes = {}
 
-local Settings, Camera, UIS
+local Settings, UIS
+local getTriggerbotBoxForPart, getCamlockBoxForPart
 
--- Module-level constant — avoids allocating a new Color3 every frame.
-local DEFAULT_WHITE = Color3.fromRGB(255, 255, 255)
+local TriggerbotFOVBox = nil
+local CamlockFOVBox = nil
 
--- ── Slot ─────────────────────────────────────────────────────────────────────
--- One slot per feature. Caches the last written property values so we skip
--- redundant engine property writes on frames where nothing changed.
-local function newSlot()
-    return { obj = nil, lx = -1e9, ly = -1e9, lw = -1, lh = -1, lc = false }
+local function hideTriggerbotFOVBox()
+    if TriggerbotFOVBox then TriggerbotFOVBox.Visible = false end
 end
 
-local TB = newSlot()  -- Triggerbot
-local CL = newSlot()  -- Camlock
-local SA = newSlot()  -- Silent Aim
-
-local function ensureObj(slot)
-    if slot.obj or not DrawingLib then return end
-    local ok, b = pcall(DrawingLib.new, "Square")
-    if not ok or not b then return end
-    b.Visible      = false
-    b.Filled       = false
-    b.Thickness    = 1
-    b.Transparency = 1
-    b.Color        = DEFAULT_WHITE
-    slot.obj = b
+local function ensureTriggerbotFOVBox()
+    if TriggerbotFOVBox or not DrawingLib then return end
+    local ok, box = pcall(function() return DrawingLib.new("Square") end)
+    if not ok or not box then return end
+    box.Visible = false
+    box.Filled = false
+    box.Thickness = 1
+    box.Transparency = 1
+    box.Color = Color3.fromRGB(255, 255, 255)
+    TriggerbotFOVBox = box
 end
 
-local function hideSlot(slot)
-    local b = slot.obj
-    if b and b.Visible then b.Visible = false end
+local function updateTriggerbotFOVBox(part, precomputedBox)
+    if not Settings.TriggerbotFOVVisualizeEnabled then hideTriggerbotFOVBox(); return end
+    ensureTriggerbotFOVBox()
+    if not TriggerbotFOVBox then return end
+    if not part then hideTriggerbotFOVBox(); return end
+
+    local box = precomputedBox or getTriggerbotBoxForPart(part)
+    if not box then hideTriggerbotFOVBox(); return end
+
+    TriggerbotFOVBox.Size = Vector2.new(box.width, box.height)
+    TriggerbotFOVBox.Position = Vector2.new(box.left, box.top)
+
+    local baseColor = Settings.TriggerbotFOVVisualizeColor or Color3.fromRGB(255, 255, 255)
+    local hoverEnabled = Settings.TriggerbotFOVVisualizeHover ~= false
+    local mousePos = UIS:GetMouseLocation()
+    local isHovering = mousePos.X >= box.left and mousePos.X <= (box.left + box.width)
+        and mousePos.Y >= box.top and mousePos.Y <= (box.top + box.height)
+
+    TriggerbotFOVBox.Color = (isHovering and hoverEnabled) and (Settings.SelectionColor or baseColor) or baseColor
+    TriggerbotFOVBox.Visible = true
 end
 
--- Draws a fixed-pixel FOV box centered at the current mouse position.
--- The box size DOES NOT scale with target distance — it is always the
--- configured pixel size. All three feature slots share this one body.
-local function updateSlot(slot, enabledKey, wKey, hKey, colorKey)
-    if not Settings[enabledKey] then hideSlot(slot); return end
-    if not Camera or not UIS then hideSlot(slot); return end
-    ensureObj(slot)
-    local obj = slot.obj
-    if not obj then return end
-
-    local w  = tonumber(Settings[wKey]) or 200
-    local h  = tonumber(Settings[hKey]) or 200
-    local mp = UIS:GetMouseLocation()
-    local lx = mp.X - w * 0.5
-    local ly = mp.Y - h * 0.5
-
-    -- Gate property writes: only assign when the value has actually changed.
-    if w ~= slot.lw or h ~= slot.lh then
-        obj.Size     = Vector2.new(w, h)
-        slot.lw, slot.lh = w, h
-    end
-    if lx ~= slot.lx or ly ~= slot.ly then
-        obj.Position = Vector2.new(lx, ly)
-        slot.lx, slot.ly = lx, ly
-    end
-
-    local c = Settings[colorKey] or DEFAULT_WHITE
-    if c ~= slot.lc then
-        obj.Color = c
-        slot.lc   = c
-    end
-
-    obj.Visible = true
+local function hideCamlockFOVBox()
+    if CamlockFOVBox then CamlockFOVBox.Visible = false end
 end
 
--- ── Public API ────────────────────────────────────────────────────────────────
-
-local function updateTriggerbotFOVBox()
-    updateSlot(TB,
-        "TriggerbotFOVVisualizeEnabled",
-        "TriggerbotFOVWidth", "TriggerbotFOVHeight",
-        "TriggerbotFOVVisualizeColor")
+local function ensureCamlockFOVBox()
+    if CamlockFOVBox or not DrawingLib then return end
+    local ok, box = pcall(function() return DrawingLib.new("Square") end)
+    if not ok or not box then return end
+    box.Visible = false
+    box.Filled = false
+    box.Thickness = 1
+    box.Transparency = 1
+    box.Color = Color3.fromRGB(255, 255, 255)
+    CamlockFOVBox = box
 end
 
-local function updateCamlockFOVBox()
-    updateSlot(CL,
-        "CamlockFOVVisualizeEnabled",
-        "CamlockFOVWidth", "CamlockFOVHeight",
-        "CamlockFOVVisualizeColor")
-end
+local function updateCamlockFOVBox(part, precomputedBox)
+    if not Settings.CamlockFOVVisualizeEnabled then hideCamlockFOVBox(); return end
+    ensureCamlockFOVBox()
+    if not CamlockFOVBox then return end
+    if not part then hideCamlockFOVBox(); return end
 
-local function updateSilentAimFOVBox()
-    updateSlot(SA,
-        "SilentAimFOVVisualizeEnabled",
-        "SilentAimFOVWidth", "SilentAimFOVHeight",
-        "SilentAimFOVVisualizeColor")
-end
+    local box = precomputedBox or getCamlockBoxForPart(part)
+    if not box then hideCamlockFOVBox(); return end
 
-local function hideTriggerbotFOVBox() hideSlot(TB) end
-local function hideCamlockFOVBox()    hideSlot(CL) end
-local function hideSilentAimFOVBox()  hideSlot(SA) end
+    CamlockFOVBox.Size = Vector2.new(box.width, box.height)
+    CamlockFOVBox.Position = Vector2.new(box.left, box.top)
+
+    local baseColor = Settings.CamlockFOVVisualizeColor or Color3.fromRGB(255, 255, 255)
+    local hoverEnabled = Settings.CamlockFOVVisualizeHover == true
+    local mousePos = UIS:GetMouseLocation()
+    local isHovering = mousePos.X >= box.left and mousePos.X <= (box.left + box.width)
+        and mousePos.Y >= box.top and mousePos.Y <= (box.top + box.height)
+
+    CamlockFOVBox.Color = (isHovering and hoverEnabled) and (Settings.SelectionColor or baseColor) or baseColor
+    CamlockFOVBox.Visible = true
+end
 
 local function cleanupFOVBox()
-    for _, slot in ipairs({ TB, CL, SA }) do
-        if slot.obj then
-            pcall(function()
-                slot.obj.Visible = false
-                slot.obj:Remove()
-            end)
-            slot.obj = nil
-        end
+    if TriggerbotFOVBox then
+        pcall(function()
+            TriggerbotFOVBox.Visible = false
+            TriggerbotFOVBox:Remove()
+        end)
+        TriggerbotFOVBox = nil
+    end
+
+    if CamlockFOVBox then
+        pcall(function()
+            CamlockFOVBox.Visible = false
+            CamlockFOVBox:Remove()
+        end)
+        CamlockFOVBox = nil
     end
 end
 
 local function init(deps)
     Settings = deps.Settings
-    Camera   = deps.Camera
-    UIS      = deps.UIS
+    UIS = deps.UIS
+    getTriggerbotBoxForPart = deps.getTriggerbotBoxForPart
+    getCamlockBoxForPart = deps.getCamlockBoxForPart
 end
 
-FOVBoxes.init                   = init
+FOVBoxes.init = init
 FOVBoxes.updateTriggerbotFOVBox = updateTriggerbotFOVBox
-FOVBoxes.updateCamlockFOVBox    = updateCamlockFOVBox
-FOVBoxes.updateSilentAimFOVBox  = updateSilentAimFOVBox
-FOVBoxes.hideTriggerbotFOVBox   = hideTriggerbotFOVBox
-FOVBoxes.hideCamlockFOVBox      = hideCamlockFOVBox
-FOVBoxes.hideSilentAimFOVBox    = hideSilentAimFOVBox
-FOVBoxes.cleanupFOVBox          = cleanupFOVBox
+FOVBoxes.updateCamlockFOVBox = updateCamlockFOVBox
+FOVBoxes.hideTriggerbotFOVBox = hideTriggerbotFOVBox
+FOVBoxes.hideCamlockFOVBox = hideCamlockFOVBox
+FOVBoxes.cleanupFOVBox = cleanupFOVBox
 
 return FOVBoxes
