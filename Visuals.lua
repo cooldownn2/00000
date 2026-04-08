@@ -674,8 +674,8 @@ local function renderInfo(cfg, bx, curY)
     curY = curY + INFO_CHIP_H + INFO_GAP
 
     -- Row 3: TB range · CAM range  (side by side) — uses extra pool slots 5+6
-    local tbText  = tbIn and "TB ✓" or "TB ✗"
-    local camText = camIn and "CAM ✓" or "CAM ✗"
+    local tbText  = tbIn and "TB ✓" or "TB ×"
+    local camText = camIn and "CAM ✓" or "CAM ×"
     local tbW     = tw(tbText, fontSize) + PAD_X * 2
     local camW    = tw(camText, fontSize) + PAD_X * 2
     local r5 = pool.info[5]
