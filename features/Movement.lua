@@ -94,7 +94,7 @@ local function applyAntiTrip(hum, root)
         if not isJumping then
             local vel = root.AssemblyLinearVelocity
             local horizontalSpeed = Vector3.new(vel.X, 0, vel.Z).Magnitude
-            if horizontalSpeed >= 150 and vel.Y > 10 then
+            if horizontalSpeed >= 60 and vel.Y > 10 then
                 root.AssemblyLinearVelocity = Vector3.new(vel.X, 0, vel.Z)
             end
         end
