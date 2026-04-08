@@ -109,8 +109,9 @@ local function applySpeedModification(tool, deltaTime)
 
     local speedData = Settings.SpeedData or {}
     local mode = resolveSpeedState(hum, tool, getReloadingFlag(char))
-    local baseSpeed = speedData[mode] or speedData["Normal"] or State.DefaultWalkSpeed or hum.WalkSpeed
-    local targetSpeed = math.max(0, baseSpeed)
+    local multiplier = speedData[mode] or speedData["Normal"] or 1
+    local defaultSpeed = State.DefaultWalkSpeed or 16
+    local targetSpeed = math.max(0, defaultSpeed * multiplier)
     local grounded = hum.FloorMaterial ~= Enum.Material.Air
 
     applyAntiTrip(hum)
