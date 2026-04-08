@@ -52,8 +52,8 @@ local function resetSpeedModification()
     wasSpeedActive = false
     local char = LP.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum and State.DefaultWalkSpeed and hum.WalkSpeed ~= State.DefaultWalkSpeed then
-        hum.WalkSpeed = State.DefaultWalkSpeed
+    if hum then
+        hum.WalkSpeed = BASE_WALK_SPEED
     end
     if hum and State.SpeedStatesPatched then
         hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
@@ -110,14 +110,6 @@ local function applySpeedModification(tool, deltaTime)
     end
 
     if not Settings.SpeedEnabled or not State.SpeedActive then
-        if wasSpeedActive then
-            -- One-time stop: bleed off boosted momentum when speed is toggled off
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            if root then
-                local vel = root.AssemblyLinearVelocity
-                root.AssemblyLinearVelocity = Vector3.new(0, vel.Y, 0)
-            end
-        end
         resetSpeedModification()
         return
     end
