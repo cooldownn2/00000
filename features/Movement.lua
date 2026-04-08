@@ -60,7 +60,8 @@ local function restoreAntiTripStates(hum)
 end
 
 -- Runs every frame independently of speed. Keeps the character upright.
-local function applyAntiTrip(hum)
+-- root is passed so we can clamp upward velocity spikes from geometry collisions.
+local function applyAntiTrip(hum, root)
     if Settings.AntiTripEnabled == false then
         restoreAntiTripStates(hum)
         return
@@ -82,6 +83,16 @@ local function applyAntiTrip(hum)
         or currentState == Enum.HumanoidStateType.PlatformStanding then
         hum:ChangeState(Enum.HumanoidStateType.GettingUp)
         hum:ChangeState(Enum.HumanoidStateType.Running)
+    end
+
+    -- Clamp upward velocity spikes caused by hitting geometry at high speed.
+    -- When grounded, any Y velocity above a small threshold means a collision
+    -- flung us — zero it out immediately so we stay on the ground.
+    if root and hum.FloorMaterial ~= Enum.Material.Air then
+        local vel = root.AssemblyLinearVelocity
+        if vel.Y > 10 then
+            root.AssemblyLinearVelocity = Vector3.new(vel.X, 0, vel.Z)
+        end
     end
 end
 
@@ -114,7 +125,8 @@ local function applySpeedModification(tool, deltaTime)
     end
 
     -- Anti-trip always runs when char exists, regardless of speed toggle
-    applyAntiTrip(hum)
+    local root = char:FindFirstChild("HumanoidRootPart")
+    applyAntiTrip(hum, root)
 
     if not Settings.SpeedEnabled or not State.SpeedActive then
         resetSpeedModification()
@@ -132,7 +144,6 @@ local function applySpeedModification(tool, deltaTime)
 
     hum.WalkSpeed = lerpedSpeed
 
-    local root = char:FindFirstChild("HumanoidRootPart")
     if root then
         local moveDir = hum.MoveDirection
         local vel = root.AssemblyLinearVelocity
