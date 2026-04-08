@@ -2,10 +2,11 @@ local TargetLine = {}
 
 local Settings
 local line
+local drawingApi = rawget(_G, "Drawing")
 
 local function ensureLine()
-    if line or not Drawing then return end
-    line = Drawing.new("Line")
+    if line or type(drawingApi) ~= "table" then return end
+    line = drawingApi.new("Line")
     line.Visible      = false
     line.Color        = Settings.LineColor or Color3.fromRGB(0, 255, 255)
     line.Thickness    = 1
