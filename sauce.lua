@@ -399,7 +399,7 @@ connect(RunService.RenderStepped, function(deltaTime)
     enforceDeathCheckOnCurrentLock()
     ESP.updateEsp()
     Visuals.update()
-    local equippedTool = Features.getEquippedTool()
+    local equippedTool = (Settings.SpeedEnabled and State.SpeedActive) and Features.getEquippedTool() or nil
     Features.applySpeedModification(equippedTool, deltaTime)
 
     local needCamlockScan = Settings.CamlockEnabled
