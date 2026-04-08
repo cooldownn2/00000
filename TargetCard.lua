@@ -1,3 +1,6 @@
+-- MOVED: this file has been relocated to ui/TargetCard.lua
+error("[sauce] TargetCard.lua has moved to ui/TargetCard.lua — update your load() path.", 2)
+
 local TweenService  = game:GetService("TweenService")
 local TextService   = game:GetService("TextService")
 local Players       = game:GetService("Players")

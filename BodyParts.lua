@@ -1,3 +1,6 @@
+-- MOVED: this file has been relocated to core/BodyParts.lua
+error("[sauce] BodyParts.lua has moved to core/BodyParts.lua — update your load() path.", 2)
+
 local BODY_PART_NAMES = {
     Head = true,
     Humanoid = true,

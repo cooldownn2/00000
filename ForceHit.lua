@@ -1,3 +1,6 @@
+-- MOVED: this file has been relocated to aim/ForceHit.lua
+error("[sauce] ForceHit.lua has moved to aim/ForceHit.lua — update your load() path.", 2)
+
 local Players = game:GetService("Players")
 local LP      = Players.LocalPlayer
 

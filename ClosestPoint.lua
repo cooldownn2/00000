@@ -1,3 +1,6 @@
+-- MOVED: this file has been relocated to aim/ClosestPoint.lua
+error("[sauce] ClosestPoint.lua has moved to aim/ClosestPoint.lua — update your load() path.", 2)
+
 local UIS = game:GetService("UserInputService")
 
 local Camera, Settings, State, BODY_PART_NAMES

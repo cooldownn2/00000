@@ -1,3 +1,6 @@
+-- MOVED: this file has been relocated to core/Hooks.lua
+error("[sauce] Hooks.lua has moved to core/Hooks.lua — update your load() path.", 2)
+
 local State, Settings, safeCall
 local GH, MainEvent, oldShoot, mt, oldNamecall
 local cloneArgs, applyRangePolicy, getSpreadAimPosition

@@ -1,3 +1,5 @@
+-- MOVED: this file has been relocated to core/DelayChanger.lua
+error("[sauce] DelayChanger.lua has moved to core/DelayChanger.lua — update your load() path.", 2)
 
 local LP = game:GetService("Players").LocalPlayer
 

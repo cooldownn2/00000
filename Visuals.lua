@@ -1,3 +1,6 @@
+-- MOVED: this file has been relocated to ui/Visuals.lua
+error("[sauce] Visuals.lua has moved to ui/Visuals.lua — update your load() path.", 2)
+
 local Visuals = {}
 
 local UIS = game:GetService("UserInputService")

@@ -1,3 +1,6 @@
+-- MOVED: this file has been relocated to ui/ESP.lua
+error("[sauce] ESP.lua has moved to ui/ESP.lua — update your load() path.", 2)
+
 local Players   = game:GetService("Players")
 local LP        = Players.LocalPlayer
 

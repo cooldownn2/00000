@@ -1,3 +1,6 @@
+-- MOVED: this file has been relocated to core/Registry.lua
+error("[sauce] Registry.lua has moved to core/Registry.lua — update your load() path.", 2)
+
 local settings = {}
 
 local SettingPaths = {

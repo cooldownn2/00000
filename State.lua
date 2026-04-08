@@ -1,3 +1,6 @@
+-- MOVED: this file has been relocated to core/State.lua
+error("[sauce] State.lua has moved to core/State.lua — update your load() path.", 2)
+
 local State = {
     FakePart             = nil,
     FakePos              = nil,
