@@ -86,12 +86,17 @@ local function applyAntiTrip(hum, root)
     end
 
     -- Only clamp upward fling spikes when moving at high speed (150+ studs/s horizontal).
-    -- Below that threshold the player can still fling themselves intentionally.
+    -- Skip entirely if the player is jumping so we don't cancel jump velocity.
     if root and hum.FloorMaterial ~= Enum.Material.Air then
-        local vel = root.AssemblyLinearVelocity
-        local horizontalSpeed = Vector3.new(vel.X, 0, vel.Z).Magnitude
-        if horizontalSpeed >= 150 and vel.Y > 10 then
-            root.AssemblyLinearVelocity = Vector3.new(vel.X, 0, vel.Z)
+        local state = hum:GetState()
+        local isJumping = state == Enum.HumanoidStateType.Jumping
+            or state == Enum.HumanoidStateType.Freefall
+        if not isJumping then
+            local vel = root.AssemblyLinearVelocity
+            local horizontalSpeed = Vector3.new(vel.X, 0, vel.Z).Magnitude
+            if horizontalSpeed >= 150 and vel.Y > 10 then
+                root.AssemblyLinearVelocity = Vector3.new(vel.X, 0, vel.Z)
+            end
         end
     end
 end
