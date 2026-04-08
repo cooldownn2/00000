@@ -10,7 +10,9 @@ local MOUSE1 = Enum.UserInputType.MouseButton1
 local GROUND_BRAKE_FACTOR = 0.93
 local MOVE_INPUT_THRESHOLD = 0.05
 local BASE_WALK_SPEED = 16
+
 local lerpedSpeed = 0
+local wasSpeedActive = false
 local function getEquippedTool()
     local char = LP.Character
     return char and char:FindFirstChildOfClass("Tool") or nil
@@ -47,15 +49,11 @@ end
 
 local function resetSpeedModification()
     lerpedSpeed = 0
+    wasSpeedActive = false
     local char = LP.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if hum and State.DefaultWalkSpeed and hum.WalkSpeed ~= State.DefaultWalkSpeed then
         hum.WalkSpeed = State.DefaultWalkSpeed
-    end
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if root then
-        local vel = root.AssemblyLinearVelocity
-        root.AssemblyLinearVelocity = Vector3.new(0, vel.Y, 0)
     end
     if hum and State.SpeedStatesPatched then
         hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
@@ -111,9 +109,18 @@ local function applySpeedModification(tool, deltaTime)
     end
 
     if not Settings.SpeedEnabled or not State.SpeedActive then
+        if wasSpeedActive then
+            -- One-time stop: bleed off boosted momentum when speed is toggled off
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if root then
+                local vel = root.AssemblyLinearVelocity
+                root.AssemblyLinearVelocity = Vector3.new(0, vel.Y, 0)
+            end
+        end
         resetSpeedModification()
         return
     end
+    wasSpeedActive = true
 
     local speedData = Settings.SpeedData or {}
     local mode = resolveSpeedState(hum, tool, getReloadingFlag(char))
