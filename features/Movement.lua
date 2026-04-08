@@ -149,10 +149,21 @@ local function applySpeedModification(tool, deltaTime)
 
     if grounded then
         local root = cachedRoot
-        if root and hum.MoveDirection.Magnitude < MOVE_INPUT_THRESHOLD then
+        if root then
             local vel = root.AssemblyLinearVelocity
-            local brakeFactor = GROUND_BRAKE_FACTOR ^ (dt * 60)
-            root.AssemblyLinearVelocity = Vector3.new(vel.X * brakeFactor, vel.Y, vel.Z * brakeFactor)
+            local moveDir = hum.MoveDirection
+            if moveDir.Magnitude >= MOVE_INPUT_THRESHOLD then
+                -- Directly set horizontal velocity to match the current lerped speed,
+                -- bypassing Roblox's internal humanoid physics cap.
+                root.AssemblyLinearVelocity = Vector3.new(
+                    moveDir.X * newSpeed,
+                    vel.Y,
+                    moveDir.Z * newSpeed
+                )
+            else
+                local brakeFactor = GROUND_BRAKE_FACTOR ^ (dt * 60)
+                root.AssemblyLinearVelocity = Vector3.new(vel.X * brakeFactor, vel.Y, vel.Z * brakeFactor)
+            end
         end
     end
 end
