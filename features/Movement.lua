@@ -1,0 +1,167 @@
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+
+local Movement = {}
+
+local LP = Players.LocalPlayer
+local Settings, State
+
+local MOUSE1 = Enum.UserInputType.MouseButton1
+local SPEED_MULTIPLIER = 15
+local GROUND_BRAKE_FACTOR = 0.93
+local MOVE_INPUT_THRESHOLD = 0.05
+
+local function getEquippedTool()
+    local char = LP.Character
+    return char and char:FindFirstChildOfClass("Tool") or nil
+end
+
+local function isKnifeTool(tool)
+    return tool and string.find(string.lower(tool.Name), "knife", 1, true) ~= nil
+end
+
+local function getReloadingFlag(char)
+    if not char then return false end
+    local bodyEffects = char:FindFirstChild("BodyEffects")
+    if not bodyEffects then return false end
+    local flag = bodyEffects:FindFirstChild("Reload") or bodyEffects:FindFirstChild("Reloading")
+    if not flag then return false end
+    if flag:IsA("BoolValue") then return flag.Value end
+    if flag:IsA("NumberValue") or flag:IsA("IntValue") then return flag.Value > 0 end
+    return false
+end
+
+local function resolveSpeedState(humanoid, tool, isReloading)
+    local mode = "Normal"
+    if tool and string.find(string.lower(tool.Name), "knife", 1, true) then
+        mode = "Knife"
+    elseif isReloading then
+        mode = "Reloading"
+    elseif humanoid.MaxHealth > 0 and humanoid.Health <= (humanoid.MaxHealth * 0.35) then
+        mode = "Low Health"
+    elseif tool and UIS:IsMouseButtonPressed(MOUSE1) then
+        mode = "Shooting"
+    end
+    return mode
+end
+
+local function resetSpeedModification()
+    local char = LP.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum and State.DefaultWalkSpeed and hum.WalkSpeed ~= State.DefaultWalkSpeed then
+        hum.WalkSpeed = State.DefaultWalkSpeed
+    end
+    if hum and State.SpeedStatesPatched then
+        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+        hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+        State.SpeedStatesPatched = false
+    end
+end
+
+local function applyAntiTrip(hum)
+    if Settings.AntiTripEnabled == false then
+        if State.SpeedStatesPatched then
+            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+            State.SpeedStatesPatched = false
+        end
+        return
+    end
+
+    if not State.SpeedStatesPatched then
+        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+        hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+        State.SpeedStatesPatched = true
+    end
+
+    if hum.PlatformStand then hum.PlatformStand = false end
+    if hum.Sit then hum.Sit = false end
+
+    local currentState = hum:GetState()
+    if currentState == Enum.HumanoidStateType.FallingDown
+        or currentState == Enum.HumanoidStateType.Ragdoll
+        or currentState == Enum.HumanoidStateType.Physics
+        or currentState == Enum.HumanoidStateType.PlatformStanding then
+        hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+        hum:ChangeState(Enum.HumanoidStateType.Running)
+    end
+end
+
+local function applySpeedModification(tool, deltaTime)
+    local char = LP.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not char or not hum then
+        State.SpeedCharacter = nil
+        State.DefaultWalkSpeed = nil
+        State.SpeedStatesPatched = false
+        return
+    end
+
+    if State.SpeedCharacter ~= char then
+        State.SpeedCharacter = char
+        State.DefaultWalkSpeed = hum.WalkSpeed
+        State.SpeedStatesPatched = false
+    end
+
+    if not Settings.SpeedEnabled or not State.SpeedActive then
+        resetSpeedModification()
+        return
+    end
+
+    local speedData = Settings.SpeedData or {}
+    local mode = resolveSpeedState(hum, tool, getReloadingFlag(char))
+    local baseSpeed = speedData[mode] or speedData["Normal"] or State.DefaultWalkSpeed or hum.WalkSpeed
+    local targetSpeed = math.max(0, baseSpeed * SPEED_MULTIPLIER)
+    local grounded = hum.FloorMaterial ~= Enum.Material.Air
+
+    applyAntiTrip(hum)
+    if hum.WalkSpeed ~= targetSpeed then hum.WalkSpeed = targetSpeed end
+
+    if grounded then
+        local moveDir = hum.MoveDirection
+        if moveDir.Magnitude < MOVE_INPUT_THRESHOLD then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root then
+                local vel = root.AssemblyLinearVelocity
+                local dtScale = math.max((deltaTime or (1 / 60)) * 60, 0)
+                local brakeFactor = GROUND_BRAKE_FACTOR ^ dtScale
+                root.AssemblyLinearVelocity = Vector3.new(vel.X * brakeFactor, vel.Y, vel.Z * brakeFactor)
+            end
+        end
+    end
+end
+
+local function panicGround()
+    if Settings.PanicGroundEnabled == false then return end
+    local char = LP.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not char or not hum or not root then return end
+    if hum.FloorMaterial ~= Enum.Material.Air then return end
+
+    local currentVel = root.AssemblyLinearVelocity
+    local horizontal = Vector3.new(currentVel.X, 0, currentVel.Z)
+    local moveDir = hum.MoveDirection
+    if moveDir.Magnitude > 0.05 then
+        local baseWalk = State.DefaultWalkSpeed or 16
+        local desiredHorizontal = moveDir.Unit * math.max(baseWalk * 2.4, hum.WalkSpeed, 48)
+        horizontal = desiredHorizontal
+    end
+
+    root.AssemblyLinearVelocity = Vector3.new(horizontal.X, math.min(currentVel.Y, -650), horizontal.Z)
+end
+
+local function init(deps)
+    Settings = deps.Settings
+    State = deps.State
+end
+
+Movement.init = init
+Movement.getEquippedTool = getEquippedTool
+Movement.isKnifeTool = isKnifeTool
+Movement.getReloadingFlag = getReloadingFlag
+Movement.applySpeedModification = applySpeedModification
+Movement.resetSpeedModification = resetSpeedModification
+Movement.panicGround = panicGround
+
+return Movement

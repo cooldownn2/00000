@@ -28,6 +28,9 @@ local StateLib   = load("State")
 local ESP        = load("ESP")
 local TargetCard = load("TargetCard")
 local Features   = load("Features")
+local Movement   = load("features/Movement")
+local AimAssist  = load("features/AimAssist")
+local FOVBoxes   = load("features/FOVBoxes")
 local Hooks      = load("Hooks")
 local Visuals    = load("Visuals")
 local ForceHit      = load("ForceHit")
@@ -218,7 +221,11 @@ ESP.init(mergeDeps({ screenGui = screenGui }))
 
 TargetCard.init(mergeDeps({ screenGui = screenGui, ESP = ESP }))
 
-Features.init(mergeDeps({}))
+Features.init(mergeDeps({
+    Movement = Movement,
+    AimAssist = AimAssist,
+    FOVBoxes = FOVBoxes,
+}))
 
 Hooks.init(mergeDeps({
     oldShoot       = oldShoot,
