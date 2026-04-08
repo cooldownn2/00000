@@ -19,10 +19,11 @@ local ROW_GAP   = 5
 local FONT_SIZE = 10
 local HDR_SIZE  = 10
 local MAX_ROWS  = 3
-local TOGGLE_W  = 18
-local TOGGLE_H  = 10
+local TOGGLE_W   = 18
+local TOGGLE_H   = 10
 local TOGGLE_DOT = 8
 local TOGGLE_PAD = 1
+local TOGGLE_GAP = 10
 
 -- ═════════════════════════════════════════════════════════════════════════════
 --  LIVE COLOUR TABLE
@@ -41,32 +42,37 @@ local function resolveColors(cfg)
     local acc = co.Accent     or Color3.fromRGB(45, 100, 220)
     local bdr = co.Border     or Color3.fromRGB(200, 188, 170)
     local tgt = co.Target     or Color3.fromRGB(255, 70, 70)
-    local outl = cfg["Outline"] ~= false
+    local outl          = cfg["Outline"] ~= false
+    local textOnly      = cfg["TextToggleOnly"] == true
 
+    C.TextToggleOnly = textOnly
     C.HeaderBg       = hdr
-    C.HeaderAlpha    = 0.03
+    C.HeaderAlpha    = textOnly and 1 or 0.03
     C.ChipBg         = bg
-    C.ChipAlpha      = 0.38
+    C.ChipAlpha      = textOnly and 1 or 0.38
     C.StrokeColor    = bdr
-    C.StrokeAlpha    = outl and 0.52 or 1
-    C.StrokeThick    = outl and 1 or 0
+    C.StrokeAlpha    = textOnly and 1 or (outl and 0.52 or 1)
+    C.StrokeThick    = textOnly and 0 or (outl and 1 or 0)
     C.LabelText      = txt
     C.ValueText      = txt
     C.HeaderText     = lighten(txt, 0.05)
     C.HeaderIcon     = lighten(acc, 0.35)
-    C.ToggleOnBg     = co.ToggleOn or acc
-    C.ToggleOnAlpha  = 0.25
-    C.ToggleOffBg    = co.ToggleOff or Color3.fromRGB(70, 68, 80)
-    C.ToggleOffAlpha = 0.50
+    C.TextStrokeAlpha   = textOnly and 0.82 or 0.65
+    C.HeaderStrokeAlpha = textOnly and 0.78 or 0.60
+    C.TargetStrokeAlpha = textOnly and 0.80 or 0.62
+    C.ToggleOnBg           = co.ToggleOn or acc
+    C.ToggleOffBg          = co.ToggleOff or Color3.fromRGB(70, 68, 80)
+    C.ToggleTrackOnAlpha   = textOnly and 0.08 or 0.24
+    C.ToggleTrackOffAlpha  = textOnly and 0.20 or 0.40
     C.ToggleDot      = Color3.fromRGB(255, 255, 255)
     C.ToggleDotGlow  = lighten(co.ToggleOn or acc, 0.35)
     C.TargetBg       = darken(tgt, 0.78)
-    C.TargetAlpha    = 0.35
+    C.TargetAlpha    = textOnly and 1 or 0.35
     C.TargetText     = tgt
     C.GlassBg        = bg
-    C.GlassAlpha     = 0.38
+    C.GlassAlpha     = textOnly and 1 or 0.38
     C.GlassEdge      = lighten(bdr, 0.1)
-    C.GlassEdgeAlpha = 0.88
+    C.GlassEdgeAlpha = textOnly and 1 or 0.88
 
     -- Info row colors
     C.InfoLabelText  = darken(txt, 0.25)
@@ -494,11 +500,13 @@ local function renderHeader(cfg, bx, by, hdrW, titleStr)
         hs.Transparency = (hoverHeader or dragActive) and 0.08 or C.StrokeAlpha
         hs.Thickness    = C.StrokeThick
     end
-    pool.hIcon.Text        = cfg["Icon"] or "\226\152\133"
-    pool.hIcon.TextColor3  = C.HeaderIcon
-    pool.hTitle.TextColor3 = C.HeaderText
-    pool.hTitle.Text       = titleStr
-    pool.hTitle.Size       = UDim2.fromOffset(hdrW - 22, HEADER_H)
+    pool.hIcon.Text                    = cfg["Icon"] or "\226\152\133"
+    pool.hIcon.TextColor3              = C.HeaderIcon
+    pool.hIcon.TextStrokeTransparency  = C.HeaderStrokeAlpha
+    pool.hTitle.TextColor3             = C.HeaderText
+    pool.hTitle.TextStrokeTransparency = C.HeaderStrokeAlpha
+    pool.hTitle.Text                   = titleStr
+    pool.hTitle.Size                   = UDim2.fromOffset(hdrW - 22, HEADER_H)
 
     -- Glass backdrop
     local glassPad = 1
@@ -507,7 +515,7 @@ local function renderHeader(cfg, bx, by, hdrW, titleStr)
     bd.Size     = UDim2.fromOffset(hdrW + glassPad * 2, HEADER_H + glassPad * 2)
     bd.BackgroundColor3       = C.GlassBg or Color3.fromRGB(60, 52, 45)
     bd.BackgroundTransparency = C.GlassAlpha or 0.45
-    bd.Visible                = true
+    bd.Visible                = not C.TextToggleOnly
     local edge = pool.bdEdge
     if edge then
         edge.Color        = C.GlassEdge or Color3.fromRGB(220, 210, 195)
@@ -534,9 +542,10 @@ local function renderTarget(cfg, bx, curY)
         tc.Visible  = true
         local ts = pool.tStroke
         if ts then ts.Color = C.StrokeColor; ts.Transparency = C.StrokeAlpha; ts.Thickness = C.StrokeThick end
-        pool.tText.Text       = tn
-        pool.tText.TextColor3 = C.TargetText
-        pool.tText.Size       = UDim2.fromOffset(cachedTgtW - PAD_X, CHIP_H)
+        pool.tText.Text                    = tn
+        pool.tText.TextColor3              = C.TargetText
+        pool.tText.TextStrokeTransparency  = C.TargetStrokeAlpha
+        pool.tText.Size                    = UDim2.fromOffset(cachedTgtW - PAD_X, CHIP_H)
         return curY + CHIP_H + ROW_GAP
     else
         pool.tChip.Visible = false
@@ -594,7 +603,10 @@ local function renderInfo(cfg, bx, curY)
     elseif pct > 0.3 then hpCol = C.HPMid
     else hpCol = C.HPLow end
 
-    local chipX  = bx
+    local chipX    = bx
+    local infoAlpha = C.TextToggleOnly and 1 or (C.ChipAlpha + 0.08)
+    local infoStrokeAlpha = C.TextToggleOnly and 1 or (C.StrokeAlpha + 0.1)
+    local infoStrokeThick = C.StrokeThick
 
     local fontSize = (FONT_SIZE - 1)
     local sidePad  = 4
@@ -607,11 +619,11 @@ local function renderInfo(cfg, bx, curY)
     local r1 = pool.info[1]
     if r1 then
         r1.chip.BackgroundColor3       = C.ChipBg
-        r1.chip.BackgroundTransparency = C.ChipAlpha + 0.08
+        r1.chip.BackgroundTransparency = infoAlpha
         r1.chip.Position = UDim2.fromOffset(chipX, curY)
         r1.chip.Size     = UDim2.fromOffset(hpW, INFO_CHIP_H)
         r1.chip.Visible  = true
-        if r1.stroke then r1.stroke.Color = C.StrokeColor; r1.stroke.Transparency = C.StrokeAlpha + 0.1; r1.stroke.Thickness = C.StrokeThick end
+        if r1.stroke then r1.stroke.Color = C.StrokeColor; r1.stroke.Transparency = infoStrokeAlpha; r1.stroke.Thickness = infoStrokeThick end
         r1.label.Text = "HP"; r1.label.TextColor3 = C.InfoLabelText; r1.label.TextSize = fontSize
         r1.label.Size = UDim2.fromOffset(tw("HP", fontSize) + PAD_X, INFO_CHIP_H)
         r1.value.Text = hpText; r1.value.TextColor3 = hpCol; r1.value.TextSize = fontSize
@@ -620,11 +632,11 @@ local function renderInfo(cfg, bx, curY)
     local r2 = pool.info[2]
     if r2 then
         r2.chip.BackgroundColor3       = C.ChipBg
-        r2.chip.BackgroundTransparency = C.ChipAlpha + 0.08
+        r2.chip.BackgroundTransparency = infoAlpha
         r2.chip.Position = UDim2.fromOffset(chipX + hpW + sidePad, curY)
         r2.chip.Size     = UDim2.fromOffset(armW, INFO_CHIP_H)
         r2.chip.Visible  = true
-        if r2.stroke then r2.stroke.Color = C.StrokeColor; r2.stroke.Transparency = C.StrokeAlpha + 0.1; r2.stroke.Thickness = C.StrokeThick end
+        if r2.stroke then r2.stroke.Color = C.StrokeColor; r2.stroke.Transparency = infoStrokeAlpha; r2.stroke.Thickness = infoStrokeThick end
         r2.label.Text = armText; r2.label.TextColor3 = C.Armor; r2.label.TextSize = fontSize
         r2.label.Size = UDim2.fromOffset(armW - PAD_X, INFO_CHIP_H)
         r2.value.Text = ""; r2.value.Visible = false
@@ -638,11 +650,11 @@ local function renderInfo(cfg, bx, curY)
     local r3 = pool.info[3]
     if r3 then
         r3.chip.BackgroundColor3       = C.ChipBg
-        r3.chip.BackgroundTransparency = C.ChipAlpha + 0.08
+        r3.chip.BackgroundTransparency = infoAlpha
         r3.chip.Position = UDim2.fromOffset(chipX, curY)
         r3.chip.Size     = UDim2.fromOffset(toolW, INFO_CHIP_H)
         r3.chip.Visible  = true
-        if r3.stroke then r3.stroke.Color = C.StrokeColor; r3.stroke.Transparency = C.StrokeAlpha + 0.1; r3.stroke.Thickness = C.StrokeThick end
+        if r3.stroke then r3.stroke.Color = C.StrokeColor; r3.stroke.Transparency = infoStrokeAlpha; r3.stroke.Thickness = infoStrokeThick end
         r3.label.Text = toolName; r3.label.TextColor3 = C.InfoValueText; r3.label.TextSize = fontSize
         r3.label.Size = UDim2.fromOffset(toolW - PAD_X, INFO_CHIP_H)
         r3.value.Text = ""; r3.value.Visible = false
@@ -650,11 +662,11 @@ local function renderInfo(cfg, bx, curY)
     local r4 = pool.info[4]
     if r4 then
         r4.chip.BackgroundColor3       = C.ChipBg
-        r4.chip.BackgroundTransparency = C.ChipAlpha + 0.08
+        r4.chip.BackgroundTransparency = infoAlpha
         r4.chip.Position = UDim2.fromOffset(chipX + toolW + sidePad, curY)
         r4.chip.Size     = UDim2.fromOffset(distW, INFO_CHIP_H)
         r4.chip.Visible  = true
-        if r4.stroke then r4.stroke.Color = C.StrokeColor; r4.stroke.Transparency = C.StrokeAlpha + 0.1; r4.stroke.Thickness = C.StrokeThick end
+        if r4.stroke then r4.stroke.Color = C.StrokeColor; r4.stroke.Transparency = infoStrokeAlpha; r4.stroke.Thickness = infoStrokeThick end
         r4.label.Text = distText; r4.label.TextColor3 = C.InfoValueText; r4.label.TextSize = fontSize
         r4.label.Size = UDim2.fromOffset(distW - PAD_X, INFO_CHIP_H)
         r4.value.Text = ""; r4.value.Visible = false
@@ -669,11 +681,11 @@ local function renderInfo(cfg, bx, curY)
     local r5 = pool.info[5]
     if r5 then
         r5.chip.BackgroundColor3       = C.ChipBg
-        r5.chip.BackgroundTransparency = C.ChipAlpha + 0.08
+        r5.chip.BackgroundTransparency = infoAlpha
         r5.chip.Position = UDim2.fromOffset(chipX, curY)
         r5.chip.Size     = UDim2.fromOffset(tbW, INFO_CHIP_H)
         r5.chip.Visible  = true
-        if r5.stroke then r5.stroke.Color = C.StrokeColor; r5.stroke.Transparency = C.StrokeAlpha + 0.1; r5.stroke.Thickness = C.StrokeThick end
+        if r5.stroke then r5.stroke.Color = C.StrokeColor; r5.stroke.Transparency = infoStrokeAlpha; r5.stroke.Thickness = infoStrokeThick end
         r5.label.Text = tbText; r5.label.TextColor3 = tbIn and C.InRange or C.OutRange; r5.label.TextSize = fontSize
         r5.label.Size = UDim2.fromOffset(tbW - PAD_X, INFO_CHIP_H)
         r5.value.Text = ""; r5.value.Visible = false
@@ -681,11 +693,11 @@ local function renderInfo(cfg, bx, curY)
     local r6 = pool.info[6]
     if r6 then
         r6.chip.BackgroundColor3       = C.ChipBg
-        r6.chip.BackgroundTransparency = C.ChipAlpha + 0.08
+        r6.chip.BackgroundTransparency = infoAlpha
         r6.chip.Position = UDim2.fromOffset(chipX + tbW + sidePad, curY)
         r6.chip.Size     = UDim2.fromOffset(camW, INFO_CHIP_H)
         r6.chip.Visible  = true
-        if r6.stroke then r6.stroke.Color = C.StrokeColor; r6.stroke.Transparency = C.StrokeAlpha + 0.1; r6.stroke.Thickness = C.StrokeThick end
+        if r6.stroke then r6.stroke.Color = C.StrokeColor; r6.stroke.Transparency = infoStrokeAlpha; r6.stroke.Thickness = infoStrokeThick end
         r6.label.Text = camText; r6.label.TextColor3 = camIn and C.InRange or C.OutRange; r6.label.TextSize = fontSize
         r6.label.Size = UDim2.fromOffset(camW - PAD_X, INFO_CHIP_H)
         r6.value.Text = ""; r6.value.Visible = false
@@ -738,7 +750,7 @@ local function renderRows(cfg, bx, baseY, dt)
             r.lt.Text       = fd.label
             r.lt.TextColor3 = C.LabelText
             r.lt.TextTransparency       = ft(0, fa)
-            r.lt.TextStrokeTransparency = ft(0.65, fa)
+            r.lt.TextStrokeTransparency = ft(C.TextStrokeAlpha, fa)
             r.lt.Size = UDim2.fromOffset(labelW - PAD_X * 2, CHIP_H)
 
             -- Toggle indicator
@@ -773,16 +785,16 @@ local function renderRows(cfg, bx, baseY, dt)
                 end
                 r.toggleDot.Visible = false
             else -- "pill"
-                local pillX = inv and bx or (bx + maxLabelW + 12)
+                local pillX = inv and bx or (bx + maxLabelW + TOGGLE_GAP)
                 r.toggleGlass.Position = UDim2.fromOffset(pillX, smoothY + (CHIP_H - TG_H) / 2)
                 r.toggleGlass.Size     = UDim2.fromOffset(TG_W, TG_H)
                 r.toggleGlass.BackgroundColor3       = on and C.ToggleOnBg or C.ToggleOffBg
-                r.toggleGlass.BackgroundTransparency = ft(on and 0.72 or 0.90, fa)
+                r.toggleGlass.BackgroundTransparency = ft(on and C.ToggleTrackOnAlpha or C.ToggleTrackOffAlpha, fa)
                 r.toggleGlass.Visible = true
                 if r.glassCorner then r.glassCorner.CornerRadius = UDim.new(0, TG_H / 2) end
                 if r.glassStroke then
                     r.glassStroke.Color        = on and C.ToggleDotGlow or C.StrokeColor
-                    r.glassStroke.Transparency = ft(on and 0.35 or C.StrokeAlpha, fa)
+                    r.glassStroke.Transparency = ft(on and (C.TextToggleOnly and 0.50 or 0.35) or (C.TextToggleOnly and 0.60 or C.StrokeAlpha), fa)
                     r.glassStroke.Thickness    = C.StrokeThick
                 end
                 r.togglePill.Parent   = r.toggleGlass
@@ -790,17 +802,21 @@ local function renderRows(cfg, bx, baseY, dt)
                 r.togglePill.Visible  = true
                 if on then
                     r.togglePill.BackgroundColor3       = C.ToggleOnBg
-                    r.togglePill.BackgroundTransparency = ft(0.05, fa)
+                    r.togglePill.BackgroundTransparency = ft(C.TextToggleOnly and 0.02 or 0.06, fa)
                     r.toggleDot.Position = UDim2.fromOffset(TOGGLE_W - TOGGLE_DOT - TOGGLE_PAD, TOGGLE_PAD)
-                    r.toggleDot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                    r.toggleDot.BackgroundColor3 = Color3.fromRGB(252, 253, 255)
                 else
                     r.togglePill.BackgroundColor3       = C.ToggleOffBg
-                    r.togglePill.BackgroundTransparency = ft(0.15, fa)
+                    r.togglePill.BackgroundTransparency = ft(C.TextToggleOnly and 0.05 or 0.12, fa)
                     r.toggleDot.Position = UDim2.fromOffset(TOGGLE_PAD, TOGGLE_PAD)
-                    r.toggleDot.BackgroundColor3 = Color3.fromRGB(160, 158, 165)
+                    r.toggleDot.BackgroundColor3 = Color3.fromRGB(234, 238, 246)
                 end
-                r.toggleDot.BackgroundTransparency = ft(0.0, fa)
-                if r.pillStroke then r.pillStroke.Transparency = ft(0.55, fa) end
+                r.toggleDot.BackgroundTransparency = ft(C.TextToggleOnly and 0.00 or 0.02, fa)
+                if r.pillStroke then
+                    r.pillStroke.Color        = on and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(205, 214, 228)
+                    r.pillStroke.Transparency = ft(C.TextToggleOnly and 0.75 or 0.84, fa)
+                    r.pillStroke.Thickness    = 1
+                end
             end
             r.vt.Visible = false
         end

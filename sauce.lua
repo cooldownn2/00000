@@ -138,6 +138,7 @@ if GENV.SauceConfig then
         { {"Hotkeys","Draggable"},                             {"Hotkeys","Draggable"} },
         { {"Hotkeys","Inverted"},                              {"Hotkeys","Inverted"} },
         { {"Hotkeys","Outline"},                               {"Hotkeys","Outline"} },
+        { {"Hotkeys","TextToggleOnly"},                        {"Hotkeys","TextToggleOnly"} },
         { {"Hotkeys","FontSize"},                              {"Hotkeys","FontSize"} },
         { {"Hotkeys","Roundness"},                             {"Hotkeys","Roundness"} },
         { {"Hotkeys","ToggleStyle"},                           {"Hotkeys","ToggleStyle"} },

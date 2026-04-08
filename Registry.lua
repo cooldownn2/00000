@@ -69,6 +69,7 @@ local SettingPaths = {
     HotkeysDraggable            = {"Hotkeys", "Draggable"},
     HotkeysInverted             = {"Hotkeys", "Inverted"},
     HotkeysOutline              = {"Hotkeys", "Outline"},
+    HotkeysTextToggleOnly       = {"Hotkeys", "TextToggleOnly"},
     HotkeysFontSize             = {"Hotkeys", "FontSize"},
     HotkeysRoundness            = {"Hotkeys", "Roundness"},
     HotkeysToggleStyle          = {"Hotkeys", "ToggleStyle"},
