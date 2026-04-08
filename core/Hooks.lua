@@ -1,7 +1,7 @@
 local State, Settings, safeCall
 local GH, MainEvent, oldShoot, mt, oldNamecall
 local cloneArgs, applyRangePolicy, getSpreadAimPosition
-local isTargetFeatureAllowed, isStoredShootArgsValid
+local isTargetFeatureAllowed, isStoredShootArgsValid, isPartInsideSilentAimFOV
 local Taps
 local hookedShoot, hookedNamecall
 
@@ -26,7 +26,7 @@ local function buildShootHook()
                     hitPart = aimPart or State.CurrentPart
                     aimPos = computedPos
                 end
-                if hitPart and aimPos then
+                if hitPart and aimPos and isPartInsideSilentAimFOV(hitPart) then
                     shootData = {}
                     for k, v in pairs(data) do shootData[k] = v end
                     shootData.AimPosition = aimPos
@@ -54,17 +54,21 @@ local function buildNamecallHook()
                 State.LastShootArgs = cloneArgs(args)
             end
             if State.FakePart and isStoredShootArgsValid(args) and isTargetFeatureAllowed() then
-                local headPos = State.FakePos or State.FakePart.Position
-                args[3] = headPos
-                args[4] = State.FakePart; args[6] = headPos
-                State.FakePart, State.FakePos = nil, nil
-                local result = oldNamecall(self, table.unpack(args))
-                local extra = Taps.getTapCount(args) - 1
-                for _ = 1, extra do
-                    State.SkipNextFireServer = true
-                    oldNamecall(self, table.unpack(args))
+                if isPartInsideSilentAimFOV(State.FakePart) then
+                    local headPos = State.FakePos or State.FakePart.Position
+                    args[3] = headPos
+                    args[4] = State.FakePart; args[6] = headPos
+                    State.FakePart, State.FakePos = nil, nil
+                    local result = oldNamecall(self, table.unpack(args))
+                    local extra = Taps.getTapCount(args) - 1
+                    for _ = 1, extra do
+                        State.SkipNextFireServer = true
+                        oldNamecall(self, table.unpack(args))
+                    end
+                    return result
                 end
-                return result
+                -- FOV check failed: clear fake target, fall through to normal shot
+                State.FakePart, State.FakePos = nil, nil
             end
             if isStoredShootArgsValid(args) then
                 local result = oldNamecall(self, ...)
@@ -110,9 +114,10 @@ local function init(deps)
     cloneArgs              = deps.cloneArgs
     applyRangePolicy       = deps.applyRangePolicy
     getSpreadAimPosition   = deps.getSpreadAimPosition
-    isTargetFeatureAllowed = deps.isTargetFeatureAllowed
-    isStoredShootArgsValid = deps.isStoredShootArgsValid
-    Taps                   = deps.Taps
+    isTargetFeatureAllowed   = deps.isTargetFeatureAllowed
+    isStoredShootArgsValid   = deps.isStoredShootArgsValid
+    isPartInsideSilentAimFOV = deps.isPartInsideSilentAimFOV
+    Taps                     = deps.Taps
 end
 
 return {
