@@ -7,7 +7,7 @@ local LP = Players.LocalPlayer
 local Settings, State
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
-local ACCEL_RATE = 14
+local ACCEL_RATE = 35
 local DECEL_RATE = 8
 local GROUND_BRAKE_FACTOR = 0.88
 local MOVE_INPUT_THRESHOLD = 0.05

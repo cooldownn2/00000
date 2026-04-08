@@ -98,6 +98,8 @@ local function applyUserConfig(settings, userConfig)
         { {"Main","Keybinds","Speed"},                     {"Main","Keybinds","Speed"} },
         { {"Speed Modification","Anti Trip"},                {"Character","Anti Trip","Enabled"} },
         { {"Speed Modification","Data"},                     {"Character","Speed Override","Data"} },
+        { {"Speed Modification","Panic Ground","Enabled"}, {"Character","Panic Ground","Enabled"} },
+        { {"Speed Modification","Panic Ground","Keybind"}, {"Character","Panic Ground","Key"} },
 
         -- Hotkeys
         { {"Hotkeys","Enabled"},                             {"Hotkeys","Enabled"} },
