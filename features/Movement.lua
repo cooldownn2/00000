@@ -50,14 +50,13 @@ end
 local function resetSpeedModification()
     lerpedSpeed = 0
     wasSpeedActive = false
-    local char = LP.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum.WalkSpeed = BASE_WALK_SPEED
-    end
-    if hum and State.SpeedStatesPatched then
-        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
-        hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+    if State.SpeedStatesPatched then
+        local char = LP.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+        end
         State.SpeedStatesPatched = false
     end
 end
