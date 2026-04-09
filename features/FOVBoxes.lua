@@ -30,27 +30,6 @@ local function lerpBox(prev, target)
     }
 end
 
--- When no target is in range, keep the box at screen-centre using the
--- last known pixel dimensions so the activation zone is always visible.
-local function makeScreenCenterBox(refBox)
-    if not refBox then return nil end
-    local cam = workspace.CurrentCamera
-    if not cam then return nil end
-    local vp = cam.ViewportSize
-    local cx = vp.X * 0.5
-    local cy = vp.Y * 0.5
-    local hw = refBox.width  * 0.5
-    local hh = refBox.height * 0.5
-    return {
-        left    = cx - hw,
-        top     = cy - hh,
-        width   = refBox.width,
-        height  = refBox.height,
-        centerX = cx,
-        centerY = cy,
-    }
-end
-
 local function hideTriggerbotFOVBox()
     if TriggerbotFOVBox then TriggerbotFOVBox.Visible = false end
 end
@@ -78,10 +57,7 @@ local function updateTriggerbotFOVBox(part, precomputedBox)
 
     local rawBox = precomputedBox or (part and getTriggerbotBoxForPart(part))
     if not rawBox then
-        -- No target in range: keep the box visible at screen-centre.
-        rawBox = makeScreenCenterBox(_tbPrev)
-    end
-    if not rawBox then
+        _tbPrev = nil
         hideTriggerbotFOVBox()
         return
     end
@@ -132,9 +108,7 @@ local function updateCamlockFOVBox(part, precomputedBox)
 
     local rawBox = precomputedBox or (part and getCamlockBoxForPart(part))
     if not rawBox then
-        rawBox = makeScreenCenterBox(_cbPrev)
-    end
-    if not rawBox then
+        _cbPrev = nil
         hideCamlockFOVBox()
         return
     end
