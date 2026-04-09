@@ -28,8 +28,10 @@ local TargetCard = load("ui/TargetCard")
 local Features   = load("Features")
 local Movement   = load("features/Movement")
 local AimAssist  = load("features/AimAssist")
+local Triggerbot = load("features/Triggerbot")
 local FOVBoxes   = load("features/FOVBoxes")
 local Hooks      = load("core/Hooks")
+local SilentAim  = load("core/SilentAim")
 local Visuals    = load("ui/Visuals")
 local ForceHit      = load("aim/ForceHit")
 local BodyParts     = load("core/BodyParts")
@@ -223,6 +225,7 @@ TargetCard.init(mergeDeps({ screenGui = screenGui, ESP = ESP }))
 Features.init(mergeDeps({
     Movement = Movement,
     AimAssist = AimAssist,
+    Triggerbot = Triggerbot,
     FOVBoxes = FOVBoxes,
 }))
 
@@ -231,6 +234,7 @@ Hooks.init(mergeDeps({
     oldShoot       = oldShoot,
     mt             = mt,
     oldNamecall    = oldNamecall,
+    SilentAim      = SilentAim,
     Taps           = Taps,
 }))
 

@@ -1,27 +1,31 @@
 local Features = {}
 
-local Movement, AimAssist, FOVBoxes
+local Movement, AimAssist, FOVBoxes, Triggerbot
 
 local function init(deps)
     Movement  = deps.Movement
     AimAssist = deps.AimAssist
     FOVBoxes  = deps.FOVBoxes
-    if not Movement or not AimAssist or not FOVBoxes then
+    Triggerbot = deps.Triggerbot
+    if not Movement or not AimAssist or not FOVBoxes or not Triggerbot then
         error("Features.init missing modular dependencies", 2)
     end
     Movement.init(deps)
+    Triggerbot.init({
+        Settings = deps.Settings,
+        State    = deps.State,
+        safeCall = deps.safeCall,
+        Movement = Movement,
+    })
     AimAssist.init({
         Settings              = deps.Settings,
         State                 = deps.State,
-        safeCall              = deps.safeCall,
-        Camera                = deps.Camera,
         getCamlockAimPosition = deps.getCamlockAimPosition,
-        Movement              = Movement,
     })
     FOVBoxes.init({
         Settings                = deps.Settings,
         UIS                     = deps.UIS,
-        getTriggerbotBoxForPart = AimAssist.getTriggerbotBoxForPart,
+        getTriggerbotBoxForPart = Triggerbot.getBoxForPart,
         getCamlockBoxForPart    = AimAssist.getCamlockBoxForPart,
     })
 end
@@ -32,9 +36,9 @@ Features.applySpeedModification  = function(tool, deltaTime) return Movement.app
 Features.resetSpeedModification  = function()                return Movement.resetSpeedModification() end
 Features.panicGround             = function()                return Movement.panicGround() end
 
-Features.runTriggerbot           = function(part)            return AimAssist.runTriggerbot(part) end
+Features.runTriggerbot           = function(part)            return Triggerbot.run(part) end
 Features.runCamlock              = function(part)            return AimAssist.runCamlock(part) end
-Features.isPartInTriggerDistance = function(part)            return AimAssist.isPartInTriggerDistance(part) end
+Features.isPartInTriggerDistance = function(part)            return Triggerbot.isPartInDistance(part) end
 Features.isPartInCamlockDistance = function(part)            return AimAssist.isPartInCamlockDistance(part) end
 
 Features.updateTriggerbotFOVBox  = function(part, box)       return FOVBoxes.updateTriggerbotFOVBox(part, box) end

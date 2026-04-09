@@ -10,14 +10,12 @@ local rad   = math.rad
 local cos   = math.cos
 local sin   = math.sin
 local sqrt  = math.sqrt
-local clock = os.clock
 local CFnew = CFrame.new
 local V3new = Vector3.new
 
 local LP = Players.LocalPlayer
-local Settings, State, safeCall
+local Settings, State
 local getCamlockAimPosition
-local Movement
 
 -- ── Focal length cache ────────────────────────────────────────────────────────
 -- Only recomputed when FOV or viewport height actually changes.
@@ -26,18 +24,12 @@ local _cachedFOV      = nil
 local _cachedVpY      = nil
 
 -- ── Reusable box tables — zero per-frame heap allocation ──────────────────────
-local _tbBox = { left = 0, top = 0, width = 0, height = 0, centerX = 0, centerY = 0 }
 local _cbBox = { left = 0, top = 0, width = 0, height = 0, centerX = 0, centerY = 0 }
 
 -- ── Settings cached once in init — none change at runtime ─────────────────────
-local _tbLeft, _tbRight, _tbUp, _tbDown   -- triggerbot FOV padding (studs)
 local _cbLeft, _cbRight, _cbUp, _cbDown   -- camlock FOV padding (studs)
-local _tbDelaySeconds = 0                  -- triggerbot cooldown in seconds
-local _tbFOVMode      = "box"              -- "box" | "direct"
 local _cbFOVMode      = "box"
-local _tbClickToggle  = false              -- true when click type is "toggle"
 local _cbClickToggle  = false
-local _tbMaxDistSq    = 0                  -- squared max distance (avoids sqrt check)
 local _cbMaxDistSq    = 0
 local _cbSmooth       = 0.043             -- camlock lerp alpha
 local _cbEaseDir      = "in"              -- cached lowercase ease direction
@@ -147,25 +139,8 @@ local function computeBox(part, padLeft, padRight, padUp, padDown, out)
     return out
 end
 
-local function getTriggerbotBoxForPart(part)
-    return computeBox(part, _tbLeft, _tbRight, _tbUp, _tbDown, _tbBox)
-end
-
 local function getCamlockBoxForPart(part)
     return computeBox(part, _cbLeft, _cbRight, _cbUp, _cbDown, _cbBox)
-end
-
--- ── FOV hit tests ─────────────────────────────────────────────────────────────
-local function isPartInsideTriggerFOV(box)
-    if not box then return false end
-    local mousePos = UIS:GetMouseLocation()
-    if _tbFOVMode == "direct" then
-        local dx = box.centerX - mousePos.X
-        local dy = box.centerY - mousePos.Y
-        return (dx * dx + dy * dy) <= 9
-    end
-    return mousePos.X >= box.left and mousePos.X <= (box.left + box.width)
-        and mousePos.Y >= box.top  and mousePos.Y <= (box.top  + box.height)
 end
 
 local function isPartInsideCamlockFOV(box)
@@ -180,18 +155,6 @@ local function isPartInsideCamlockFOV(box)
         and mousePos.Y >= box.top  and mousePos.Y <= (box.top  + box.height)
 end
 
--- ── Distance checks — squared comparison, no sqrt needed ─────────────────────
-local function isPartInTriggerDistance(part)
-    if _tbMaxDistSq <= 0 then return true end
-    local char   = LP.Character
-    local root   = char and char:FindFirstChild("HumanoidRootPart")
-    local cam    = workspace.CurrentCamera
-    local origin = root and root.Position or (cam and cam.CFrame.Position)
-    if not origin then return false end
-    local diff = part.Position - origin
-    return (diff.X * diff.X + diff.Y * diff.Y + diff.Z * diff.Z) <= _tbMaxDistSq
-end
-
 local function isPartInCamlockDistance(part)
     if _cbMaxDistSq <= 0 then return true end
     local char   = LP.Character
@@ -204,50 +167,9 @@ local function isPartInCamlockDistance(part)
 end
 
 -- ── Armed state ───────────────────────────────────────────────────────────────
-local function isTriggerbotArmed()
-    if _tbClickToggle then return State.TriggerbotToggleActive end
-    return State.TriggerbotHoldActive
-end
-
 local function isCamlockArmed()
     if _cbClickToggle then return State.CamlockToggleActive end
     return State.CamlockHoldActive
-end
-
--- ── Triggerbot fire ───────────────────────────────────────────────────────────
-local function canTriggerbotShootNow()
-    return (clock() - (State.LastTriggerShot or 0)) >= _tbDelaySeconds
-end
-
-local function fireTriggerbotAtPart(part)
-    local equippedTool = Movement.getEquippedTool()
-    if not equippedTool              then return end
-    if Movement.isKnifeTool(equippedTool) then return end
-    if Movement.getReloadingFlag()   then return end
-
-    local now = clock()
-    State.LastTriggerShot = now
-    State.NextTriggerShot = now + _tbDelaySeconds
-
-    local activated = safeCall(function() equippedTool:Activate() end, "FireServerFails")
-    if not activated then
-        State.NextTriggerShot = now
-    end
-end
-
--- ── Public run functions ──────────────────────────────────────────────────────
-local function runTriggerbot(part)
-    if not Settings.TriggerbotEnabled then return nil end
-    if not isTriggerbotArmed()        then return nil end
-    if not part                        then return nil end
-    if not isPartInTriggerDistance(part) then return nil end
-
-    local box = getTriggerbotBoxForPart(part)
-    if not isPartInsideTriggerFOV(box) then return box end
-    if not canTriggerbotShootNow()     then return box end
-
-    fireTriggerbotAtPart(part)
-    return box
 end
 
 local function runCamlock(part)
@@ -288,27 +210,12 @@ end
 local function init(deps)
     Settings              = deps.Settings
     State                 = deps.State
-    safeCall              = deps.safeCall
     getCamlockAimPosition = deps.getCamlockAimPosition
-    Movement              = deps.Movement
-
-    _tbLeft, _tbRight, _tbUp, _tbDown =
-        parseBounds(Settings.TriggerbotFOVWidth, Settings.TriggerbotFOVHeight, 1)
     _cbLeft, _cbRight, _cbUp, _cbDown =
         parseBounds(Settings.CamlockFOVWidth, Settings.CamlockFOVHeight, 6)
-
-    local rawDelay = math.max(tonumber(Settings.TriggerbotDelay) or 0, 0)
-    _tbDelaySeconds = rawDelay >= 1 and (rawDelay / 1000) or rawDelay
-
-    _tbFOVMode = string.lower(tostring(Settings.TriggerbotFOVType or "Box"))
     _cbFOVMode = string.lower(tostring(Settings.CamlockFOVType    or "Box"))
-
-    _tbClickToggle = string.lower(tostring(Settings.TriggerbotClickType or "Hold")) == "toggle"
     _cbClickToggle = string.lower(tostring(Settings.CamlockClickType    or "Hold")) == "toggle"
-
-    local tbDist = tonumber(Settings.TriggerbotDistance) or 210
     local cbDist = tonumber(Settings.CamlockDistance)    or 300
-    _tbMaxDistSq = tbDist > 0 and (tbDist * tbDist) or 0
     _cbMaxDistSq = cbDist > 0 and (cbDist * cbDist) or 0
 
     _cbSmooth  = tonumber(Settings.CamlockSmoothness)        or 0.043
@@ -319,11 +226,8 @@ end
 
 -- ── Exports ───────────────────────────────────────────────────────────────────
 AimAssist.init                    = init
-AimAssist.runTriggerbot           = runTriggerbot
 AimAssist.runCamlock              = runCamlock
-AimAssist.getTriggerbotBoxForPart = getTriggerbotBoxForPart
 AimAssist.getCamlockBoxForPart    = getCamlockBoxForPart
-AimAssist.isPartInTriggerDistance = isPartInTriggerDistance
 AimAssist.isPartInCamlockDistance = isPartInCamlockDistance
 
 return AimAssist
