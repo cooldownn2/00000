@@ -152,10 +152,10 @@ local function getShotCount(isShotgun)
 end
 
 -- Returns the body part to use as the hit target.
--- Full Damage + shotgun  → UpperTorso (body-shot, reliable large hitbox)
--- Everything else        → Head (precision, highest damage multiplier)
+-- Shotguns  → UpperTorso (largest hitbox, all pellets land, max total damage)
+-- All others → Head (highest damage multiplier per hit)
 local function getTargetPart(tool, targetChar)
-    if Settings.ForceHitFullDamage and SHOTGUN_NAMES[tool.Name] then
+    if SHOTGUN_NAMES[tool.Name] then
         for i = 1, #TORSO_PARTS do
             local part = targetChar:FindFirstChild(TORSO_PARTS[i])
             if part then return part end
