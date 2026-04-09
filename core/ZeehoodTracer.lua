@@ -1,7 +1,7 @@
 local TweenService = game:GetService("TweenService")
 local Debris       = game:GetService("Debris")
 
-local NewGameTracer = {}
+local ZeehoodTracer = {}
 
 local TRACER_COLOR      = Color3.fromRGB(255, 139, 38)
 local TRACER_THICKNESS  = 0.08
@@ -38,7 +38,7 @@ local function renderSegment(startPos, endPos)
     Debris:AddItem(part, TRACER_FADE_TIME + 0.05)
 end
 
-function NewGameTracer.renderPayload(startPos, payload)
+function ZeehoodTracer.renderPayload(startPos, payload)
     if typeof(startPos) ~= "Vector3" or type(payload) ~= "table" then return end
 
     local pellets = payload.Pellets
@@ -55,4 +55,4 @@ function NewGameTracer.renderPayload(startPos, payload)
     renderSegment(startPos, payload.HitPosition)
 end
 
-return NewGameTracer
+return ZeehoodTracer

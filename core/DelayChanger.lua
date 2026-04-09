@@ -93,7 +93,7 @@ local function findCooldownAny(tool)
 			return { mode = "upvalue", fn = fn, idx = idx, original = val }
 		end
 	end
-	-- Fallback: config-table cooldown (new-game style, e.g. {["Cooldown"]=0.13,...}).
+	-- Fallback: config-table cooldown (zeehood style, e.g. {["Cooldown"]=0.13,...}).
 	local configTable = findViaConfigTable(tool)
 	if configTable then
 		return { mode = "config", tbl = configTable, original = configTable["Cooldown"] }

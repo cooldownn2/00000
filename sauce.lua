@@ -34,7 +34,7 @@ local SilentAim  = load("core/SilentAim")
 local Visuals    = load("ui/Visuals")
 local ForceHit      = load("aim/ForceHit")
 local BodyParts     = load("core/BodyParts")
-local NewGameTracer = load("core/NewGameTracer")
+local ZeehoodTracer = load("core/ZeehoodTracer")
 local ClosestPoint  = load("aim/ClosestPoint")
 local DelayChanger  = load("core/DelayChanger")
 local Spread        = load("aim/Spread")
@@ -60,7 +60,7 @@ ConfigBridge.validateSettings(Settings)
 local gameStyle = activeProfile and activeProfile.Style or nil
 
 local MainEvent, GH, oldShoot
-if gameStyle == "newgame" then
+if gameStyle == "zeehood" then
     local mainRemotes = RS:WaitForChild("MainRemotes", 8)
     MainEvent = mainRemotes and mainRemotes:WaitForChild("MainRemoteEvent", 8) or nil
     GH        = {}
@@ -91,7 +91,7 @@ screenGui.IgnoreGuiInset   = true
 screenGui.ZIndexBehavior   = Enum.ZIndexBehavior.Sibling
 screenGui.Parent           = game:GetService("CoreGui")
 
-local SHOOT_CMD   = gameStyle == "newgame" and "GunFired" or "ShootGun"
+local SHOOT_CMD   = gameStyle == "zeehood" and "GunFired" or "ShootGun"
 local mt          = getrawmetatable(game)
 local oldNamecall = mt.__namecall
 
@@ -112,7 +112,7 @@ end
 
 local function isStoredShootArgsValid(args)
     if type(args) ~= "table" or args[1] ~= SHOOT_CMD then return false end
-    if gameStyle == "newgame" then return type(args[2]) == "table" end
+    if gameStyle == "zeehood" then return type(args[2]) == "table" end
     return #args >= 6
 end
 
@@ -225,7 +225,7 @@ local sharedDeps = {
     GH                     = GH,
     oldShoot               = oldShoot,
     gameStyle              = gameStyle,
-    NewGameTracer          = NewGameTracer,
+    ZeehoodTracer          = ZeehoodTracer,
     cloneArgs              = cloneArgs,
     applyRangePolicy       = applyRangePolicy,
     getSpreadAimPosition   = getSpreadAimPosition,

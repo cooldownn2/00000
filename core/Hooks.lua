@@ -3,7 +3,7 @@ local GH, MainEvent, oldShoot, mt, oldNamecall
 local isStoredShootArgsValid
 local Taps
 local SilentAim
-local NewGameTracer
+local ZeehoodTracer
 local hookedShoot, hookedNamecall
 local gameStyle
 
@@ -11,7 +11,7 @@ local function setReadOnlySafe(value)
     if setreadonly then setreadonly(mt, value) end
 end
 
-local function cloneNewGameArgs(args)
+local function cloneZeehoodArgs(args)
     local out = table.clone and table.clone(args) or { unpack(args) }
     local payload = args[2]
     if type(payload) ~= "table" then return out end
@@ -63,15 +63,15 @@ local function buildHooks()
         end
         local args = {...}
 
-        if gameStyle == "newgame" then
-            -- New-game style: the payload is a table at args[2].  Redirect hits
+        if gameStyle == "zeehood" then
+            -- Zeehood style: the payload is a table at args[2]. Redirect hits
             -- directly here; there is no GH.shoot hook to set FakePart for us.
             if isStoredShootArgsValid(args) then
                 local tapCount = 1
-                local sendArgs = cloneNewGameArgs(args)
+                local sendArgs = cloneZeehoodArgs(args)
                 local redirectOk = pcall(function()
                     SilentAim.recordShootArgs(args)
-                    SilentAim.redirectNewGamePayload(sendArgs[2])
+                    SilentAim.redirectZeehoodPayload(sendArgs[2])
                     tapCount = Taps.getTapCount(args)
                 end)
 
@@ -85,13 +85,13 @@ local function buildHooks()
                         return oldNamecall(self, ...)
                     end
                     result = sendResult
-                    if NewGameTracer then
-                        pcall(NewGameTracer.renderPayload, args[2].StartPoint, sendArgs[2])
+                    if ZeehoodTracer then
+                        pcall(ZeehoodTracer.renderPayload, args[2].StartPoint, sendArgs[2])
                     end
                     for _ = 2, tapCount do
                         pcall(oldNamecall, self, table.unpack(sendArgs))
-                        if NewGameTracer then
-                            pcall(NewGameTracer.renderPayload, args[2].StartPoint, sendArgs[2])
+                        if ZeehoodTracer then
+                            pcall(ZeehoodTracer.renderPayload, args[2].StartPoint, sendArgs[2])
                         end
                     end
                     return result
@@ -155,7 +155,7 @@ local function init(deps)
     isStoredShootArgsValid = deps.isStoredShootArgsValid
     Taps                   = deps.Taps
     SilentAim              = deps.SilentAim
-    NewGameTracer          = deps.NewGameTracer
+    ZeehoodTracer          = deps.ZeehoodTracer
     gameStyle              = deps.gameStyle
     SilentAim.init(deps)
     -- Build closures once here so install() just wires them in without re-allocating.

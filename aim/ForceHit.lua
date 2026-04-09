@@ -13,7 +13,7 @@ local MainEvent, GH
 local playerShotFn = nil
 local rawShoot     = nil  -- original GH.shoot, bypasses the silent aim hook
 local gameStyle    = nil
-local NewGameTracer = nil
+local ZeehoodTracer = nil
 
 local TIMESTAMP_JITTER_SCALE = 0.4
 local TIMESTAMP_STEP         = 1 / 60
@@ -82,9 +82,9 @@ local function getEquippedGun()
     local tool = char:FindFirstChildOfClass("Tool")
     if not tool then return nil end
     if not tool:FindFirstChild("Handle") then return nil end
-    -- New-game tools are fired via the global MainRemoteEvent and have no
-    -- per-tool RemoteEvent child; skip that check for the newgame style.
-    if gameStyle ~= "newgame" and not tool:FindFirstChild("RemoteEvent") then
+    -- Zeehood tools are fired via the global MainRemoteEvent and have no
+    -- per-tool RemoteEvent child; skip that check for the zeehood style.
+    if gameStyle ~= "zeehood" and not tool:FindFirstChild("RemoteEvent") then
         return nil
     end
     return tool
@@ -236,8 +236,8 @@ local function fireBurst(tool, targetChar)
     end
 
     -- Dashood: call GH.shoot to produce the visual tracer beam.
-    -- New game has no GunHandler so we skip this entirely.
-    if gameStyle ~= "newgame" then
+    -- Zeehood has no GunHandler so we skip this entirely.
+    if gameStyle ~= "zeehood" then
         _shootArgs.Shooter      = LP.Character
         _shootArgs.Handle       = p.handle
         _shootArgs.ForcedOrigin = p.muzzlePos
@@ -262,8 +262,8 @@ local function fireBurst(tool, targetChar)
         local jitter    = (random() - 0.5) * step * TIMESTAMP_JITTER_SCALE
         local timestamp = baseTime + (i * step) + jitter
 
-        if gameStyle == "newgame" then
-            -- New-game style: single FireServer("GunFired", tablePayload) call.
+        if gameStyle == "zeehood" then
+            -- Zeehood style: single FireServer("GunFired", tablePayload) call.
             -- Shotguns pack all pellets into a Pellets array in one call.
             if isShotgun then
                 local pellets = {}
@@ -277,8 +277,8 @@ local function fireBurst(tool, targetChar)
                     Timestamp  = timestamp,
                 }
                 local ok = pcall(fireServer, MainEvent, "GunFired", payload)
-                if ok and NewGameTracer then
-                    pcall(NewGameTracer.renderPayload, p.muzzlePos, payload)
+                if ok and ZeehoodTracer then
+                    pcall(ZeehoodTracer.renderPayload, p.muzzlePos, payload)
                 end
             else
                 local payload = {
@@ -289,8 +289,8 @@ local function fireBurst(tool, targetChar)
                     Timestamp   = timestamp,
                 }
                 local ok = pcall(fireServer, MainEvent, "GunFired", payload)
-                if ok and NewGameTracer then
-                    pcall(NewGameTracer.renderPayload, p.muzzlePos, payload)
+                if ok and ZeehoodTracer then
+                    pcall(ZeehoodTracer.renderPayload, p.muzzlePos, payload)
                 end
             end
         else
@@ -409,7 +409,7 @@ local function init(deps)
     MainEvent  = deps.MainEvent
     GH         = deps.GH
     gameStyle  = deps.gameStyle
-    NewGameTracer = deps.NewGameTracer
+    ZeehoodTracer = deps.ZeehoodTracer
     rawShoot   = deps.oldShoot  -- pre-hook original; keeps tracers independent of silent aim
     if type(shared) == "table" and type(shared.playerShot) == "function" then
         playerShotFn = shared.playerShot

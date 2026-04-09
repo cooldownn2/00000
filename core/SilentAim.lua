@@ -93,10 +93,10 @@ local function init(deps)
     gameStyle              = deps.gameStyle
 end
 
--- Redirect a new-game-style FireServer payload table in-place to aim at the
--- current locked target.  Called directly from the namecall hook because the
--- new game has no GH.shoot to serve as a redirect trigger.
-local function redirectNewGamePayload(payload)
+-- Redirect a zeehood-style FireServer payload table in-place to aim at the
+-- current locked target.  Called directly from the namecall hook because
+-- Zeehood has no GH.shoot to serve as a redirect trigger.
+local function redirectZeehoodPayload(payload)
     if not isTargetFeatureAllowed() then return end
     if not payload or type(payload) ~= "table" then return end
 
@@ -113,7 +113,7 @@ local function redirectNewGamePayload(payload)
 
     if not hitPart or not aimPos then return end
 
-    -- New-game payloads do not have a Range field. To support Infinite Range,
+    -- Zeehood payloads do not have a Range field. To support Infinite Range,
     -- spoof the server-visible StartPoint to the aimed position the same way
     -- ForceHit does for this profile.
     if Settings and Settings.InfiniteRange and payload.StartPoint then
@@ -132,7 +132,7 @@ local function redirectNewGamePayload(payload)
 end
 
 SilentAim.init                   = init
-SilentAim.redirectNewGamePayload = redirectNewGamePayload
+SilentAim.redirectZeehoodPayload = redirectZeehoodPayload
 SilentAim.prepareShootData = prepareShootData
 SilentAim.recordShootArgs = recordShootArgs
 SilentAim.shouldRedirectFireServer = shouldRedirectFireServer

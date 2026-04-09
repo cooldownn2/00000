@@ -1,19 +1,19 @@
 local GameProfiles = {}
 
 local KNOWN_PROFILES_BY_PLACE_ID = {
-    [127163360850090] = {
+    [121754125559906] = {
         Name = "Dashood",
-        PlaceId = 127163360850090,
+        PlaceId = 121754125559906,
         -- Keep empty for now to avoid behavior regressions on the game that is already tuned.
         -- Add per-game overrides here when onboarding additional experiences.
         Patch = {},
     },
     [99427474123086] = {
-        Name    = "NewGame",
+        Name    = "Zeehood",
         PlaceId = 99427474123086,
         -- Different architecture: no GunHandler, uses MainRemotes.MainRemoteEvent,
         -- fires "GunFired" with a table payload instead of positional ShootGun args.
-        Style   = "newgame",
+        Style   = "zeehood",
         Patch   = {},
     },
 }

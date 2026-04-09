@@ -3,7 +3,7 @@ local Settings
 local function getTapCount(args)
     local taps = Settings.Taps
     if type(taps) ~= "table" then return 1 end
-    -- New-game style: args[2] is the payload table with a ToolName key.
+    -- Zeehood style: args[2] is the payload table with a ToolName key.
     -- Dashood style: args[2] is the Handle instance whose Parent is the Tool.
     local toolName
     if type(args[2]) == "table" then

@@ -20,19 +20,33 @@ local _char, _hum, _root
 local _bodyEffects, _reloadFlag
 
 local function refreshCharCache(char)
-    if char == _char then return end
-    _char = char
-    _hum  = char and char:FindFirstChildOfClass("Humanoid") or nil
-    _root = char and char:FindFirstChild("HumanoidRootPart")  or nil
-    if char then
-        _bodyEffects = char:FindFirstChild("BodyEffects")
-        _reloadFlag  = _bodyEffects and (
-            _bodyEffects:FindFirstChild("Reload") or
-            _bodyEffects:FindFirstChild("Reloading")
-        ) or nil
-    else
-        _bodyEffects, _reloadFlag = nil, nil
+    local hum  = char and char:FindFirstChildOfClass("Humanoid") or nil
+    local root = char and char:FindFirstChild("HumanoidRootPart")  or nil
+    local bodyEffects = char and char:FindFirstChild("BodyEffects") or nil
+
+    local staleHum = _hum and _hum.Parent ~= char
+    local staleRoot = _root and _root.Parent ~= char
+    local staleBodyEffects = _bodyEffects and _bodyEffects.Parent ~= char
+
+    if char == _char
+        and hum == _hum
+        and root == _root
+        and bodyEffects == _bodyEffects
+        and not staleHum
+        and not staleRoot
+        and not staleBodyEffects then
+        return
     end
+
+    _char = char
+    _hum  = hum
+    _root = root
+    _bodyEffects = bodyEffects
+    _reloadFlag  = _bodyEffects and (
+        _bodyEffects:FindFirstChild("Reload") or
+        _bodyEffects:FindFirstChild("Reloading")
+    ) or nil
+
     State.SpeedCharacter   = char
     State.DefaultWalkSpeed = _hum and _hum.WalkSpeed or BASE_WALK_SPEED
     lerpedSpeed    = 0
@@ -66,7 +80,7 @@ local function getReloadingFlag()
 end
 
 local function shouldBypassReduceWalk()
-    if gameStyle ~= "newgame" then return false end
+    if gameStyle ~= "zeehood" then return false end
     return State.Enabled
         or State.LockedTarget ~= nil
         or State.TriggerbotHoldActive
@@ -174,6 +188,12 @@ local function applySpeedModification(tool, deltaTime)
     if not char or not hum then
         State.SpeedCharacter   = nil
         State.DefaultWalkSpeed = nil
+        return
+    end
+
+    if hum.Health <= 0 then
+        restoreAntiTripStates(hum)
+        lerpedSpeed = 0
         return
     end
 
