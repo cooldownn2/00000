@@ -4,6 +4,7 @@ local isStoredShootArgsValid
 local Taps
 local SilentAim
 local hookedShoot, hookedNamecall
+local gameStyle
 
 local function setReadOnlySafe(value)
     if setreadonly then setreadonly(mt, value) end
@@ -21,13 +22,28 @@ local function buildHooks()
 
     hookedNamecall = function(self, ...)
         if State.Unloaded then return oldNamecall(self, ...) end
-        -- Gate on method name and target BEFORE unpacking varargs into a table.
-        -- __namecall fires for every : call game-wide; early exit avoids an
-        -- allocation on the vast majority of calls that aren't FireServer on MainEvent.
         if getnamecallmethod() ~= "FireServer" or not rawequal(self, MainEvent) then
             return oldNamecall(self, ...)
         end
         local args = {...}
+
+        if gameStyle == "newgame" then
+            -- New-game style: the payload is a table at args[2].  Redirect hits
+            -- directly here; there is no GH.shoot hook to set FakePart for us.
+            if isStoredShootArgsValid(args) then
+                SilentAim.recordShootArgs(args)
+                SilentAim.redirectNewGamePayload(args[2])
+                local result = oldNamecall(self, table.unpack(args))
+                local extra = Taps.getTapCount(args) - 1
+                for _ = 1, extra do
+                    oldNamecall(self, table.unpack(args))
+                end
+                return result
+            end
+            return oldNamecall(self, ...)
+        end
+
+        -- Dashood / positional-args style.
         SilentAim.recordShootArgs(args)
         if SilentAim.shouldRedirectFireServer(args) then
             SilentAim.applyFireServerRedirect(args)
@@ -80,6 +96,7 @@ local function init(deps)
     isStoredShootArgsValid = deps.isStoredShootArgsValid
     Taps                   = deps.Taps
     SilentAim              = deps.SilentAim
+    gameStyle              = deps.gameStyle
     SilentAim.init(deps)
     -- Build closures once here so install() just wires them in without re-allocating.
     buildHooks()

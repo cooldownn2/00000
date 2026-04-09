@@ -6,6 +6,7 @@ local applyRangePolicy
 local getSpreadAimPosition
 local isTargetFeatureAllowed
 local isStoredShootArgsValid
+local gameStyle
 
 -- Reused table for redirected GH.shoot payload.
 local _shootData = {}
@@ -87,9 +88,42 @@ local function init(deps)
     getSpreadAimPosition   = deps.getSpreadAimPosition
     isTargetFeatureAllowed = deps.isTargetFeatureAllowed
     isStoredShootArgsValid = deps.isStoredShootArgsValid
+    gameStyle              = deps.gameStyle
 end
 
-SilentAim.init = init
+-- Redirect a new-game-style FireServer payload table in-place to aim at the
+-- current locked target.  Called directly from the namecall hook because the
+-- new game has no GH.shoot to serve as a redirect trigger.
+local function redirectNewGamePayload(payload)
+    if not isTargetFeatureAllowed() then return end
+    if not payload or type(payload) ~= "table" then return end
+
+    local hitPart, aimPos
+
+    if State.FakePart then
+        hitPart = State.FakePart
+        aimPos  = State.FakePos or hitPart.Position
+    elseif State.Enabled and State.CurrentPart then
+        local computedPos, aimPart = getSpreadAimPosition(State.CurrentPart)
+        hitPart = aimPart or State.CurrentPart
+        aimPos  = computedPos
+    end
+
+    if not hitPart or not aimPos then return end
+
+    if type(payload.Pellets) == "table" then
+        for _, p in ipairs(payload.Pellets) do
+            p.HitPosition = aimPos
+            p.HitInstance = hitPart
+        end
+    else
+        payload.HitPosition = aimPos
+        payload.HitInstance = hitPart
+    end
+end
+
+SilentAim.init                   = init
+SilentAim.redirectNewGamePayload = redirectNewGamePayload
 SilentAim.prepareShootData = prepareShootData
 SilentAim.recordShootArgs = recordShootArgs
 SilentAim.shouldRedirectFireServer = shouldRedirectFireServer

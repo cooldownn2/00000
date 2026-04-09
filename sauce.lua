@@ -4,8 +4,6 @@ local UIS        = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local LP         = Players.LocalPlayer
 local Camera     = workspace.CurrentCamera
-local MainEvent  = RS:WaitForChild("MainEvent")
-local GH         = require(RS.Modules.GunHandler)
 
 local GENV = getgenv and getgenv() or _G
 if not GENV.SauceConfig then
@@ -56,6 +54,21 @@ end
 
 ConfigBridge.validateSettings(Settings)
 
+-- Determine game style from the resolved profile so remote/GH acquisition
+-- can be deferred and made conditional on which game we're running in.
+local gameStyle = activeProfile and activeProfile.Style or nil
+
+local MainEvent, GH, oldShoot
+if gameStyle == "newgame" then
+    MainEvent = RS:WaitForChild("MainRemotes"):WaitForChild("MainRemoteEvent")
+    GH        = {}
+    oldShoot  = function() end
+else
+    MainEvent = RS:WaitForChild("MainEvent")
+    GH        = require(RS.Modules.GunHandler)
+    oldShoot  = GH.shoot
+end
+
 if type(shared) == "table" then
     shared.SauceActiveProfile = {
         Name = activeProfile and activeProfile.Name or "default",
@@ -76,10 +89,9 @@ screenGui.IgnoreGuiInset   = true
 screenGui.ZIndexBehavior   = Enum.ZIndexBehavior.Sibling
 screenGui.Parent           = game:GetService("CoreGui")
 
-local SHOOT_CMD = "ShootGun"
-local mt        = getrawmetatable(game)
+local SHOOT_CMD   = gameStyle == "newgame" and "GunFired" or "ShootGun"
+local mt          = getrawmetatable(game)
 local oldNamecall = mt.__namecall
-local oldShoot    = GH.shoot
 
 local function cfgEnabled(pathArr, defaultIfMissing)
     local v = Config.getPathValue(settings, pathArr)
@@ -97,7 +109,9 @@ local function cloneArgs(args)
 end
 
 local function isStoredShootArgsValid(args)
-    return type(args) == "table" and args[1] == SHOOT_CMD and #args >= 6
+    if type(args) ~= "table" or args[1] ~= SHOOT_CMD then return false end
+    if gameStyle == "newgame" then return type(args[2]) == "table" end
+    return #args >= 6
 end
 
 local function applyRangePolicy(dataTable)
@@ -208,6 +222,7 @@ local sharedDeps = {
     MainEvent              = MainEvent,
     GH                     = GH,
     oldShoot               = oldShoot,
+    gameStyle              = gameStyle,
     cloneArgs              = cloneArgs,
     applyRangePolicy       = applyRangePolicy,
     getSpreadAimPosition   = getSpreadAimPosition,

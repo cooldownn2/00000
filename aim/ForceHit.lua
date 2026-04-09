@@ -12,6 +12,7 @@ local Settings, State, isUnloaded
 local MainEvent, GH
 local playerShotFn = nil
 local rawShoot     = nil  -- original GH.shoot, bypasses the silent aim hook
+local gameStyle    = nil
 
 local TIMESTAMP_JITTER_SCALE = 0.4
 local TIMESTAMP_STEP         = 1 / 60
@@ -79,7 +80,10 @@ local function getEquippedGun()
     if not char then return nil end
     local tool = char:FindFirstChildOfClass("Tool")
     if not tool then return nil end
-    if not tool:FindFirstChild("Handle") or not tool:FindFirstChild("RemoteEvent") then
+    if not tool:FindFirstChild("Handle") then return nil end
+    -- New-game tools are fired via the global MainRemoteEvent and have no
+    -- per-tool RemoteEvent child; skip that check for the newgame style.
+    if gameStyle ~= "newgame" and not tool:FindFirstChild("RemoteEvent") then
         return nil
     end
     return tool
@@ -230,11 +234,15 @@ local function fireBurst(tool, targetChar)
         pcall(playerShotFn, p.handle)
     end
 
-    _shootArgs.Shooter      = LP.Character
-    _shootArgs.Handle       = p.handle
-    _shootArgs.ForcedOrigin = p.muzzlePos
-    _shootArgs.AimPosition  = p.targetPos
-    pcall(rawShoot or GH.shoot, _shootArgs)
+    -- Dashood: call GH.shoot to produce the visual tracer beam.
+    -- New game has no GunHandler so we skip this entirely.
+    if gameStyle ~= "newgame" then
+        _shootArgs.Shooter      = LP.Character
+        _shootArgs.Handle       = p.handle
+        _shootArgs.ForcedOrigin = p.muzzlePos
+        _shootArgs.AimPosition  = p.targetPos
+        pcall(rawShoot or GH.shoot, _shootArgs)
+    end
 
     local baseTime = getServerNow()
     if not baseTime then return end
@@ -253,17 +261,43 @@ local function fireBurst(tool, targetChar)
         local jitter    = (random() - 0.5) * step * TIMESTAMP_JITTER_SCALE
         local timestamp = baseTime + (i * step) + jitter
 
-        for _ = 1, p.pellets do
-            pcall(
-                fireServer, MainEvent,
-                "ShootGun",
-                p.handle,
-                p.origin,
-                p.hitPart,
-                p.muzzlePos,
-                p.targetPos,
-                timestamp
-            )
+        if gameStyle == "newgame" then
+            -- New-game style: single FireServer("GunFired", tablePayload) call.
+            -- Shotguns pack all pellets into a Pellets array in one call.
+            if isShotgun then
+                local pellets = {}
+                for j = 1, p.pellets do
+                    pellets[j] = { HitPosition = p.targetPos, HitInstance = p.hitPart }
+                end
+                pcall(fireServer, MainEvent, "GunFired", {
+                    ToolName   = tool.Name,
+                    StartPoint = p.origin,
+                    Pellets    = pellets,
+                    Timestamp  = timestamp,
+                })
+            else
+                pcall(fireServer, MainEvent, "GunFired", {
+                    ToolName    = tool.Name,
+                    StartPoint  = p.origin,
+                    HitPosition = p.targetPos,
+                    HitInstance = p.hitPart,
+                    Timestamp   = timestamp,
+                })
+            end
+        else
+            -- Dashood style: positional args, repeat per pellet.
+            for _ = 1, p.pellets do
+                pcall(
+                    fireServer, MainEvent,
+                    "ShootGun",
+                    p.handle,
+                    p.origin,
+                    p.hitPart,
+                    p.muzzlePos,
+                    p.targetPos,
+                    timestamp
+                )
+            end
         end
 
         -- Yield every BURST_BATCH_SIZE shots so the network stack flushes
@@ -365,6 +399,7 @@ local function init(deps)
     isUnloaded = deps.isUnloaded
     MainEvent  = deps.MainEvent
     GH         = deps.GH
+    gameStyle  = deps.gameStyle
     rawShoot   = deps.oldShoot  -- pre-hook original; keeps tracers independent of silent aim
     if type(shared) == "table" and type(shared.playerShot) == "function" then
         playerShotFn = shared.playerShot

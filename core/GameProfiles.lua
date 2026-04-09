@@ -8,6 +8,14 @@ local KNOWN_PROFILES_BY_PLACE_ID = {
         -- Add per-game overrides here when onboarding additional experiences.
         Patch = {},
     },
+    [99427474123086] = {
+        Name    = "NewGame",
+        PlaceId = 99427474123086,
+        -- Different architecture: no GunHandler, uses MainRemotes.MainRemoteEvent,
+        -- fires "GunFired" with a table payload instead of positional ShootGun args.
+        Style   = "newgame",
+        Patch   = {},
+    },
 }
 
 local function deepMerge(dst, src)
