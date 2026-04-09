@@ -1,6 +1,13 @@
 local Players = game:GetService("Players")
 local LP      = Players.LocalPlayer
 
+-- Localize hot-path globals — avoids _ENV table lookup on every call
+local pcall   = pcall
+local random  = math.random
+local floor   = math.floor
+local tspawn  = task.spawn
+local twait   = task.wait
+
 local Settings, State, isUnloaded
 local MainEvent, GH
 local playerShotFn = nil
@@ -11,6 +18,8 @@ local WAIT_CANNOT_SHOOT      = 0.15
 local WAIT_NO_TOOL           = 0.08
 local WAIT_NO_TARGET         = 0.05
 local WAIT_BETWEEN_BURSTS    = 0.02
+-- Cached constant — avoids a Color3 allocation on every burst
+local BEAM_COLOR = Color3.new(1, 0.545098, 0.14902)
 
 -- Shotgun weapons fire multiple pellet events per trigger pull
 local SHOTGUN_NAMES = {
@@ -141,8 +150,8 @@ end
 -- Everything else        → Head (precision, highest damage multiplier)
 local function getTargetPart(tool, targetChar)
     if Settings.ForceHitFullDamage and SHOTGUN_NAMES[tool.Name] then
-        for _, name in ipairs(TORSO_PARTS) do
-            local part = targetChar:FindFirstChild(name)
+        for i = 1, #TORSO_PARTS do
+            local part = targetChar:FindFirstChild(TORSO_PARTS[i])
             if part then return part end
         end
     end
@@ -158,9 +167,6 @@ local function buildShotParams(tool, targetChar)
     local hum     = targetChar:FindFirstChildOfClass("Humanoid")
     if not handle or not hitPart or not hum or hum.Health <= 0 then return nil end
 
-    local baseTime = getServerNow()
-    if not baseTime then return nil end
-
     local pellets   = getPellets(tool)
     local isShotgun = pellets > 1
     local shots     = getShotCount(isShotgun)
@@ -170,6 +176,7 @@ local function buildShotParams(tool, targetChar)
 
     return {
         handle    = handle,
+        ammo      = ammo,
         hitPart   = hitPart,
         hum       = hum,
         remote    = tool:FindFirstChild("RemoteEvent"),
@@ -178,7 +185,6 @@ local function buildShotParams(tool, targetChar)
         muzzlePos = muzzlePos,
         targetPos = targetPos,
         origin    = origin,
-        baseTime  = baseTime,
     }
 end
 
@@ -207,12 +213,19 @@ local function fireBurst(tool, targetChar)
         Range        = 1e9,
     })
 
+    -- Fetch server time once, right before we fire — keeps timestamps anchored
+    -- to the actual firing moment rather than whenever buildShotParams ran.
+    local baseTime = getServerNow()
+    if not baseTime then return end
+
     local step = TIMESTAMP_STEP
     for i = 1, p.shots do
-        if not Settings.ForceHitEnabled or isUnloaded() or p.hum.Health <= 0 then break end
+        if not Settings.ForceHitEnabled or isUnloaded() then break end
+        if p.hum.Health <= 0 then break end
+        if p.ammo and p.ammo.Value <= 0 then break end
 
         local jitter    = (math.random() - 0.5) * step * TIMESTAMP_JITTER_SCALE
-        local timestamp = p.baseTime + (i * step) + jitter
+        local timestamp = baseTime + (i * step) + jitter
 
         for _ = 1, p.pellets do
             pcall(
@@ -226,10 +239,8 @@ local function fireBurst(tool, targetChar)
                 timestamp
             )
         end
-
-        if i < p.shots then
-            task.wait()
-        end
+        -- No task.wait() — all shots fire in one frame.
+        -- Timestamps already encode the per-shot timing stagger for the server.
     end
 
     if p.remote then
@@ -242,25 +253,27 @@ local function startLoop()
     local myId = State.ForceHitLoopId
     State.ForceHitActive = true
 
-    task.spawn(function()
+    tspawn(function()
         while State.ForceHitLoopId == myId and not isUnloaded() do
             if not Settings.ForceHitEnabled then break end
 
             if not canSelfShoot() then
-                task.wait(WAIT_CANNOT_SHOOT)
+                twait(WAIT_CANNOT_SHOOT)
             else
                 local tool = getEquippedGun()
                 if not tool then
-                    task.wait(WAIT_NO_TOOL)
+                    twait(WAIT_NO_TOOL)
                 else
                     local target = State.LockedTarget
                     local char   = target and target.Character
                     if not char or not isTargetValid(char) then
-                        task.wait(WAIT_NO_TARGET)
+                        twait(WAIT_NO_TARGET)
                     else
-                        pcall(fireBurst, tool, char)
+                        if isInRange(tool, char) then
+                            pcall(fireBurst, tool, char)
+                        end
                         if not Settings.ForceHitEnabled then break end
-                        task.wait(WAIT_BETWEEN_BURSTS)
+                        twait(WAIT_BETWEEN_BURSTS)
                     end
                 end
             end
@@ -305,7 +318,7 @@ local function getDistanceInfo(tool)
             inRange = dist <= maxDist
         end
     end
-    return math.floor(dist), inRange
+    return floor(dist), inRange
 end
 
 local function cleanup()
