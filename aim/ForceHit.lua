@@ -28,15 +28,14 @@ local SHOTGUN_NAMES = {
     ["[Drum-Shotgun]"]     = true,
     ["[Double-Barrel SG]"] = true,
 }
-local SHOTGUN_PELLETS    = 5   -- ShootGun events per burst for shotguns
-local SHOTS_SHOTGUN_FULL = 20  -- bursts to guarantee kill (Full Damage, shotgun)
-local SHOTS_DEFAULT_FULL = 15  -- bursts to guarantee kill (Full Damage, single-shot)
-local SHOTS_SINGLE       = 1   -- bursts when Full Damage is off
--- How many shots to fire before yielding to the next frame.
--- Keeps each outbound packet small so the network queue never spikes.
--- 3 shots/frame × 5 pellets = 15 events/frame max — imperceptible to the server,
--- no ping spike. Total burst completes in ~7 frames (~116ms at 60fps).
-local BURST_BATCH_SIZE   = 3
+local SHOTGUN_PELLETS    = 5  -- ShootGun events per burst for shotguns
+local SHOTS_SHOTGUN_FULL = 5  -- 5 blasts × 5 pellets = 25 events — guarantees kill
+local SHOTS_DEFAULT_FULL = 8  -- 8 headshots — guarantees kill on any HP pool
+local SHOTS_SINGLE       = 1  -- bursts when Full Damage is off
+-- Yield after EVERY shot so the network flushes before the next group.
+-- Max events per frame = SHOTGUN_PELLETS (5) — identical to what the real
+-- client fires naturally. Zero ping spike possible at this rate.
+local BURST_BATCH_SIZE   = 1
 -- R15 torso priority list for shotgun body-shot targeting
 local TORSO_PARTS = { "UpperTorso", "LowerTorso", "HumanoidRootPart" }
 
