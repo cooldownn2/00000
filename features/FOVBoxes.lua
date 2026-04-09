@@ -10,27 +10,30 @@ local CamlockFOVBox    = nil
 
 -- Lerp state: persists between frames so the box moves smoothly.
 -- Set to nil when the feature is toggled off so the next enable snaps cleanly.
-local _tbPrev = nil
-local _cbPrev = nil
+local _tbPrev     = nil
+local _cbPrev     = nil
+local _tbLastTime = nil
+local _cbLastTime = nil
 
--- Blend factor per RenderStepped frame (assumed ~60 fps).
--- 0.5 → ~97 % of the way to the target position within 5 frames (~83 ms).
-local LERP_ALPHA = 0.5
+-- Exponential decay speed (1/second). Frame-rate independent — compensates
+-- automatically for 30 fps, 60 fps, 144 fps, etc.
+-- At speed=30: ~63 % of the way in 33 ms, ~95 % in ~100 ms.
+local LERP_SPEED = 30
 
-local function lerpBox(prev, target)
+local function lerpBox(prev, target, dt)
     if not prev then return target end
-    local a = LERP_ALPHA
+    local a = 1 - math.exp(-LERP_SPEED * dt)
     return {
-        left    = prev.left    + (target.left    - prev.left)    * a,
-        top     = prev.top     + (target.top     - prev.top)     * a,
-        width   = prev.width   + (target.width   - prev.width)   * a,
-        height  = prev.height  + (target.height  - prev.height)  * a,
-        centerX = prev.centerX + (target.centerX - prev.centerX) * a,
-        centerY = prev.centerY + (target.centerY - prev.centerY) * a,
+        left   = prev.left   + (target.left   - prev.left)   * a,
+        top    = prev.top    + (target.top    - prev.top)    * a,
+        width  = prev.width  + (target.width  - prev.width)  * a,
+        height = prev.height + (target.height - prev.height) * a,
     }
 end
 
 local function hideTriggerbotFOVBox()
+    _tbPrev     = nil
+    _tbLastTime = nil
     if TriggerbotFOVBox then TriggerbotFOVBox.Visible = false end
 end
 
@@ -62,7 +65,10 @@ local function updateTriggerbotFOVBox(part, precomputedBox)
         return
     end
 
-    local smoothed = lerpBox(_tbPrev, rawBox)
+    local now = os.clock()
+    local dt  = _tbLastTime and math.min(now - _tbLastTime, 0.1) or (1 / 60)
+    _tbLastTime = now
+    local smoothed = lerpBox(_tbPrev, rawBox, dt)
     _tbPrev = smoothed
 
     TriggerbotFOVBox.Size     = Vector2.new(smoothed.width, smoothed.height)
@@ -70,7 +76,7 @@ local function updateTriggerbotFOVBox(part, precomputedBox)
 
     local baseColor    = Settings.TriggerbotFOVVisualizeColor or Color3.fromRGB(255, 255, 255)
     local hoverEnabled = Settings.TriggerbotFOVVisualizeHover == true
-    if hoverEnabled then
+    if UIS and hoverEnabled then
         local mp    = UIS:GetMouseLocation()
         local isHov = mp.X >= smoothed.left and mp.X <= (smoothed.left + smoothed.width)
                    and mp.Y >= smoothed.top  and mp.Y <= (smoothed.top  + smoothed.height)
@@ -82,6 +88,8 @@ local function updateTriggerbotFOVBox(part, precomputedBox)
 end
 
 local function hideCamlockFOVBox()
+    _cbPrev     = nil
+    _cbLastTime = nil
     if CamlockFOVBox then CamlockFOVBox.Visible = false end
 end
 
@@ -113,7 +121,10 @@ local function updateCamlockFOVBox(part, precomputedBox)
         return
     end
 
-    local smoothed = lerpBox(_cbPrev, rawBox)
+    local now = os.clock()
+    local dt  = _cbLastTime and math.min(now - _cbLastTime, 0.1) or (1 / 60)
+    _cbLastTime = now
+    local smoothed = lerpBox(_cbPrev, rawBox, dt)
     _cbPrev = smoothed
 
     CamlockFOVBox.Size     = Vector2.new(smoothed.width, smoothed.height)
@@ -121,7 +132,7 @@ local function updateCamlockFOVBox(part, precomputedBox)
 
     local baseColor    = Settings.CamlockFOVVisualizeColor or Color3.fromRGB(255, 255, 255)
     local hoverEnabled = Settings.CamlockFOVVisualizeHover == true
-    if hoverEnabled then
+    if UIS and hoverEnabled then
         local mp    = UIS:GetMouseLocation()
         local isHov = mp.X >= smoothed.left and mp.X <= (smoothed.left + smoothed.width)
                    and mp.Y >= smoothed.top  and mp.Y <= (smoothed.top  + smoothed.height)
@@ -133,8 +144,10 @@ local function updateCamlockFOVBox(part, precomputedBox)
 end
 
 local function cleanupFOVBox()
-    _tbPrev = nil
-    _cbPrev = nil
+    _tbPrev     = nil
+    _cbPrev     = nil
+    _tbLastTime = nil
+    _cbLastTime = nil
     if TriggerbotFOVBox then
         pcall(function()
             TriggerbotFOVBox.Visible = false
