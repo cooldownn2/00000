@@ -1,6 +1,8 @@
 local SilentAim = {}
 
 local State
+local Settings
+local LP
 local cloneArgs
 local applyRangePolicy
 local getSpreadAimPosition
@@ -15,8 +17,29 @@ local function clearFakeState()
     State.FakePos  = nil
 end
 
+-- When spread modifier is explicitly set to full/default spread (1.0) for the
+-- equipped tool, skip silent redirect so shot behavior matches native spread.
+local function shouldPreserveNativeSpread()
+    local sm = Settings and Settings.SpreadMod
+    if type(sm) ~= "table" then return false end
+    if sm["Enabled"] == false then return false end
+
+    local char = LP and LP.Character
+    local tool = char and char:FindFirstChildOfClass("Tool")
+    if not tool then return false end
+
+    local v = sm[tool.Name]
+    if type(v) ~= "number" then return false end
+    return math.clamp(v, 0, 1) >= 0.999
+end
+
 local function prepareShootData(data)
     if type(data) ~= "table" then
+        return data
+    end
+
+    if shouldPreserveNativeSpread() then
+        clearFakeState()
         return data
     end
 
@@ -82,6 +105,8 @@ end
 
 local function init(deps)
     State                  = deps.State
+    Settings               = deps.Settings
+    LP                     = deps.LP
     cloneArgs              = deps.cloneArgs
     applyRangePolicy       = deps.applyRangePolicy
     getSpreadAimPosition   = deps.getSpreadAimPosition
