@@ -11,6 +11,7 @@ local GROUND_BRAKE    = 0.93
 local MOVE_THRESH_SQ  = 0.0025 -- 0.05^2, avoids Magnitude + sqrt in hot path
 local ANTI_TRIP_HSQ   = 3600   -- 60^2, avoids sqrt in hot path
 local BASE_WALK_SPEED = 16
+local CLAMP_DETECT_GAP = 4
 
 local lerpedSpeed     = 0
 local antiTripPatched = false
@@ -124,6 +125,19 @@ local function resolveSpeedState(hum, tool, isReloading)
     return "Normal"
 end
 
+local function resolveTargetSpeed(speedData, mode)
+    local value = tonumber(speedData[mode]) or tonumber(speedData["Normal"]) or 1
+
+    -- Zeehood users configure absolute speed values (e.g. 26 means 26 WS),
+    -- while older profiles use multipliers. Keep both behaviors.
+    if gameStyle == "zeehood" then
+        if value <= 0 then return BASE_WALK_SPEED end
+        return value
+    end
+
+    return BASE_WALK_SPEED * value
+end
+
 local function restoreAntiTripStates(hum)
     if not antiTripPatched then return end
     if hum then
@@ -213,8 +227,7 @@ local function applySpeedModification(tool, deltaTime)
 
     local speedData   = Settings.SpeedData or {}
     local mode        = resolveSpeedState(hum, tool, getReloadingFlag())
-    local multiplier  = speedData[mode] or speedData["Normal"] or 1
-    local targetSpeed = BASE_WALK_SPEED * multiplier
+    local targetSpeed = resolveTargetSpeed(speedData, mode)
 
     local dt    = deltaTime or (1 / 60)
     local alpha = dt * 30
@@ -232,7 +245,14 @@ local function applySpeedModification(tool, deltaTime)
         local moveMagSq = mx * mx + mz * mz
 
         if moveMagSq > MOVE_THRESH_SQ then
-            if Settings.SpeedVelocityInjection ~= false then
+            local useVelocityInjection = Settings.SpeedVelocityInjection ~= false
+            -- Framework scripts on Zeehood can clamp WalkSpeed back to ~20.8
+            -- every frame. If detected, switch to velocity drive automatically.
+            if gameStyle == "zeehood" and hum.WalkSpeed + CLAMP_DETECT_GAP < lerpedSpeed then
+                useVelocityInjection = true
+            end
+
+            if useVelocityInjection then
                 local vel   = root.AssemblyLinearVelocity
                 -- Scalar normalisation: one Vector3 alloc instead of two.
                 local scale = lerpedSpeed / math.sqrt(moveMagSq)
