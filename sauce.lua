@@ -441,6 +441,15 @@ connect(LP.CharacterAdded, function(char)
     watchCharacterTools(char)
 end)
 
+connect(RunService.Heartbeat, function(deltaTime)
+    if State.Unloaded then return end
+    -- Zeehood framework rewrites movement values every rendered frame.
+    -- Apply speed on Heartbeat so velocity is enforced closer to physics.
+    if gameStyle ~= "zeehood" then return end
+    local equippedTool = (Settings.SpeedEnabled and State.SpeedActive) and Features.getEquippedTool() or nil
+    Features.applySpeedModification(equippedTool, deltaTime)
+end)
+
 connect(RunService.RenderStepped, function(deltaTime)
     if State.Unloaded then return end
     if Camera ~= workspace.CurrentCamera then Camera = workspace.CurrentCamera end
@@ -448,8 +457,10 @@ connect(RunService.RenderStepped, function(deltaTime)
     enforceDeathCheckOnCurrentLock()
     ESP.updateEsp()
     Visuals.update()
-    local equippedTool = (Settings.SpeedEnabled and State.SpeedActive) and Features.getEquippedTool() or nil
-    Features.applySpeedModification(equippedTool, deltaTime)
+    if gameStyle ~= "zeehood" then
+        local equippedTool = (Settings.SpeedEnabled and State.SpeedActive) and Features.getEquippedTool() or nil
+        Features.applySpeedModification(equippedTool, deltaTime)
+    end
 
     local needCamlockScan = Settings.CamlockEnabled
         and (Settings.CamlockFOVVisualizeEnabled
