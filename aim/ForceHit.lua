@@ -44,6 +44,8 @@ local function canSelfShoot()
     if not char then return false end
     local hum = char:FindFirstChild("Humanoid")
     if not hum or hum.Health <= 0 then return false end
+    -- FULLY_LOADED_CHAR is on the SHOOTER's character — server requires it
+    if not char:FindFirstChild("FULLY_LOADED_CHAR") then return false end
     local be = char:FindFirstChild("BodyEffects")
     if not be then return true end
     if be:FindFirstChild("K.O")       and be["K.O"].Value   then return false end
@@ -61,8 +63,6 @@ local function isTargetValid(char)
     if not char then return false end
     local hum = char:FindFirstChild("Humanoid")
     if not hum or hum.Health <= 0 then return false end
-    -- Target must be fully spawned in — server rejects hits on half-loaded chars
-    if not char:FindFirstChild("FULLY_LOADED_CHAR") then return false end
     if char:FindFirstChild("FORCEFIELD") then return false end
     local be = char:FindFirstChild("BodyEffects")
     if not be then return true end
@@ -165,11 +165,8 @@ local function getTargetPart(tool, targetChar)
 end
 
 local function buildShotParams(tool, targetChar)
-    -- Re-check FORCEFIELD here — it may have appeared between isTargetValid
-    -- and now (e.g. the target just picked up a force-field item).
+    -- Re-check FORCEFIELD — may have appeared between isTargetValid and now
     if targetChar:FindFirstChild("FORCEFIELD") then return nil end
-    -- workspace.Ticking must exist — server's canShoot returns nil without it
-    if not workspace:FindFirstChild("Ticking") then return nil end
 
     local handle = tool:FindFirstChild("Handle")
     local ammo   = tool:FindFirstChild("Ammo")
@@ -217,11 +214,10 @@ local function fireBurst(tool, targetChar)
 
     local isShotgun = SHOTGUN_NAMES[tool.Name]
 
-    -- Clear ShotgunDebounce + LastGunShot before the burst.
-    -- The server's canShoot blocks all shots after the first when these are set.
-    -- Clearing them here lets every ShootGun event register independently.
+    -- Clear ShotgunDebounce + LastGunShot on the SHOOTER (local player).
+    -- The server's canShoot blocks shotgun shots when these are set.
     if isShotgun then
-        pcall(targetChar.SetAttribute, targetChar, "ShotgunDebounce", nil)
+        pcall(LP.Character.SetAttribute, LP.Character, "ShotgunDebounce", nil)
         pcall(LP.Character.SetAttribute, LP.Character, "LastGunShot", nil)
     end
 
@@ -249,7 +245,7 @@ local function fireBurst(tool, targetChar)
         if p.hum.Health <= 0 then break end
         if p.ammo and p.ammo.Value <= 0 then break end
         if isShotgun then
-            pcall(targetChar.SetAttribute, targetChar, "ShotgunDebounce", nil)
+            pcall(LP.Character.SetAttribute, LP.Character, "ShotgunDebounce", nil)
             pcall(LP.Character.SetAttribute, LP.Character, "LastGunShot", nil)
         end
 
