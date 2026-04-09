@@ -46,3 +46,5 @@ Features.cleanupFOVBox           = function()                return FOVBoxes.cle
 Features.getEquippedTool         = function()                return Movement.getEquippedTool() end
 Features.isKnifeTool             = function(tool)            return Movement.isKnifeTool(tool) end
 Features.getReloadingFlag        = function()                return Movement.getReloadingFlag() end
+
+return Features
