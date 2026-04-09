@@ -138,6 +138,26 @@ local function resolveTargetSpeed(speedData, mode)
     return BASE_WALK_SPEED * value
 end
 
+local function applyZeehoodFallbackBoost(root, hum, moveDir, targetSpeed, dt)
+    if gameStyle ~= "zeehood" then return end
+    if not root or not hum or not moveDir then return end
+
+    local mx, mz = moveDir.X, moveDir.Z
+    local moveMagSq = mx * mx + mz * mz
+    if moveMagSq <= MOVE_THRESH_SQ then return end
+
+    local vel = root.AssemblyLinearVelocity
+    local horizVelMag = math.sqrt(vel.X * vel.X + vel.Z * vel.Z)
+    if horizVelMag >= targetSpeed - 0.5 then return end
+
+    local currentSpeed = hum.WalkSpeed or BASE_WALK_SPEED
+    local deficit = targetSpeed - currentSpeed
+    if deficit <= 0 then return end
+
+    local scale = (deficit * dt) / math.sqrt(moveMagSq)
+    root.CFrame = root.CFrame + Vector3.new(mx * scale, 0, mz * scale)
+end
+
 local function restoreAntiTripStates(hum)
     if not antiTripPatched then return end
     if hum then
@@ -265,6 +285,8 @@ local function applySpeedModification(tool, deltaTime)
                 local scale = lerpedSpeed / math.sqrt(moveMagSq)
                 root.AssemblyLinearVelocity = Vector3.new(mx * scale, vel.Y, mz * scale)
             end
+
+            applyZeehoodFallbackBoost(root, hum, moveDir, lerpedSpeed, dt)
         elseif hum.FloorMaterial ~= Enum.Material.Air
             and Settings.SpeedVelocityInjection == false then
             local vel   = root.AssemblyLinearVelocity
