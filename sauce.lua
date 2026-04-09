@@ -22,6 +22,7 @@ local function load(name)
 end
 local Config     = load("core/Registry")
 local ConfigBridge = load("core/ConfigBridge")
+local GameProfiles = load("core/GameProfiles")
 local StateLib   = load("core/State")
 local ESP        = load("ui/ESP")
 local TargetCard = load("ui/TargetCard")
@@ -44,11 +45,23 @@ local Targeting     = load("core/Targeting")
 local settings   = Config.settings
 local Settings   = Config.Settings
 
+local activeProfile = GameProfiles.resolve(game.PlaceId, game.GameId, GENV.SauceProfilePlaceId)
+if activeProfile then
+    GameProfiles.apply(settings, activeProfile)
+end
+
 if GENV.SauceConfig then
     ConfigBridge.applyUserConfig(settings, GENV.SauceConfig)
 end
 
 ConfigBridge.validateSettings(Settings)
+
+if type(shared) == "table" then
+    shared.SauceActiveProfile = {
+        Name = activeProfile and activeProfile.Name or "default",
+        PlaceId = activeProfile and activeProfile.PlaceId or game.PlaceId,
+    }
+end
 
 local State      = StateLib.State
 local safeCall   = StateLib.safeCall
