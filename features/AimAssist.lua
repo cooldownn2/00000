@@ -220,8 +220,7 @@ local function fireTriggerbotAtPart(part)
     if not equippedTool then return end
     if Movement.isKnifeTool(equippedTool) then return end
 
-    local char = LP.Character
-    if Movement.getReloadingFlag(char) then return end
+    if Movement.getReloadingFlag() then return end
     if not canTriggerbotShootNow() then return end
 
     local now = os.clock()

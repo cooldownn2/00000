@@ -7,8 +7,6 @@ local Camera     = workspace.CurrentCamera
 local MainEvent  = RS:WaitForChild("MainEvent")
 local GH         = require(RS.Modules.GunHandler)
 
-local HttpService = game:GetService("HttpService")
-
 local GENV = getgenv and getgenv() or _G
 if not GENV.SauceConfig then
     error("No config found. Run the table not just the loading string.", 2)
@@ -64,7 +62,6 @@ screenGui.ZIndexBehavior   = Enum.ZIndexBehavior.Sibling
 screenGui.Parent           = game:GetService("CoreGui")
 
 local SHOOT_CMD = "ShootGun"
-local tclone    = table.clone
 local mt        = getrawmetatable(game)
 local oldNamecall = mt.__namecall
 local oldShoot    = GH.shoot
@@ -80,7 +77,7 @@ local function isTargetFeatureAllowed()
 end
 
 local function cloneArgs(args)
-    if tclone then return tclone(args) end
+    if table.clone then return table.clone(args) end
     local out = {}; for i = 1, #args do out[i] = args[i] end; return out
 end
 
