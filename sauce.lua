@@ -488,7 +488,7 @@ connect(RunService.RenderStepped, function(deltaTime)
     end
     local canUseAimPart = resolveCurrentPartFromLinePart(aimPart) ~= nil
     State.CurrentPart = canUseAimPart and aimPart or nil
-    Features.updateSilentAimFOVBox(State.CurrentPart)
+    Features.updateSilentAimFOVBox(aimPart)
 
     local lineAnchorPart = (lockedChar and lockedChar:FindFirstChild("Head")) or aimPart
     local screenPos, onScreen = Camera:WorldToViewportPoint(lineAnchorPart.Position)
