@@ -190,6 +190,7 @@ local sharedDeps = {
     Camera                 = Camera,
     Settings               = Settings,
     settings               = settings,
+    screenGui              = screenGui,
     State                  = State,
     safeCall               = safeCall,
     isUnloaded             = isUnloaded,

@@ -26,6 +26,7 @@ local function init(deps)
 
     FOVBoxes.init({
         Settings = deps.Settings,
+        ScreenGui = deps.screenGui,
     })
 end
 
