@@ -32,6 +32,11 @@ local SHOTGUN_PELLETS    = 5   -- ShootGun events per burst for shotguns
 local SHOTS_SHOTGUN_FULL = 20  -- bursts to guarantee kill (Full Damage, shotgun)
 local SHOTS_DEFAULT_FULL = 15  -- bursts to guarantee kill (Full Damage, single-shot)
 local SHOTS_SINGLE       = 1   -- bursts when Full Damage is off
+-- How many shots to fire before yielding to the next frame.
+-- Keeps each outbound packet small so the network queue never spikes.
+-- 3 shots/frame × 5 pellets = 15 events/frame max — imperceptible to the server,
+-- no ping spike. Total burst completes in ~7 frames (~116ms at 60fps).
+local BURST_BATCH_SIZE   = 3
 -- R15 torso priority list for shotgun body-shot targeting
 local TORSO_PARTS = { "UpperTorso", "LowerTorso", "HumanoidRootPart" }
 
@@ -244,7 +249,6 @@ local function fireBurst(tool, targetChar)
     for i = 1, p.shots do
         if p.hum.Health <= 0 then break end
         if p.ammo and p.ammo.Value <= 0 then break end
-        -- Re-clear mid-burst: server re-sets debounce after each valid hit
         if isShotgun then
             pcall(targetChar.SetAttribute, targetChar, "ShotgunDebounce", nil)
             pcall(LP.Character.SetAttribute, LP.Character, "LastGunShot", nil)
@@ -264,6 +268,16 @@ local function fireBurst(tool, targetChar)
                 p.targetPos,
                 timestamp
             )
+        end
+
+        -- Yield every BURST_BATCH_SIZE shots so the network stack flushes
+        -- the current packet before we send the next group.
+        -- Without this all shots land in one frame = one giant packet = ping spike.
+        if i % BURST_BATCH_SIZE == 0 then
+            twait()
+            -- Re-check target is still alive and lock is still valid after yield
+            if p.hum.Health <= 0 then break end
+            if not Settings.ForceHitEnabled or isUnloaded() then break end
         end
     end
 
