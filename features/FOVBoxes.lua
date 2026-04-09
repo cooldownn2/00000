@@ -1,4 +1,4 @@
-local DrawingLib = rawget(_G, "Drawing")
+local DrawingLib = rawget(_G, "Drawing") or Drawing
 
 local FOVBoxes = {}
 
