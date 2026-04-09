@@ -1,8 +1,6 @@
 local SilentAim = {}
 
 local State
-local Settings
-local LP
 local cloneArgs
 local applyRangePolicy
 local getSpreadAimPosition
@@ -17,29 +15,8 @@ local function clearFakeState()
     State.FakePos  = nil
 end
 
--- When spread modifier is explicitly set to full/default spread (1.0) for the
--- equipped tool, skip silent redirect so shot behavior matches native spread.
-local function shouldPreserveNativeSpread()
-    local sm = Settings and Settings.SpreadMod
-    if type(sm) ~= "table" then return false end
-    if sm["Enabled"] == false then return false end
-
-    local char = LP and LP.Character
-    local tool = char and char:FindFirstChildOfClass("Tool")
-    if not tool then return false end
-
-    local v = sm[tool.Name]
-    if type(v) ~= "number" then return false end
-    return math.clamp(v, 0, 1) >= 0.999
-end
-
 local function prepareShootData(data)
     if type(data) ~= "table" then
-        return data
-    end
-
-    if shouldPreserveNativeSpread() then
-        clearFakeState()
         return data
     end
 
@@ -93,9 +70,23 @@ local function applyFireServerRedirect(args)
     if not fakePart then return args end
 
     local fakePos = State.FakePos or fakePart.Position
+    local redirectedAim = fakePos
+
+    -- Preserve the original shot spread by keeping the same ray delta between
+    -- the engine-provided hit point (arg[3]) and aim endpoint (arg[6]).
+    -- This keeps silent aim active while honoring configured spread values.
+    local originalHit = args[3]
+    local originalAim = args[6]
+    if typeof(originalHit) == "Vector3" and typeof(originalAim) == "Vector3" then
+        redirectedAim = fakePos + (originalAim - originalHit)
+    end
+
     args[3] = fakePos
     args[4] = fakePart
-    args[6] = fakePos
+    if typeof(args[5]) == "Vector3" then
+        args[5] = fakePos
+    end
+    args[6] = redirectedAim
 
     -- Clear immediately to prevent stale replay if follow-up calls fail.
     clearFakeState()
@@ -105,8 +96,6 @@ end
 
 local function init(deps)
     State                  = deps.State
-    Settings               = deps.Settings
-    LP                     = deps.LP
     cloneArgs              = deps.cloneArgs
     applyRangePolicy       = deps.applyRangePolicy
     getSpreadAimPosition   = deps.getSpreadAimPosition
