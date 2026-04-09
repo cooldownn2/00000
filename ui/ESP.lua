@@ -2,7 +2,6 @@ local Players   = game:GetService("Players")
 local LP        = Players.LocalPlayer
 
 local ESPNameColor  = Color3.fromRGB(255, 255, 255)
-local DEFAULT_SELECTION_COLOR = Color3.fromRGB(255, 0, 0)
 local FEET_OFFSET   = Vector3.new(0, 3, 0)
 local UPDATE_RATE   = 1 / 70
 local ESP_FONT      = Enum.Font.GothamBold
@@ -16,20 +15,7 @@ local espLastUpdate   = 0
 local espShownLastFrame = false
 
 local cachedNameSize   = 15
-local cachedVisualTarget = nil
-
-local function isSamePlayer(a, b)
-    if a == b then return true end
-    if typeof(a) ~= "Instance" or typeof(b) ~= "Instance" then return false end
-    if not a:IsA("Player") or not b:IsA("Player") then return false end
-    return a.UserId == b.UserId
-end
-
-local function getSelectionColor()
-    local c = Settings and Settings.SelectionColor
-    if typeof(c) == "Color3" then return c end
-    return DEFAULT_SELECTION_COLOR
-end
+local cachedLockedTarget = nil
 
 local function newEspLabel()
     local lbl = Instance.new("TextLabel")
@@ -153,8 +139,8 @@ local function updateEsp()
     end
     if next(espObjects) == nil then espShownLastFrame = false; return end
 
-    cachedNameSize = tonumber(Settings.ESPNameSize) or 15
-    cachedVisualTarget = State.VisualTarget or State.LockedTarget
+    cachedNameSize    = tonumber(Settings.ESPNameSize) or 15
+    cachedLockedTarget = State.LockedTarget
 
     local drewAny = false
     for player, rec in pairs(espObjects) do
@@ -167,7 +153,7 @@ local function updateEsp()
         if canDraw then
             local screenPos, onScreen = Camera:WorldToViewportPoint(root.Position - FEET_OFFSET)
             if onScreen and screenPos.Z > 0 then
-                local color = isSamePlayer(cachedVisualTarget, player) and getSelectionColor() or ESPNameColor
+                local color = (cachedLockedTarget == player) and Settings.SelectionColor or ESPNameColor
                 local sx = math.floor(screenPos.X)
                 local sy = math.floor(screenPos.Y)
                 local name = player.DisplayName
@@ -216,7 +202,7 @@ local function cleanupEsp()
         espPlayerConns[player] = nil
     end
     espCharCache      = {}
-    cachedVisualTarget = nil
+    cachedLockedTarget = nil
     espLastUpdate     = 0
     espShownLastFrame = false
 end

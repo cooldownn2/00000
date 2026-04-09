@@ -190,7 +190,6 @@ local sharedDeps = {
     Camera                 = Camera,
     Settings               = Settings,
     settings               = settings,
-    screenGui              = screenGui,
     State                  = State,
     safeCall               = safeCall,
     isUnloaded             = isUnloaded,
@@ -231,11 +230,10 @@ Features.init(mergeDeps({
 
 Taps.init(mergeDeps({}))
 Hooks.init(mergeDeps({
-    oldShoot                 = oldShoot,
-    mt                       = mt,
-    oldNamecall              = oldNamecall,
-    Taps                     = Taps,
-    isPartInsideSilentAimFOV = AimAssist.isPartInsideSilentAimFOV,
+    oldShoot       = oldShoot,
+    mt             = mt,
+    oldNamecall    = oldNamecall,
+    Taps           = Taps,
 }))
 
 Hooks.install()
@@ -275,7 +273,7 @@ local function cleanup()
     DelayChanger.cleanup()
     Spread.cleanup()
     State.FakePart, State.FakePos = nil, nil
-    State.CurrentPart = nil; State.LockedTarget = nil; State.VisualTarget = nil; State.LastShootData = nil
+    State.CurrentPart = nil; State.LockedTarget = nil; State.LastShootData = nil
     State.TriggerbotHoldActive = false; State.TriggerbotToggleActive = false
     State.CamlockHoldActive = false; State.CamlockToggleActive = false
     State.CardCapabilityBlocked = false; State.ESPEnabled = false; State.SpeedActive = false
@@ -417,40 +415,34 @@ connect(RunService.RenderStepped, function(deltaTime)
     if Camera ~= workspace.CurrentCamera then Camera = workspace.CurrentCamera end
     ClosestPoint.pruneCaches(false)
     enforceDeathCheckOnCurrentLock()
+    ESP.updateEsp()
     Visuals.update()
     local equippedTool = (Settings.SpeedEnabled and State.SpeedActive) and Features.getEquippedTool() or nil
     Features.applySpeedModification(equippedTool, deltaTime)
 
-    local camlockPart, camlockPlayer = getClosestCamlockPart()
-    local triggerPart, triggerPlayer = getClosestTriggerbotPart()
+    local needCamlockScan = Settings.CamlockEnabled
+        and (Settings.CamlockFOVVisualizeEnabled
+            or State.CamlockHoldActive
+            or State.CamlockToggleActive)
+    local camlockPart, camlockBox = nil, nil
+    if needCamlockScan then
+        camlockPart = getClosestCamlockPart()
+        camlockBox  = Features.runCamlock(camlockPart)
+    end
+    Features.updateCamlockFOVBox(camlockPart, camlockBox)
 
-    local visualTarget = State.LockedTarget
-    if not visualTarget and Settings.CamlockEnabled and (State.CamlockHoldActive or State.CamlockToggleActive) then
-        visualTarget = camlockPlayer
+    local needTriggerbotScan = Settings.TriggerbotEnabled
+        and (Settings.TriggerbotFOVVisualizeEnabled
+            or State.TriggerbotHoldActive
+            or State.TriggerbotToggleActive)
+    local triggerbotPart, triggerbotBox = nil, nil
+    if needTriggerbotScan then
+        triggerbotPart = getClosestTriggerbotPart()
+        triggerbotBox  = Features.runTriggerbot(triggerbotPart)
     end
-    if not visualTarget and Settings.TriggerbotEnabled and (State.TriggerbotHoldActive or State.TriggerbotToggleActive) then
-        visualTarget = triggerPlayer
-    end
-    State.VisualTarget = visualTarget
-    ESP.updateEsp()
-
-    if Settings.CamlockEnabled and (State.CamlockHoldActive or State.CamlockToggleActive) then
-        Features.runCamlock(camlockPart)
-        Features.updateCamlockFOVBox(camlockPart)
-    else
-        Features.updateCamlockFOVBox(camlockPart)
-    end
-
-    if Settings.TriggerbotEnabled and (State.TriggerbotHoldActive or State.TriggerbotToggleActive) then
-        Features.runTriggerbot(triggerPart)
-        Features.updateTriggerbotFOVBox(triggerPart)
-    else
-        Features.updateTriggerbotFOVBox(triggerPart)
-    end
+    Features.updateTriggerbotFOVBox(triggerbotPart, triggerbotBox)
     if not isTargetFeatureAllowed() then
         hideUI()
-        State.VisualTarget = nil
-        Features.hideSilentAimFOVBox()
         if State.Enabled or State.LockedTarget then
             State.Enabled = false; clearTargetState(true)
             ForceHit.onTargetChanged(false)
@@ -458,12 +450,7 @@ connect(RunService.RenderStepped, function(deltaTime)
         end
         return
     end
-    if not State.Enabled and not isAutoMode() then
-        hideUI()
-        State.VisualTarget = nil
-        Features.hideSilentAimFOVBox()
-        return
-    end
+    if not State.Enabled and not isAutoMode() then hideUI(); return end
     if isAutoMode() then
         local prevTarget = State.LockedTarget
         tryRetarget(false)
@@ -480,16 +467,9 @@ connect(RunService.RenderStepped, function(deltaTime)
         end
     end
     local aimPart, lockedChar = ensureValidLockedTarget()
-    if not aimPart then
-        clearCombatState(true)
-        hideUI()
-        State.VisualTarget = nil
-        Features.hideSilentAimFOVBox()
-        return
-    end
+    if not aimPart then clearCombatState(true); hideUI(); return end
     local canUseAimPart = resolveCurrentPartFromLinePart(aimPart) ~= nil
     State.CurrentPart = canUseAimPart and aimPart or nil
-    Features.updateSilentAimFOVBox(aimPart)
 
     local lineAnchorPart = (lockedChar and lockedChar:FindFirstChild("Head")) or aimPart
     local screenPos, onScreen = Camera:WorldToViewportPoint(lineAnchorPart.Position)

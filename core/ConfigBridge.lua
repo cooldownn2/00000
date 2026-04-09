@@ -24,53 +24,15 @@ local function applyUserConfig(settings, userConfig)
 
     local configMap = {
         -- Silent Aim
-        { {"Silent Aim","Enabled"},                          {"Main","Enabled"} },
-        { {"Silent Aim","Target Part"},                      {"Main","Target Part"} },
-        { {"Silent Aim","Scale"},                            {"Main","Closest Point Scale"} },
-
-        -- Selection (prada: under Main)
-        { {"Main","Selection System"},                       {"Main","Selection System"} },
-        { {"Main","Selection Color"},                        {"Main","Selection Color"} },
-        -- Legacy: old table had these under Silent Aim
-        { {"Silent Aim","Selection"},                        {"Main","Selection System"} },
-        { {"Silent Aim","Selection Color"},                  {"Main","Selection Color"} },
-
-        -- Keybinds
-        { {"Main","Keybinds","Target"},                    {"Main","Keybinds","Target"} },
-        { {"Main","Keybinds","Camlock"},                   {"Main","Keybinds","Camlock"} },
-        { {"Main","Keybinds","Triggerbot"},                {"Main","Keybinds","Triggerbot"} },
-        { {"Main","Keybinds","ESP"},                       {"Main","Keybinds","ESP"} },
-        { {"Main","Keybinds","Speed"},                     {"Main","Keybinds","Speed"} },
-        { {"Camlock","Keybind"},                             {"Main","Keybinds","Camlock"} },
-
-        -- Checks (prada: under Main.Checks.Target)
-        { {"Main","Checks","Target","Visible"},              {"Main","Checks","Target","Visible Check"} },
-        { {"Main","Checks","Target","Death Check"},          {"Main","Checks","Target","Death Check"} },
-        { {"Main","Checks","Target","Persist Lock On Death"},{"Main","Checks","Target","Persist Lock On Death"} },
-        -- Legacy: old table had these under Silent Aim.Checks
-        { {"Silent Aim","Checks","Visible"},                 {"Main","Checks","Target","Visible Check"} },
-        { {"Silent Aim","Checks","Death Check"},             {"Main","Checks","Target","Death Check"} },
-        { {"Silent Aim","Checks","Persist Lock On Death"},   {"Main","Checks","Target","Persist Lock On Death"} },
-
-        -- FOV: Silent Aim (prada: Main.FOV.Silent)
-        { {"Main","FOV","Silent","Enabled"},                 {"Main","FOV","Silent","Enabled"} },
-        { {"Main","FOV","Silent","Ignore"},                  {"Main","FOV","Silent","Ignore"} },
-        { {"Main","FOV","Silent","Width"},                   {"Main","FOV","Silent","Width"} },
-        { {"Main","FOV","Silent","Height"},                  {"Main","FOV","Silent","Height"} },
-        { {"Main","FOV","Silent","Visualize","Enabled"},     {"Main","FOV","Silent","Visualize","Enabled"} },
-        { {"Main","FOV","Silent","Visualize","Color"},       {"Main","FOV","Silent","Visualize","Color"} },
-
-        -- FOV: Camlock (prada: Main.FOV.Camlock)
-        { {"Main","FOV","Camlock","Width"},                  {"Main","FOV","Camlock","Width"} },
-        { {"Main","FOV","Camlock","Height"},                 {"Main","FOV","Camlock","Height"} },
-        { {"Main","FOV","Camlock","Visualize","Enabled"},    {"Main","FOV","Camlock","Visualize","Enabled"} },
-        { {"Main","FOV","Camlock","Visualize","Color"},      {"Main","FOV","Camlock","Visualize","Color"} },
-
-        -- FOV: Triggerbot (prada: Main.FOV.Triggerbot)
-        { {"Main","FOV","Triggerbot","Width"},               {"Main","FOV","Triggerbot","Width"} },
-        { {"Main","FOV","Triggerbot","Height"},              {"Main","FOV","Triggerbot","Height"} },
-        { {"Main","FOV","Triggerbot","Visualize","Enabled"}, {"Main","FOV","Triggerbot","Visualize","Enabled"} },
-        { {"Main","FOV","Triggerbot","Visualize","Color"},   {"Main","FOV","Triggerbot","Visualize","Color"} },
+        { {"Silent Aim","Enabled"},                        {"Main","Enabled"} },
+        { {"Silent Aim","Target Part"},                    {"Main","Target Part"} },
+        { {"Silent Aim","Scale"},                          {"Main","Closest Point Scale"} },
+        { {"Silent Aim","Selection"},                      {"Main","Selection System"} },
+        { {"Silent Aim","Selection Color"},                {"Main","Selection Color"} },
+        { {"Main","Keybinds","Target"},                  {"Main","Keybinds","Target"} },
+        { {"Silent Aim","Checks","Visible"},             {"Main","Checks","Target","Visible Check"} },
+        { {"Silent Aim","Checks","Persist Lock On Death"}, {"Main","Checks","Target","Persist Lock On Death"} },
+        { {"Silent Aim","Checks","Death Check"},         {"Main","Checks","Target","Death Check"} },
 
         -- Camlock
         { {"Camlock","Enabled"},                             {"Camlock","Enabled"} },
@@ -79,7 +41,21 @@ local function applyUserConfig(settings, userConfig)
         { {"Camlock","Click Type"},                          {"Camlock","Click Type"} },
         { {"Camlock","Easing Style"},                        {"Camlock","Easing Style"} },
         { {"Camlock","Easing Direction"},                    {"Camlock","Easing Direction"} },
-        { {"Camlock","FOV","Type"},                          {"Camlock","FOV","Type"} },
+        { {"Camlock","FOV","Type"},                        {"Camlock","FOV","Type"} },
+        { {"Camlock","Width"},                               {"Camlock","Width"} },
+        { {"Camlock","Height"},                              {"Camlock","Height"} },
+        { {"Camlock","FOV","Width"},                       {"Camlock","Width"} },
+        { {"Camlock","FOV","Height"},                      {"Camlock","Height"} },
+        { {"Camlock","Visualize","Enabled"},               {"Camlock","Visualize","Enabled"} },
+        { {"Camlock","Visualize","Color"},                 {"Camlock","Visualize","Color"} },
+        { {"Camlock","Visualize","Change Color On Hover"}, {"Camlock","Visualize","Change Color On Hover"} },
+        { {"Camlock","Visualize","Hover Color"},           {"Camlock","Visualize","Change Color On Hover"} },
+        { {"Camlock","FOV","Visualize","Enabled"},       {"Camlock","Visualize","Enabled"} },
+        { {"Camlock","FOV","Visualize","Color"},         {"Camlock","Visualize","Color"} },
+        { {"Camlock","FOV","Visualize","Hover Color"},   {"Camlock","Visualize","Change Color On Hover"} },
+        { {"Camlock","FOV","Visualize","Change Color On Hover"}, {"Camlock","Visualize","Change Color On Hover"} },
+        { {"Camlock","Keybind"},                             {"Main","Keybinds","Camlock"} },
+        { {"Main","Keybinds","Camlock"},                   {"Main","Keybinds","Camlock"} },
 
         -- Triggerbot
         { {"Triggerbot","Enabled"},                          {"Triggerbot","Enabled"} },
@@ -87,11 +63,18 @@ local function applyUserConfig(settings, userConfig)
         { {"Triggerbot","Distance"},                         {"Triggerbot","Distance"} },
         { {"Triggerbot","Delay"},                            {"Triggerbot","Delay"} },
         { {"Triggerbot","Click Type"},                       {"Triggerbot","Click Type"} },
-        { {"Triggerbot","FOV","Type"},                       {"Triggerbot","FOV","Type"} },
+        { {"Triggerbot","FOV","Type"},                     {"Triggerbot","FOV","Type"} },
+        { {"Triggerbot","FOV","Width"},                    {"Main","FOV","Triggerbot","Width"} },
+        { {"Triggerbot","FOV","Height"},                   {"Main","FOV","Triggerbot","Height"} },
+        { {"Triggerbot","FOV","Visualize","Enabled"},    {"Main","FOV","Triggerbot","Visualize","Enabled"} },
+        { {"Triggerbot","FOV","Visualize","Color"},      {"Main","FOV","Triggerbot","Visualize","Color"} },
+        { {"Triggerbot","FOV","Visualize","Hover Color"},{"Main","FOV","Triggerbot","Visualize","Change Color On Hover"} },
+        { {"Main","Keybinds","Triggerbot"},                {"Main","Keybinds","Triggerbot"} },
 
         -- ESP
         { {"ESP","Enabled"},                                 {"ESP","Enabled"} },
         { {"ESP","Name Size"},                               {"ESP","Name Size"} },
+        { {"Main","Keybinds","ESP"},                       {"Main","Keybinds","ESP"} },
         { {"ESP","Line","Enabled"},                        {"ESP","Line","Enabled"} },
         { {"ESP","Line","Visible Color"},                  {"ESP","Line","Visible Color"} },
         { {"ESP","Line","Blocked Color"},                  {"ESP","Line","Blocked Color"} },
@@ -113,6 +96,7 @@ local function applyUserConfig(settings, userConfig)
         -- Speed
         { {"Speed Modification","Enabled"},                  {"Character","Speed Override","Enabled"} },
         { {"Speed Modification","Velocity Injection"},        {"Character","Speed Override","Velocity Injection"} },
+        { {"Main","Keybinds","Speed"},                     {"Main","Keybinds","Speed"} },
         { {"Speed Modification","Anti Trip"},                {"Character","Anti Trip","Enabled"} },
         { {"Speed Modification","Data"},                     {"Character","Speed Override","Data"} },
         { {"Speed Modification","Panic Ground","Enabled"}, {"Character","Panic Ground","Enabled"} },
@@ -222,8 +206,6 @@ local function validateSettings(Settings)
     expectEnum("Hotkeys.ToggleStyle", S.HotkeysToggleStyle, {"pill","dot","none"})
     expectEnum("Triggerbot.FOV.Type", S.TriggerbotFOVType, {"Box","Direct"})
     expectEnum("Camlock.FOV.Type", S.CamlockFOVType, {"Box","Direct"})
-    expectType("Silent Aim.FOV.Enabled", S.SilentAimFOVEnabled, "boolean")
-    expectType("Silent Aim.FOV.Ignore",  S.SilentAimIgnoreFOV,  "boolean")
 
     if type(S.Taps) == "table" then
         for weaponName, entry in pairs(S.Taps) do

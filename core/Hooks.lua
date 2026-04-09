@@ -1,7 +1,7 @@
 local State, Settings, safeCall
 local GH, MainEvent, oldShoot, mt, oldNamecall
 local cloneArgs, applyRangePolicy, getSpreadAimPosition
-local isTargetFeatureAllowed, isStoredShootArgsValid, isPartInsideSilentAimFOV
+local isTargetFeatureAllowed, isStoredShootArgsValid
 local Taps
 local hookedShoot, hookedNamecall
 
@@ -26,7 +26,7 @@ local function buildShootHook()
                     hitPart = aimPart or State.CurrentPart
                     aimPos = computedPos
                 end
-                if hitPart and aimPos and isPartInsideSilentAimFOV(hitPart) then
+                if hitPart and aimPos then
                     shootData = {}
                     for k, v in pairs(data) do shootData[k] = v end
                     shootData.AimPosition = aimPos
@@ -110,10 +110,9 @@ local function init(deps)
     cloneArgs              = deps.cloneArgs
     applyRangePolicy       = deps.applyRangePolicy
     getSpreadAimPosition   = deps.getSpreadAimPosition
-    isTargetFeatureAllowed   = deps.isTargetFeatureAllowed
-    isStoredShootArgsValid   = deps.isStoredShootArgsValid
-    isPartInsideSilentAimFOV = deps.isPartInsideSilentAimFOV
-    Taps                     = deps.Taps
+    isTargetFeatureAllowed = deps.isTargetFeatureAllowed
+    isStoredShootArgsValid = deps.isStoredShootArgsValid
+    Taps                   = deps.Taps
 end
 
 return {

@@ -111,7 +111,6 @@ end
 local function clearTargetState(clearLastArgs)
     clearDeathCheckConn()
     State.LockedTarget = nil
-    State.VisualTarget = nil
     State.CurrentPart = nil
     State.FakePart = nil
     State.FakePos = nil
@@ -124,9 +123,6 @@ local function clearCombatState(keepLastArgs)
     State.FakePart = nil
     State.FakePos = nil
     State.CurrentPart = nil
-    if not State.LockedTarget then
-        State.VisualTarget = nil
-    end
     if not keepLastArgs then State.LastShootArgs = nil end
 end
 
