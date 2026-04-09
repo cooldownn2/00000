@@ -1,4 +1,16 @@
-local DrawingLib = rawget(_G, "Drawing")
+local function resolveDrawingLib()
+    local env = _G
+    local getgenvFn = rawget(_G, "getgenv")
+    if type(getgenvFn) == "function" then
+        local ok, g = pcall(getgenvFn)
+        if ok and type(g) == "table" then
+            env = g
+        end
+    end
+    return rawget(env, "Drawing") or rawget(_G, "Drawing")
+end
+
+local DrawingLib = resolveDrawingLib()
 
 local FOVBoxes = {}
 
@@ -16,7 +28,9 @@ local CL = newSlot()  -- Camlock
 local SA = newSlot()  -- Silent Aim
 
 local function ensureObj(slot)
-    if slot.obj or not DrawingLib then return end
+    if slot.obj then return end
+    if not DrawingLib then DrawingLib = resolveDrawingLib() end
+    if not DrawingLib or type(DrawingLib.new) ~= "function" then return end
     local ok, b = pcall(DrawingLib.new, "Square")
     if not ok or not b then return end
     b.Visible      = false
@@ -33,9 +47,11 @@ local function hideSlot(slot)
 end
 
 -- Reads a {Left, Right} or single-number config value.
-local function readPad(cfg, fallback)
+local function readPad(cfg, fallback, firstKey, secondKey)
     if type(cfg) == "table" then
-        return tonumber(cfg[1]) or fallback, tonumber(cfg[2]) or fallback
+        local a = tonumber(cfg[firstKey]) or tonumber(cfg[1]) or fallback
+        local b = tonumber(cfg[secondKey]) or tonumber(cfg[2]) or fallback
+        return a, b
     end
     local v = tonumber(cfg) or fallback
     return v, v
@@ -56,8 +72,8 @@ local function updateSlot(slot, enabledKey, wKey, hKey, colorKey, targetPart)
     local obj = slot.obj
     if not obj then return end
 
-    local padL, padR = readPad(Settings[wKey], 10)
-    local padU, padD = readPad(Settings[hKey], 10)
+    local padL, padR = readPad(Settings[wKey], 10, "Left", "Right")
+    local padU, padD = readPad(Settings[hKey], 10, "Up", "Down")
     local totalW = padL + padR
     local totalH = padU + padD
     local lx = sp.X - padL

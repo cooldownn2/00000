@@ -274,7 +274,7 @@ local function cleanup()
     DelayChanger.cleanup()
     Spread.cleanup()
     State.FakePart, State.FakePos = nil, nil
-    State.CurrentPart = nil; State.LockedTarget = nil; State.LastShootData = nil
+    State.CurrentPart = nil; State.LockedTarget = nil; State.VisualTarget = nil; State.LastShootData = nil
     State.TriggerbotHoldActive = false; State.TriggerbotToggleActive = false
     State.CamlockHoldActive = false; State.CamlockToggleActive = false
     State.CardCapabilityBlocked = false; State.ESPEnabled = false; State.SpeedActive = false
@@ -416,30 +416,39 @@ connect(RunService.RenderStepped, function(deltaTime)
     if Camera ~= workspace.CurrentCamera then Camera = workspace.CurrentCamera end
     ClosestPoint.pruneCaches(false)
     enforceDeathCheckOnCurrentLock()
-    ESP.updateEsp()
     Visuals.update()
     local equippedTool = (Settings.SpeedEnabled and State.SpeedActive) and Features.getEquippedTool() or nil
     Features.applySpeedModification(equippedTool, deltaTime)
 
+    local camlockPart, camlockPlayer = getClosestCamlockPart()
+    local triggerPart, triggerPlayer = getClosestTriggerbotPart()
+
+    local visualTarget = State.LockedTarget
+    if not visualTarget and Settings.CamlockEnabled and (State.CamlockHoldActive or State.CamlockToggleActive) then
+        visualTarget = camlockPlayer
+    end
+    if not visualTarget and Settings.TriggerbotEnabled and (State.TriggerbotHoldActive or State.TriggerbotToggleActive) then
+        visualTarget = triggerPlayer
+    end
+    State.VisualTarget = visualTarget
+    ESP.updateEsp()
+
     if Settings.CamlockEnabled and (State.CamlockHoldActive or State.CamlockToggleActive) then
-        local camlockPart = getClosestCamlockPart()
         Features.runCamlock(camlockPart)
         Features.updateCamlockFOVBox(camlockPart)
     else
-        local camlockPart = getClosestCamlockPart()
         Features.updateCamlockFOVBox(camlockPart)
     end
 
     if Settings.TriggerbotEnabled and (State.TriggerbotHoldActive or State.TriggerbotToggleActive) then
-        local triggerPart = getClosestTriggerbotPart()
         Features.runTriggerbot(triggerPart)
         Features.updateTriggerbotFOVBox(triggerPart)
     else
-        local triggerPart = getClosestTriggerbotPart()
         Features.updateTriggerbotFOVBox(triggerPart)
     end
     if not isTargetFeatureAllowed() then
         hideUI()
+        State.VisualTarget = nil
         Features.hideSilentAimFOVBox()
         if State.Enabled or State.LockedTarget then
             State.Enabled = false; clearTargetState(true)
@@ -448,7 +457,12 @@ connect(RunService.RenderStepped, function(deltaTime)
         end
         return
     end
-    if not State.Enabled and not isAutoMode() then hideUI(); Features.hideSilentAimFOVBox(); return end
+    if not State.Enabled and not isAutoMode() then
+        hideUI()
+        State.VisualTarget = nil
+        Features.hideSilentAimFOVBox()
+        return
+    end
     if isAutoMode() then
         local prevTarget = State.LockedTarget
         tryRetarget(false)
@@ -465,7 +479,13 @@ connect(RunService.RenderStepped, function(deltaTime)
         end
     end
     local aimPart, lockedChar = ensureValidLockedTarget()
-    if not aimPart then clearCombatState(true); hideUI(); Features.hideSilentAimFOVBox(); return end
+    if not aimPart then
+        clearCombatState(true)
+        hideUI()
+        State.VisualTarget = nil
+        Features.hideSilentAimFOVBox()
+        return
+    end
     local canUseAimPart = resolveCurrentPartFromLinePart(aimPart) ~= nil
     State.CurrentPart = canUseAimPart and aimPart or nil
     Features.updateSilentAimFOVBox(State.CurrentPart)

@@ -3,6 +3,7 @@ local State = {
     FakePos              = nil,
     CurrentPart          = nil,
     LockedTarget         = nil,
+    VisualTarget         = nil,
     Enabled              = false,
 
     LastShootArgs        = nil,

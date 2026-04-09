@@ -12,9 +12,11 @@ local Movement
 -- Box is anchored to the target's screen position (not the cursor).
 -- Size is fixed pixels — does NOT scale with distance.
 -- Width/Height configs are {Left, Right} / {Up, Down} in pixels.
-local function readPad(cfg, fallback)
+local function readPad(cfg, fallback, firstKey, secondKey)
     if type(cfg) == "table" then
-        return tonumber(cfg[1]) or fallback, tonumber(cfg[2]) or fallback
+        local a = tonumber(cfg[firstKey]) or tonumber(cfg[1]) or fallback
+        local b = tonumber(cfg[secondKey]) or tonumber(cfg[2]) or fallback
+        return a, b
     end
     local v = tonumber(cfg) or fallback
     return v, v
@@ -24,8 +26,8 @@ local function isInsideTargetBox(cam, part, wKey, hKey)
     local sp, onScreen = cam:WorldToViewportPoint(part.Position)
     if not onScreen or sp.Z <= 0 then return false end
     local mp = UIS:GetMouseLocation()
-    local padL, padR = readPad(Settings[wKey], 10)
-    local padU, padD = readPad(Settings[hKey], 10)
+    local padL, padR = readPad(Settings[wKey], 10, "Left", "Right")
+    local padU, padD = readPad(Settings[hKey], 10, "Up", "Down")
     local dx = mp.X - sp.X
     local dy = mp.Y - sp.Y
     return dx >= -padL and dx <= padR
