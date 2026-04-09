@@ -3,6 +3,7 @@ local GH, MainEvent, oldShoot, mt, oldNamecall
 local isStoredShootArgsValid
 local Taps
 local SilentAim
+local NewGameTracer
 local hookedShoot, hookedNamecall
 local gameStyle
 
@@ -84,8 +85,14 @@ local function buildHooks()
                         return oldNamecall(self, ...)
                     end
                     result = sendResult
+                    if NewGameTracer then
+                        pcall(NewGameTracer.renderPayload, args[2].StartPoint, sendArgs[2])
+                    end
                     for _ = 2, tapCount do
                         pcall(oldNamecall, self, table.unpack(sendArgs))
+                        if NewGameTracer then
+                            pcall(NewGameTracer.renderPayload, args[2].StartPoint, sendArgs[2])
+                        end
                     end
                     return result
                 end
@@ -148,6 +155,7 @@ local function init(deps)
     isStoredShootArgsValid = deps.isStoredShootArgsValid
     Taps                   = deps.Taps
     SilentAim              = deps.SilentAim
+    NewGameTracer          = deps.NewGameTracer
     gameStyle              = deps.gameStyle
     SilentAim.init(deps)
     -- Build closures once here so install() just wires them in without re-allocating.

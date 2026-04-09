@@ -13,6 +13,7 @@ local MainEvent, GH
 local playerShotFn = nil
 local rawShoot     = nil  -- original GH.shoot, bypasses the silent aim hook
 local gameStyle    = nil
+local NewGameTracer = nil
 
 local TIMESTAMP_JITTER_SCALE = 0.4
 local TIMESTAMP_STEP         = 1 / 60
@@ -269,20 +270,28 @@ local function fireBurst(tool, targetChar)
                 for j = 1, p.pellets do
                     pellets[j] = { HitPosition = p.targetPos, HitInstance = p.hitPart }
                 end
-                pcall(fireServer, MainEvent, "GunFired", {
+                local payload = {
                     ToolName   = tool.Name,
                     StartPoint = p.origin,
                     Pellets    = pellets,
                     Timestamp  = timestamp,
-                })
+                }
+                local ok = pcall(fireServer, MainEvent, "GunFired", payload)
+                if ok and NewGameTracer then
+                    pcall(NewGameTracer.renderPayload, p.muzzlePos, payload)
+                end
             else
-                pcall(fireServer, MainEvent, "GunFired", {
+                local payload = {
                     ToolName    = tool.Name,
                     StartPoint  = p.origin,
                     HitPosition = p.targetPos,
                     HitInstance = p.hitPart,
                     Timestamp   = timestamp,
-                })
+                }
+                local ok = pcall(fireServer, MainEvent, "GunFired", payload)
+                if ok and NewGameTracer then
+                    pcall(NewGameTracer.renderPayload, p.muzzlePos, payload)
+                end
             end
         else
             -- Dashood style: positional args, repeat per pellet.
@@ -400,6 +409,7 @@ local function init(deps)
     MainEvent  = deps.MainEvent
     GH         = deps.GH
     gameStyle  = deps.gameStyle
+    NewGameTracer = deps.NewGameTracer
     rawShoot   = deps.oldShoot  -- pre-hook original; keeps tracers independent of silent aim
     if type(shared) == "table" and type(shared.playerShot) == "function" then
         playerShotFn = shared.playerShot
