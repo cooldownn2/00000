@@ -5,50 +5,59 @@ local isTargetFeatureAllowed, isStoredShootArgsValid
 local Taps
 local hookedShoot, hookedNamecall
 
+-- Reusable shootData table — avoids a fresh allocation per shot when silent aim
+-- redirects the aim position. Fields are overwritten before every use.
+local _shootData = {}
+
 local function setReadOnlySafe(value)
     if setreadonly then setreadonly(mt, value) end
 end
 
-local function buildShootHook()
+local function buildHooks()
     hookedShoot = function(data)
         if State.Unloaded then return oldShoot(data) end
         local shootData = data
         if type(data) == "table" then
-            State.LastShootData = {}
-            for k, v in pairs(data) do State.LastShootData[k] = v end
             if isTargetFeatureAllowed() then
                 local aimPos, hitPart
                 if State.FakePart then
+                    -- FakePart already set by an earlier code path; use it directly.
+                    -- Do NOT write FakePos back — it's already set or legitimately nil.
                     hitPart = State.FakePart
-                    aimPos = State.FakePos or hitPart.Position
+                    aimPos  = State.FakePos or hitPart.Position
                 elseif State.Enabled and State.CurrentPart then
                     local computedPos, aimPart = getSpreadAimPosition(State.CurrentPart)
                     hitPart = aimPart or State.CurrentPart
-                    aimPos = computedPos
+                    aimPos  = computedPos
                 end
                 if hitPart and aimPos then
-                    shootData = {}
-                    for k, v in pairs(data) do shootData[k] = v end
-                    shootData.AimPosition = aimPos
-                    shootData.Hit         = hitPart
-                    applyRangePolicy(shootData)
+                    -- Reuse _shootData — copy incoming fields then override aim fields.
+                    for k, v in pairs(data) do _shootData[k] = v end
+                    _shootData.AimPosition = aimPos
+                    _shootData.Hit         = hitPart
+                    applyRangePolicy(_shootData)
+                    shootData = _shootData
+                    -- Stage for the namecall hook; computed position is already stored.
                     State.FakePart = hitPart
                     State.FakePos  = aimPos
+                else
+                    -- Feature allowed but no valid aim target — clear any stale FakePart
+                    -- so the namecall hook doesn't fire a redirect on the next shot.
+                    State.FakePart = nil
+                    State.FakePos  = nil
                 end
+            else
+                -- Feature disabled mid-shot — clear stale state so nothing leaks.
+                State.FakePart = nil
+                State.FakePos  = nil
             end
         end
         return oldShoot(shootData)
     end
-end
 
-local function buildNamecallHook()
     hookedNamecall = function(self, ...)
         if State.Unloaded then return oldNamecall(self, ...) end
         if getnamecallmethod() == "FireServer" and rawequal(self, MainEvent) then
-            if State.SkipNextFireServer then
-                State.SkipNextFireServer = false
-                return oldNamecall(self, ...)
-            end
             local args = {...}
             if isStoredShootArgsValid(args) then
                 State.LastShootArgs = cloneArgs(args)
@@ -56,12 +65,16 @@ local function buildNamecallHook()
             if State.FakePart and isStoredShootArgsValid(args) and isTargetFeatureAllowed() then
                 local headPos = State.FakePos or State.FakePart.Position
                 args[3] = headPos
-                args[4] = State.FakePart; args[6] = headPos
-                State.FakePart, State.FakePos = nil, nil
+                args[4] = State.FakePart
+                args[6] = headPos
+                -- Clear before firing — prevents stale state if the tap loop errors
+                State.FakePart = nil
+                State.FakePos  = nil
                 local result = oldNamecall(self, table.unpack(args))
+                -- Tap extra shots: call oldNamecall directly (bypasses hook) so
+                -- SkipNextFireServer is never needed and can't be left dirty.
                 local extra = Taps.getTapCount(args) - 1
                 for _ = 1, extra do
-                    State.SkipNextFireServer = true
                     oldNamecall(self, table.unpack(args))
                 end
                 return result
@@ -70,7 +83,6 @@ local function buildNamecallHook()
                 local result = oldNamecall(self, ...)
                 local extra = Taps.getTapCount(args) - 1
                 for _ = 1, extra do
-                    State.SkipNextFireServer = true
                     oldNamecall(self, table.unpack(args))
                 end
                 return result
@@ -81,8 +93,7 @@ local function buildNamecallHook()
 end
 
 local function install()
-    buildShootHook()
-    buildNamecallHook()
+    -- Hooks are built once in init; install just wires them in.
     if GH.shoot ~= hookedShoot then GH.shoot = hookedShoot end
     setReadOnlySafe(false)
     if mt.__namecall ~= hookedNamecall then mt.__namecall = hookedNamecall end
@@ -113,6 +124,8 @@ local function init(deps)
     isTargetFeatureAllowed = deps.isTargetFeatureAllowed
     isStoredShootArgsValid = deps.isStoredShootArgsValid
     Taps                   = deps.Taps
+    -- Build closures once here so install() just wires them in without re-allocating.
+    buildHooks()
 end
 
 return {

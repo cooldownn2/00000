@@ -6,8 +6,6 @@ local State = {
     Enabled              = false,
 
     LastShootArgs        = nil,
-    LastShootData        = nil,
-    SkipNextFireServer   = false,
     LastRetarget         = 0,
     SpeedCharacter       = nil,
     DefaultWalkSpeed     = nil,
