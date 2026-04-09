@@ -234,9 +234,13 @@ local function applySpeedModification(tool, deltaTime)
     if alpha > 1 then alpha = 1 end
     lerpedSpeed = lerpedSpeed + (targetSpeed - lerpedSpeed) * alpha
 
-    -- Only write WalkSpeed when it has meaningfully changed (avoids redundant engine calls).
-    if math.abs(hum.WalkSpeed - lerpedSpeed) > 0.05 then
-        hum.WalkSpeed = lerpedSpeed
+    -- Zeehood's framework continuously rewrites WalkSpeed (e.g. 20.8), which can
+    -- cause visible slowdown fights. Prefer velocity drive there and avoid writing
+    -- WalkSpeed every frame.
+    if gameStyle ~= "zeehood" then
+        if math.abs(hum.WalkSpeed - lerpedSpeed) > 0.05 then
+            hum.WalkSpeed = lerpedSpeed
+        end
     end
 
     if root then
@@ -246,6 +250,9 @@ local function applySpeedModification(tool, deltaTime)
 
         if moveMagSq > MOVE_THRESH_SQ then
             local useVelocityInjection = Settings.SpeedVelocityInjection ~= false
+            if gameStyle == "zeehood" then
+                useVelocityInjection = true
+            end
             -- Framework scripts on Zeehood can clamp WalkSpeed back to ~20.8
             -- every frame. If detected, switch to velocity drive automatically.
             if gameStyle == "zeehood" and hum.WalkSpeed + CLAMP_DETECT_GAP < lerpedSpeed then
