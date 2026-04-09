@@ -10,6 +10,41 @@ local function setReadOnlySafe(value)
     if setreadonly then setreadonly(mt, value) end
 end
 
+local function cloneNewGameArgs(args)
+    local out = table.clone and table.clone(args) or { unpack(args) }
+    local payload = args[2]
+    if type(payload) ~= "table" then return out end
+
+    local payloadCopy = table.clone and table.clone(payload) or {}
+    if not table.clone then
+        for k, v in pairs(payload) do
+            payloadCopy[k] = v
+        end
+    end
+
+    local pellets = payload.Pellets
+    if type(pellets) == "table" then
+        local pelletsCopy = table.create and table.create(#pellets) or {}
+        for i, pellet in ipairs(pellets) do
+            if type(pellet) == "table" then
+                local pelletCopy = table.clone and table.clone(pellet) or {}
+                if not table.clone then
+                    for k, v in pairs(pellet) do
+                        pelletCopy[k] = v
+                    end
+                end
+                pelletsCopy[i] = pelletCopy
+            else
+                pelletsCopy[i] = pellet
+            end
+        end
+        payloadCopy.Pellets = pelletsCopy
+    end
+
+    out[2] = payloadCopy
+    return out
+end
+
 local function buildHooks()
     hookedShoot = function(data)
         if State.Unloaded then return oldShoot(data) end
@@ -32,9 +67,10 @@ local function buildHooks()
             -- directly here; there is no GH.shoot hook to set FakePart for us.
             if isStoredShootArgsValid(args) then
                 local tapCount = 1
+                local sendArgs = cloneNewGameArgs(args)
                 local redirectOk = pcall(function()
                     SilentAim.recordShootArgs(args)
-                    SilentAim.redirectNewGamePayload(args[2])
+                    SilentAim.redirectNewGamePayload(sendArgs[2])
                     tapCount = Taps.getTapCount(args)
                 end)
 
@@ -43,9 +79,13 @@ local function buildHooks()
                 -- cooldown/reset logic instead of getting stuck after one shot.
                 local result
                 if redirectOk then
-                    result = oldNamecall(self, table.unpack(args))
+                    local sendOk, sendResult = pcall(oldNamecall, self, table.unpack(sendArgs))
+                    if not sendOk then
+                        return oldNamecall(self, ...)
+                    end
+                    result = sendResult
                     for _ = 2, tapCount do
-                        pcall(oldNamecall, self, table.unpack(args))
+                        pcall(oldNamecall, self, table.unpack(sendArgs))
                     end
                     return result
                 end
