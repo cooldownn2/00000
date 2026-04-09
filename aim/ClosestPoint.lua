@@ -24,9 +24,15 @@ local CROSSHAIR_RAY_DISTANCE           = 5000
 local CACHE_PRUNE_INTERVAL             = 5
 local RAY_MAX_LOCK_DIST_SQ             = 28 * 28
 local DEFAULT_SAMPLE_BUDGET            = 1200
+local SAMPLE_BUDGET_MIN                = 900
 local SCALE_STEP_MIN                   = 0.025
 local SCALE_STEP_MAX                   = 0.50
 local CENTER_SKIP_THRESHOLD            = 0.85
+local TIME_BUDGET_MIN                  = 0.0010
+local TIME_BUDGET_MAX                  = 0.0014
+local BUDGET_PRESSURE_RISE             = 0.12
+local BUDGET_PRESSURE_DECAY            = 0.92
+local BUDGET_PRESSURE_SCALE            = 0.18
 
 -- Lower value = higher priority (part is preferred when closest to crosshair).
 -- HumanoidRootPart removed — it's no longer in BodyParts and is invisible.
@@ -43,6 +49,86 @@ local bodyPartsSnapshotCache = setmetatable({}, { __mode = "k" })
 local surfaceSampleCache     = setmetatable({}, { __mode = "k" })
 local sortedSampleCache      = setmetatable({}, { __mode = "k" })
 local lastCachePrune         = 0
+local EMPTY_PARTS            = {}
+local _budgetPressure        = 0
+local _sortDots              = nil
+local _lastRayPartsRef       = nil
+
+local _stats = {
+    cacheHits            = 0,
+    cacheMisses          = 0,
+    rayHits              = 0,
+    rayMisses            = 0,
+    sampleCalls          = 0,
+    sampleEarlyExits     = 0,
+    sampleBudgetBreaks   = 0,
+    sampleAvgMicros      = 0,
+}
+
+local function _sortIndexByDotDesc(a, b)
+    return _sortDots[a] > _sortDots[b]
+end
+
+local function updateBudgetPressure(hitBudgetLimit)
+    if hitBudgetLimit then
+        _budgetPressure = _budgetPressure + (1 - _budgetPressure) * BUDGET_PRESSURE_RISE
+    else
+        _budgetPressure = _budgetPressure * BUDGET_PRESSURE_DECAY
+    end
+end
+
+local function getAdaptiveTimeBudget()
+    local factor = 1 - (_budgetPressure * BUDGET_PRESSURE_SCALE)
+    return clamp(CLOSEST_POINT_TIME_BUDGET_NORMAL * factor, TIME_BUDGET_MIN, TIME_BUDGET_MAX)
+end
+
+local function getAdaptiveSampleBudget()
+    local factor = 1 - (_budgetPressure * 0.20)
+    return floor(clamp(DEFAULT_SAMPLE_BUDGET * factor, SAMPLE_BUDGET_MIN, DEFAULT_SAMPLE_BUDGET) + 0.5)
+end
+
+local function recordSampleStats(elapsedSeconds, earlyExit, hitBudgetLimit)
+    _stats.sampleCalls = _stats.sampleCalls + 1
+    if earlyExit then
+        _stats.sampleEarlyExits = _stats.sampleEarlyExits + 1
+    end
+    if hitBudgetLimit then
+        _stats.sampleBudgetBreaks = _stats.sampleBudgetBreaks + 1
+    end
+
+    local micros = elapsedSeconds * 1000000
+    if _stats.sampleAvgMicros <= 0 then
+        _stats.sampleAvgMicros = micros
+    else
+        _stats.sampleAvgMicros = _stats.sampleAvgMicros + (micros - _stats.sampleAvgMicros) * 0.10
+    end
+end
+
+local function getDebugStats()
+    return {
+        cacheHits          = _stats.cacheHits,
+        cacheMisses        = _stats.cacheMisses,
+        rayHits            = _stats.rayHits,
+        rayMisses          = _stats.rayMisses,
+        sampleCalls        = _stats.sampleCalls,
+        sampleEarlyExits   = _stats.sampleEarlyExits,
+        sampleBudgetBreaks = _stats.sampleBudgetBreaks,
+        sampleAvgMicros    = _stats.sampleAvgMicros,
+        budgetPressure     = _budgetPressure,
+    }
+end
+
+local function resetDebugStats()
+    _stats.cacheHits          = 0
+    _stats.cacheMisses        = 0
+    _stats.rayHits            = 0
+    _stats.rayMisses          = 0
+    _stats.sampleCalls        = 0
+    _stats.sampleEarlyExits   = 0
+    _stats.sampleBudgetBreaks = 0
+    _stats.sampleAvgMicros    = 0
+    _budgetPressure           = 0
+end
 
 -- ── Cached ClosestPointScale — read from Settings once, not every frame ───────
 -- Updated by getAimPosition on first call and whenever the value changes.
@@ -63,7 +149,7 @@ end
 local PartRayParams = RaycastParams.new()
 PartRayParams.FilterType  = Enum.RaycastFilterType.Include
 PartRayParams.IgnoreWater = true
-local _lastRayPartsRef = nil  -- reference to the last assigned parts array
+_lastRayPartsRef = nil -- reference to the last assigned parts array
 
 -- ── Body parts snapshot ───────────────────────────────────────────────────────
 local function collectBodyParts(char)
@@ -76,14 +162,24 @@ local function collectBodyParts(char)
     return out
 end
 
+local function collectBodyPartsInto(char, out)
+    for i = 1, #out do out[i] = nil end
+    for _, part in ipairs(char:GetChildren()) do
+        if part:IsA("BasePart") and BODY_PART_NAMES[part.Name] and part.Transparency < 1 then
+            out[#out + 1] = part
+        end
+    end
+    return out
+end
+
 local function getBodyPartsSnapshot(char)
-    if not char then return {} end
+    if not char then return EMPTY_PARTS end
     local now   = clock()
     local entry = bodyPartsSnapshotCache[char]
     if entry and (now - entry.timestamp) <= BODY_PART_SNAPSHOT_MAX_AGE then
         return entry.parts
     end
-    local parts = collectBodyParts(char)
+    local parts = entry and collectBodyPartsInto(char, entry.parts) or collectBodyParts(char)
     if entry then
         -- Reuse the entry table — mutate in place to avoid a new allocation.
         entry.timestamp = now
@@ -97,6 +193,8 @@ end
 -- ── Cache management ──────────────────────────────────────────────────────────
 local function resetCache()
     for k in pairs(closestPointCache) do closestPointCache[k] = nil end
+    _lastRayPartsRef = nil
+    _budgetPressure  = 0
 end
 
 local function pruneCaches(force)
@@ -140,11 +238,29 @@ end
 -- ── Part scoring ──────────────────────────────────────────────────────────────
 local function getClosestPartToCrosshair(char, mouseX, mouseY)
     if not char then return nil end
-    local cam      = workspace.CurrentCamera
-    local fallback = char:FindFirstChild("Head") or char:FindFirstChildWhichIsA("BasePart")
+    local cam   = workspace.CurrentCamera
+    local parts = getBodyPartsSnapshot(char)
+
+    local fallback = char:FindFirstChild("Head")
+        or char:FindFirstChild("UpperTorso")
+        or char:FindFirstChild("Torso")
+
+    if not fallback then
+        local bestFallbackScore = huge
+        local bestFallbackName  = nil
+        for i = 1, #parts do
+            local part = parts[i]
+            local score = PART_PRIORITY[part.Name] or 1
+            if score < bestFallbackScore or (score == bestFallbackScore and (not bestFallbackName or part.Name < bestFallbackName)) then
+                bestFallbackScore = score
+                bestFallbackName  = part.Name
+                fallback = part
+            end
+        end
+    end
+
     if not cam then return fallback end
     local bestPart, bestScore = nil, huge
-    local parts = getBodyPartsSnapshot(char)
     for i = 1, #parts do
         local part = parts[i]
         local screenPos, onScreen = cam:WorldToViewportPoint(part.Position)
@@ -298,25 +414,49 @@ local function getSortedSamples(part, samplePoints, viewDirLocal)
     local octant = getOctantKey(viewDirLocal)
     local n      = #samplePoints
     local entry  = sortedSampleCache[part]
-    if entry and entry.octant == octant and entry.count == n then
+    if entry and entry.octant == octant and entry.count == n and entry.samplePointsRef == samplePoints then
         return entry.sorted
     end
-    local dots    = table.create(n)
-    local indices = table.create(n)
+
+    if not entry then
+        entry = {
+            octant  = octant,
+            count   = 0,
+            samplePointsRef = nil,
+            dots    = table.create(n),
+            indices = table.create(n),
+            sorted  = table.create(n),
+        }
+        sortedSampleCache[part] = entry
+    end
+
+    local dots    = entry.dots
+    local indices = entry.indices
+    local sorted  = entry.sorted
+
+    if entry.count > n then
+        for i = n + 1, entry.count do
+            dots[i] = nil
+            indices[i] = nil
+            sorted[i] = nil
+        end
+    end
+
     for i = 1, n do
         dots[i]    = samplePoints[i]:Dot(viewDirLocal)
         indices[i] = i
     end
-    table.sort(indices, function(a, b) return dots[a] > dots[b] end)
-    local sorted = table.create(n)
+
+    _sortDots = dots
+    table.sort(indices, _sortIndexByDotDesc)
+    _sortDots = nil
+
     for i = 1, n do sorted[i] = samplePoints[indices[i]] end
-    if entry then
-        entry.octant = octant
-        entry.count  = n
-        entry.sorted = sorted
-    else
-        sortedSampleCache[part] = { octant = octant, count = n, sorted = sorted }
-    end
+
+    entry.octant = octant
+    entry.count  = n
+    entry.samplePointsRef = samplePoints
+
     return sorted
 end
 
@@ -354,6 +494,8 @@ local function getClosestSampleOnPart(part, mouseX, mouseY, step, sampleBudget, 
     local startClock = clock()
     local bestPoint  = nil
     local bestDistSq = huge
+    local earlyExit  = false
+    local hitBudgetLimit = false
 
     for i = 1, limit do
         local wp = cf:PointToWorldSpace(samplePoints[i])
@@ -372,11 +514,22 @@ local function getClosestSampleOnPart(part, mouseX, mouseY, step, sampleBudget, 
             if d2 < bestDistSq then
                 bestDistSq = d2
                 bestPoint  = wp
-                if bestDistSq <= CLOSEST_POINT_EARLY_EXIT_DIST_SQ then break end
+                if bestDistSq <= CLOSEST_POINT_EARLY_EXIT_DIST_SQ then
+                    earlyExit = true
+                    break
+                end
             end
         end
-        if timeBudget and (i % 48) == 0 and (clock() - startClock) >= timeBudget then break end
+        if timeBudget and (i % 48) == 0 and (clock() - startClock) >= timeBudget then
+            hitBudgetLimit = true
+            break
+        end
     end
+
+    local elapsed = clock() - startClock
+    recordSampleStats(elapsed, earlyExit, hitBudgetLimit)
+    updateBudgetPressure(hitBudgetLimit)
+
     return bestPoint
 end
 
@@ -395,18 +548,26 @@ end
 local function getCrosshairHitPart(char, rayOrigin, rayDir)
     if not char or not rayOrigin or not rayDir then return nil end
     local bodyParts = getBodyPartsSnapshot(char)
-    if #bodyParts == 0 then return nil end
+    if #bodyParts == 0 then
+        _stats.rayMisses = _stats.rayMisses + 1
+        return nil
+    end
     -- Only rebuild the filter when the snapshot array reference has changed.
     if bodyParts ~= _lastRayPartsRef then
         PartRayParams.FilterDescendantsInstances = bodyParts
         _lastRayPartsRef = bodyParts
     end
     local result = workspace:Raycast(rayOrigin, rayDir * CROSSHAIR_RAY_DISTANCE, PartRayParams)
-    if not result then return nil end
+    if not result then
+        _stats.rayMisses = _stats.rayMisses + 1
+        return nil
+    end
     local hitPart = result.Instance
     if hitPart and hitPart:IsA("BasePart") and hitPart:IsDescendantOf(char) and BODY_PART_NAMES[hitPart.Name] then
+        _stats.rayHits = _stats.rayHits + 1
         return hitPart
     end
+    _stats.rayMisses = _stats.rayMisses + 1
     return nil
 end
 
@@ -433,7 +594,7 @@ local function getAimPosition(part)
     end
 
     local char      = (State.LockedTarget and State.LockedTarget.Character) or part.Parent
-    local targetKey = State.LockedTarget or char
+    local targetKey = State.LockedTarget or char or part
     local now       = clock()
 
     -- Cache hit
@@ -445,8 +606,11 @@ local function getAimPosition(part)
         and cached.mouseY  == mouseY
         and cached.part
         and cached.part.Parent then
+        _stats.cacheHits = _stats.cacheHits + 1
         return cached.point, cached.part
     end
+
+    _stats.cacheMisses = _stats.cacheMisses + 1
 
     -- Part selection
     local rayHitPart  = getCrosshairHitPart(char, rayOrigin, rayDir)
@@ -466,6 +630,7 @@ local function getAimPosition(part)
     local finalPoint
 
     if centerBias >= CENTER_SKIP_THRESHOLD then
+        updateBudgetPressure(false)
         local directPoint = getClosestPointFromPartByCrosshair(targetPart, rayOrigin, rayDir, step) or part.Position
         finalPoint = directPoint:Lerp(targetPart.Position, centerBias)
     else
@@ -473,12 +638,15 @@ local function getAimPosition(part)
         local directDistSq = getWorldScreenDistanceSq(directPoint, mouseX, mouseY)
         local basePoint
         if directDistSq > CLOSEST_POINT_ACCEPT_DIST_SQ then
+            local sampleBudget = getAdaptiveSampleBudget()
+            local timeBudget   = getAdaptiveTimeBudget()
             basePoint = getClosestSampleOnPart(
                 targetPart, mouseX, mouseY, step,
-                DEFAULT_SAMPLE_BUDGET, CLOSEST_POINT_TIME_BUDGET_NORMAL,
+                sampleBudget, timeBudget,
                 rayDir
             ) or directPoint
         else
+            updateBudgetPressure(false)
             basePoint = directPoint
         end
         finalPoint = basePoint:Lerp(targetPart.Position, centerBias)
@@ -519,6 +687,8 @@ return {
     init                 = init,
     getAimPosition       = getAimPosition,
     getBodyPartsSnapshot = getBodyPartsSnapshot,
+    getDebugStats        = getDebugStats,
+    resetDebugStats      = resetDebugStats,
     pruneCaches          = pruneCaches,
     resetCache           = resetCache,
 }
