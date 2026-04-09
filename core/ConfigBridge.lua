@@ -89,8 +89,6 @@ local function applyUserConfig(settings, userConfig)
         { {"Weapon Modifications","ForceHit","Enabled"},   {"Weapon Modifications","ForceHit","Enabled"} },
         { {"Weapon Modifications","ForceHit","Full Damage"}, {"Weapon Modifications","ForceHit","Full Damage"} },
         { {"Weapon Modifications","ForceHit","Weapon Distances"}, {"Weapon Modifications","ForceHit","Weapon Distances"} },
-        { {"Weapon Modifications","ForceHit","Shotgun Pellets"},  {"Weapon Modifications","ForceHit","Shotgun Pellets"} },
-        { {"Weapon Modifications","ForceHit","Full Damage Shots"}, {"Weapon Modifications","ForceHit","Full Damage Shots"} },
 
         -- Speed
         { {"Speed Modification","Enabled"},                  {"Character","Speed Override","Enabled"} },

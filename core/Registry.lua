@@ -86,9 +86,6 @@ local SettingPaths = {
     ForceHitEnabled             = {"Weapon Modifications", "ForceHit", "Enabled"},
     ForceHitFullDamage          = {"Weapon Modifications", "ForceHit", "Full Damage"},
     ForceHitDistances           = {"Weapon Modifications", "ForceHit", "Weapon Distances"},
-    ShotgunPellets              = {"Weapon Modifications", "ForceHit", "Shotgun Pellets"},
-    FullDamageShotgun           = {"Weapon Modifications", "ForceHit", "Full Damage Shots", "Shotgun"},
-    FullDamageDefault           = {"Weapon Modifications", "ForceHit", "Full Damage Shots", "Default"},
 }
 
 local function getPathValue(root, path)

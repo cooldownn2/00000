@@ -12,6 +12,20 @@ local WAIT_NO_TOOL           = 0.08
 local WAIT_NO_TARGET         = 0.05
 local WAIT_BETWEEN_BURSTS    = 0.02
 
+-- Shotgun weapons fire multiple pellet events per trigger pull
+local SHOTGUN_NAMES = {
+    ["[Shotgun]"]          = true,
+    ["[TacticalShotgun]"]  = true,
+    ["[Drum-Shotgun]"]     = true,
+    ["[Double-Barrel SG]"] = true,
+}
+local SHOTGUN_PELLETS    = 5   -- ShootGun events per burst for shotguns
+local SHOTS_SHOTGUN_FULL = 20  -- bursts to guarantee kill (Full Damage, shotgun)
+local SHOTS_DEFAULT_FULL = 15  -- bursts to guarantee kill (Full Damage, single-shot)
+local SHOTS_SINGLE       = 1   -- bursts when Full Damage is off
+-- R15 torso priority list for shotgun body-shot targeting
+local TORSO_PARTS = { "UpperTorso", "LowerTorso", "HumanoidRootPart" }
+
 local function canSelfShoot()
     local char = LP.Character
     if not char then return false end
@@ -114,18 +128,25 @@ local function getSpoofedOrigin(tool, muzzlePos, targetPos)
 end
 
 local function getPellets(tool)
-    local pellets = Settings.ShotgunPellets
-    return (pellets and pellets[tool.Name]) or 1
+    return SHOTGUN_NAMES[tool.Name] and SHOTGUN_PELLETS or 1
 end
 
 local function getShotCount(isShotgun)
-    if not Settings.ForceHitFullDamage then
-        return isShotgun and 5 or 1
+    if not Settings.ForceHitFullDamage then return SHOTS_SINGLE end
+    return isShotgun and SHOTS_SHOTGUN_FULL or SHOTS_DEFAULT_FULL
+end
+
+-- Returns the body part to use as the hit target.
+-- Full Damage + shotgun  → UpperTorso (body-shot, reliable large hitbox)
+-- Everything else        → Head (precision, highest damage multiplier)
+local function getTargetPart(tool, targetChar)
+    if Settings.ForceHitFullDamage and SHOTGUN_NAMES[tool.Name] then
+        for _, name in ipairs(TORSO_PARTS) do
+            local part = targetChar:FindFirstChild(name)
+            if part then return part end
+        end
     end
-    if isShotgun then
-        return Settings.FullDamageShotgun or 8
-    end
-    return Settings.FullDamageDefault or 15
+    return targetChar:FindFirstChild("Head")
 end
 
 local function buildShotParams(tool, targetChar)
@@ -133,9 +154,9 @@ local function buildShotParams(tool, targetChar)
     local ammo   = tool:FindFirstChild("Ammo")
     if ammo and ammo.Value <= 0 then return nil end
 
-    local head = targetChar:FindFirstChild("Head")
-    local hum  = targetChar:FindFirstChildOfClass("Humanoid")
-    if not handle or not head or not hum or hum.Health <= 0 then return nil end
+    local hitPart = getTargetPart(tool, targetChar)
+    local hum     = targetChar:FindFirstChildOfClass("Humanoid")
+    if not handle or not hitPart or not hum or hum.Health <= 0 then return nil end
 
     local baseTime = getServerNow()
     if not baseTime then return nil end
@@ -144,12 +165,12 @@ local function buildShotParams(tool, targetChar)
     local isShotgun = pellets > 1
     local shots     = getShotCount(isShotgun)
     local muzzlePos = getMuzzlePos(tool, handle)
-    local targetPos = head.Position
+    local targetPos = hitPart.Position
     local origin    = getSpoofedOrigin(tool, muzzlePos, targetPos)
 
     return {
         handle    = handle,
-        head      = head,
+        hitPart   = hitPart,
         hum       = hum,
         remote    = tool:FindFirstChild("RemoteEvent"),
         pellets   = pellets,
@@ -199,7 +220,7 @@ local function fireBurst(tool, targetChar)
                 "ShootGun",
                 p.handle,
                 p.origin,
-                p.head,
+                p.hitPart,
                 p.muzzlePos,
                 p.targetPos,
                 timestamp
