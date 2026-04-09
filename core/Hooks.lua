@@ -31,14 +31,26 @@ local function buildHooks()
             -- New-game style: the payload is a table at args[2].  Redirect hits
             -- directly here; there is no GH.shoot hook to set FakePart for us.
             if isStoredShootArgsValid(args) then
-                SilentAim.recordShootArgs(args)
-                SilentAim.redirectNewGamePayload(args[2])
-                local result = oldNamecall(self, table.unpack(args))
-                local extra = Taps.getTapCount(args) - 1
-                for _ = 1, extra do
-                    oldNamecall(self, table.unpack(args))
+                local tapCount = 1
+                local redirectOk = pcall(function()
+                    SilentAim.recordShootArgs(args)
+                    SilentAim.redirectNewGamePayload(args[2])
+                    tapCount = Taps.getTapCount(args)
+                end)
+
+                -- If the redirect path fails for any reason, immediately fall
+                -- back to the original payload so the gun local can finish its
+                -- cooldown/reset logic instead of getting stuck after one shot.
+                local result
+                if redirectOk then
+                    result = oldNamecall(self, table.unpack(args))
+                    for _ = 2, tapCount do
+                        pcall(oldNamecall, self, table.unpack(args))
+                    end
+                    return result
                 end
-                return result
+
+                return oldNamecall(self, ...)
             end
             return oldNamecall(self, ...)
         end
