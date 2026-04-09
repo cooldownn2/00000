@@ -192,6 +192,7 @@ local sharedDeps = {
     isUnloaded             = isUnloaded,
     MainEvent              = MainEvent,
     GH                     = GH,
+    oldShoot               = oldShoot,
     cloneArgs              = cloneArgs,
     applyRangePolicy       = applyRangePolicy,
     getSpreadAimPosition   = getSpreadAimPosition,

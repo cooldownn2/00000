@@ -11,6 +11,7 @@ local twait   = task.wait
 local Settings, State, isUnloaded
 local MainEvent, GH
 local playerShotFn = nil
+local rawShoot     = nil  -- original GH.shoot, bypasses the silent aim hook
 
 local TIMESTAMP_JITTER_SCALE = 0.4
 local TIMESTAMP_STEP         = 1 / 60
@@ -233,7 +234,7 @@ local function fireBurst(tool, targetChar)
     _shootArgs.Handle       = p.handle
     _shootArgs.ForcedOrigin = p.muzzlePos
     _shootArgs.AimPosition  = p.targetPos
-    pcall(GH.shoot, _shootArgs)
+    pcall(rawShoot or GH.shoot, _shootArgs)
 
     local baseTime = getServerNow()
     if not baseTime then return end
@@ -364,6 +365,7 @@ local function init(deps)
     isUnloaded = deps.isUnloaded
     MainEvent  = deps.MainEvent
     GH         = deps.GH
+    rawShoot   = deps.oldShoot  -- pre-hook original; keeps tracers independent of silent aim
     if type(shared) == "table" and type(shared.playerShot) == "function" then
         playerShotFn = shared.playerShot
     end
