@@ -67,6 +67,7 @@ local function applyFireServerRedirect(args)
     if not fakePart then return args end
 
     local fakePos = State.FakePos or fakePart.Position
+    local originalPart = args[4]
 
     local vecIndices = table.create(3)
     local vecCount = 0
@@ -88,8 +89,8 @@ local function applyFireServerRedirect(args)
     if vecCount > 0 and shooterPos then
         local distSqByIdx = {}
         local minDistSq = HUGE
-        local anchorIndex = nil
-        local anchorDistSq = -1
+        local farIndex = nil
+        local farDistSq = -1
 
         for i = 1, vecCount do
             local idx = vecIndices[i]
@@ -109,14 +110,21 @@ local function applyFireServerRedirect(args)
         for i = 1, vecCount do
             local idx = vecIndices[i]
             local d2 = distSqByIdx[idx]
-            if d2 > originBandMax and d2 > anchorDistSq then
-                anchorDistSq = d2
-                anchorIndex = idx
+            if d2 > originBandMax and d2 > farDistSq then
+                farDistSq = d2
+                farIndex = idx
             end
         end
 
-        if anchorIndex then
-            local delta = fakePos - args[anchorIndex]
+        local oldTargetPos = nil
+        if typeof(originalPart) == "Instance" and originalPart:IsA("BasePart") then
+            oldTargetPos = originalPart.Position
+        elseif farIndex then
+            oldTargetPos = args[farIndex]
+        end
+
+        if oldTargetPos then
+            local delta = fakePos - oldTargetPos
             for i = 1, vecCount do
                 local idx = vecIndices[i]
                 if distSqByIdx[idx] > originBandMax then
@@ -124,7 +132,7 @@ local function applyFireServerRedirect(args)
                 end
             end
         else
-            -- All vectors looked origin-like; fallback to direct redirect.
+            -- No stable target anchor available; fallback to direct redirect.
             for i = 1, vecCount do
                 local idx = vecIndices[i]
                 args[idx] = fakePos
