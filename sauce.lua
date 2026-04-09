@@ -422,17 +422,25 @@ connect(RunService.RenderStepped, function(deltaTime)
     Features.applySpeedModification(equippedTool, deltaTime)
 
     if Settings.CamlockEnabled and (State.CamlockHoldActive or State.CamlockToggleActive) then
-        Features.runCamlock(getClosestCamlockPart())
+        local camlockPart = getClosestCamlockPart()
+        Features.runCamlock(camlockPart)
+        Features.updateCamlockFOVBox(camlockPart)
+    else
+        local camlockPart = getClosestCamlockPart()
+        Features.updateCamlockFOVBox(camlockPart)
     end
-    Features.updateCamlockFOVBox()
 
     if Settings.TriggerbotEnabled and (State.TriggerbotHoldActive or State.TriggerbotToggleActive) then
-        Features.runTriggerbot(getClosestTriggerbotPart())
+        local triggerPart = getClosestTriggerbotPart()
+        Features.runTriggerbot(triggerPart)
+        Features.updateTriggerbotFOVBox(triggerPart)
+    else
+        local triggerPart = getClosestTriggerbotPart()
+        Features.updateTriggerbotFOVBox(triggerPart)
     end
-    Features.updateTriggerbotFOVBox()
-    Features.updateSilentAimFOVBox()
     if not isTargetFeatureAllowed() then
         hideUI()
+        Features.hideSilentAimFOVBox()
         if State.Enabled or State.LockedTarget then
             State.Enabled = false; clearTargetState(true)
             ForceHit.onTargetChanged(false)
@@ -440,7 +448,7 @@ connect(RunService.RenderStepped, function(deltaTime)
         end
         return
     end
-    if not State.Enabled and not isAutoMode() then hideUI(); return end
+    if not State.Enabled and not isAutoMode() then hideUI(); Features.hideSilentAimFOVBox(); return end
     if isAutoMode() then
         local prevTarget = State.LockedTarget
         tryRetarget(false)
@@ -457,9 +465,10 @@ connect(RunService.RenderStepped, function(deltaTime)
         end
     end
     local aimPart, lockedChar = ensureValidLockedTarget()
-    if not aimPart then clearCombatState(true); hideUI(); return end
+    if not aimPart then clearCombatState(true); hideUI(); Features.hideSilentAimFOVBox(); return end
     local canUseAimPart = resolveCurrentPartFromLinePart(aimPart) ~= nil
     State.CurrentPart = canUseAimPart and aimPart or nil
+    Features.updateSilentAimFOVBox(State.CurrentPart)
 
     local lineAnchorPart = (lockedChar and lockedChar:FindFirstChild("Head")) or aimPart
     local screenPos, onScreen = Camera:WorldToViewportPoint(lineAnchorPart.Position)

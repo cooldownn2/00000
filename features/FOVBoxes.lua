@@ -2,14 +2,11 @@ local DrawingLib = rawget(_G, "Drawing")
 
 local FOVBoxes = {}
 
-local Settings, Camera, UIS
+local Settings
 
--- Module-level constant — avoids allocating a new Color3 every frame.
 local DEFAULT_WHITE = Color3.fromRGB(255, 255, 255)
 
 -- ── Slot ─────────────────────────────────────────────────────────────────────
--- One slot per feature. Caches the last written property values so we skip
--- redundant engine property writes on frames where nothing changed.
 local function newSlot()
     return { obj = nil, lx = -1e9, ly = -1e9, lw = -1, lh = -1, lc = false }
 end
@@ -35,26 +32,40 @@ local function hideSlot(slot)
     if b and b.Visible then b.Visible = false end
 end
 
--- Draws a fixed-pixel FOV box centered at the current mouse position.
--- The box size DOES NOT scale with target distance — it is always the
--- configured pixel size. All three feature slots share this one body.
-local function updateSlot(slot, enabledKey, wKey, hKey, colorKey)
+-- Reads a {Left, Right} or single-number config value.
+local function readPad(cfg, fallback)
+    if type(cfg) == "table" then
+        return tonumber(cfg[1]) or fallback, tonumber(cfg[2]) or fallback
+    end
+    local v = tonumber(cfg) or fallback
+    return v, v
+end
+
+-- Draws a fixed-pixel FOV box centred on the target's screen position.
+-- The box does NOT scale with distance — it is always the configured pixel size.
+local function updateSlot(slot, enabledKey, wKey, hKey, colorKey, targetPart)
     if not Settings[enabledKey] then hideSlot(slot); return end
-    if not Camera or not UIS then hideSlot(slot); return end
+    if not targetPart then hideSlot(slot); return end
+    local cam = workspace.CurrentCamera
+    if not cam then hideSlot(slot); return end
+
+    local sp, onScreen = cam:WorldToViewportPoint(targetPart.Position)
+    if not onScreen or sp.Z <= 0 then hideSlot(slot); return end
+
     ensureObj(slot)
     local obj = slot.obj
     if not obj then return end
 
-    local w  = tonumber(Settings[wKey]) or 200
-    local h  = tonumber(Settings[hKey]) or 200
-    local mp = UIS:GetMouseLocation()
-    local lx = mp.X - w * 0.5
-    local ly = mp.Y - h * 0.5
+    local padL, padR = readPad(Settings[wKey], 10)
+    local padU, padD = readPad(Settings[hKey], 10)
+    local totalW = padL + padR
+    local totalH = padU + padD
+    local lx = sp.X - padL
+    local ly = sp.Y - padU
 
-    -- Gate property writes: only assign when the value has actually changed.
-    if w ~= slot.lw or h ~= slot.lh then
-        obj.Size     = Vector2.new(w, h)
-        slot.lw, slot.lh = w, h
+    if totalW ~= slot.lw or totalH ~= slot.lh then
+        obj.Size = Vector2.new(totalW, totalH)
+        slot.lw, slot.lh = totalW, totalH
     end
     if lx ~= slot.lx or ly ~= slot.ly then
         obj.Position = Vector2.new(lx, ly)
@@ -72,25 +83,25 @@ end
 
 -- ── Public API ────────────────────────────────────────────────────────────────
 
-local function updateTriggerbotFOVBox()
+local function updateTriggerbotFOVBox(targetPart)
     updateSlot(TB,
         "TriggerbotFOVVisualizeEnabled",
         "TriggerbotFOVWidth", "TriggerbotFOVHeight",
-        "TriggerbotFOVVisualizeColor")
+        "TriggerbotFOVVisualizeColor", targetPart)
 end
 
-local function updateCamlockFOVBox()
+local function updateCamlockFOVBox(targetPart)
     updateSlot(CL,
         "CamlockFOVVisualizeEnabled",
         "CamlockFOVWidth", "CamlockFOVHeight",
-        "CamlockFOVVisualizeColor")
+        "CamlockFOVVisualizeColor", targetPart)
 end
 
-local function updateSilentAimFOVBox()
+local function updateSilentAimFOVBox(targetPart)
     updateSlot(SA,
         "SilentAimFOVVisualizeEnabled",
         "SilentAimFOVWidth", "SilentAimFOVHeight",
-        "SilentAimFOVVisualizeColor")
+        "SilentAimFOVVisualizeColor", targetPart)
 end
 
 local function hideTriggerbotFOVBox() hideSlot(TB) end
@@ -111,8 +122,6 @@ end
 
 local function init(deps)
     Settings = deps.Settings
-    Camera   = deps.Camera
-    UIS      = deps.UIS
 end
 
 FOVBoxes.init                   = init

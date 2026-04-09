@@ -9,13 +9,27 @@ local getCamlockAimPosition
 local Movement
 
 -- ── Fixed-pixel FOV helpers ───────────────────────────────────────────────────
--- FOV boxes are a fixed pixel size centred on the cursor — distance-independent.
-local function isInsideFixedBox(cam, part, halfW, halfH)
+-- Box is anchored to the target's screen position (not the cursor).
+-- Size is fixed pixels — does NOT scale with distance.
+-- Width/Height configs are {Left, Right} / {Up, Down} in pixels.
+local function readPad(cfg, fallback)
+    if type(cfg) == "table" then
+        return tonumber(cfg[1]) or fallback, tonumber(cfg[2]) or fallback
+    end
+    local v = tonumber(cfg) or fallback
+    return v, v
+end
+
+local function isInsideTargetBox(cam, part, wKey, hKey)
     local sp, onScreen = cam:WorldToViewportPoint(part.Position)
     if not onScreen or sp.Z <= 0 then return false end
     local mp = UIS:GetMouseLocation()
-    return math.abs(sp.X - mp.X) <= halfW
-        and math.abs(sp.Y - mp.Y) <= halfH
+    local padL, padR = readPad(Settings[wKey], 10)
+    local padU, padD = readPad(Settings[hKey], 10)
+    local dx = mp.X - sp.X
+    local dy = mp.Y - sp.Y
+    return dx >= -padL and dx <= padR
+        and dy >= -padU and dy <= padD
 end
 
 local function isInsideDirect(cam, part)
@@ -58,9 +72,7 @@ local function isPartInsideTriggerFOV(part)
     if string.lower(tostring(Settings.TriggerbotFOVType or "Box")) == "direct" then
         return isInsideDirect(cam, part)
     end
-    local w = tonumber(Settings.TriggerbotFOVWidth)  or 200
-    local h = tonumber(Settings.TriggerbotFOVHeight) or 200
-    return isInsideFixedBox(cam, part, w * 0.5, h * 0.5)
+    return isInsideTargetBox(cam, part, "TriggerbotFOVWidth", "TriggerbotFOVHeight")
 end
 
 local function isPartInsideCamlockFOV(part)
@@ -70,9 +82,7 @@ local function isPartInsideCamlockFOV(part)
     if string.lower(tostring(Settings.CamlockFOVType or "Box")) == "direct" then
         return isInsideDirect(cam, part)
     end
-    local w = tonumber(Settings.CamlockFOVWidth)  or 200
-    local h = tonumber(Settings.CamlockFOVHeight) or 200
-    return isInsideFixedBox(cam, part, w * 0.5, h * 0.5)
+    return isInsideTargetBox(cam, part, "CamlockFOVWidth", "CamlockFOVHeight")
 end
 
 local function isPartInTriggerDistance(part)
@@ -110,13 +120,7 @@ local function isPartInsideSilentAimFOV(part)
     if not part then return false end
     local cam = workspace.CurrentCamera
     if not cam then return false end
-    local sp, onScreen = cam:WorldToViewportPoint(part.Position)
-    if not onScreen or sp.Z <= 0 then return false end
-    local mp = UIS:GetMouseLocation()
-    local hw = (tonumber(Settings.SilentAimFOVWidth)  or 200) * 0.5
-    local hh = (tonumber(Settings.SilentAimFOVHeight) or 200) * 0.5
-    return math.abs(sp.X - mp.X) <= hw
-        and math.abs(sp.Y - mp.Y) <= hh
+    return isInsideTargetBox(cam, part, "SilentAimFOVWidth", "SilentAimFOVHeight")
 end
 
 local function applyEase(t, style, direction)

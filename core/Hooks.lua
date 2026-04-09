@@ -54,21 +54,17 @@ local function buildNamecallHook()
                 State.LastShootArgs = cloneArgs(args)
             end
             if State.FakePart and isStoredShootArgsValid(args) and isTargetFeatureAllowed() then
-                if isPartInsideSilentAimFOV(State.FakePart) then
-                    local headPos = State.FakePos or State.FakePart.Position
-                    args[3] = headPos
-                    args[4] = State.FakePart; args[6] = headPos
-                    State.FakePart, State.FakePos = nil, nil
-                    local result = oldNamecall(self, table.unpack(args))
-                    local extra = Taps.getTapCount(args) - 1
-                    for _ = 1, extra do
-                        State.SkipNextFireServer = true
-                        oldNamecall(self, table.unpack(args))
-                    end
-                    return result
-                end
-                -- FOV check failed: clear fake target, fall through to normal shot
+                local headPos = State.FakePos or State.FakePart.Position
+                args[3] = headPos
+                args[4] = State.FakePart; args[6] = headPos
                 State.FakePart, State.FakePos = nil, nil
+                local result = oldNamecall(self, table.unpack(args))
+                local extra = Taps.getTapCount(args) - 1
+                for _ = 1, extra do
+                    State.SkipNextFireServer = true
+                    oldNamecall(self, table.unpack(args))
+                end
+                return result
             end
             if isStoredShootArgsValid(args) then
                 local result = oldNamecall(self, ...)

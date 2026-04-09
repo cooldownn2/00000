@@ -26,8 +26,6 @@ local function init(deps)
 
     FOVBoxes.init({
         Settings = deps.Settings,
-        Camera   = deps.Camera,
-        UIS      = deps.UIS,
     })
 end
 
@@ -53,16 +51,16 @@ Features.runCamlock = function(part)
     return AimAssist.runCamlock(part)
 end
 
-Features.updateTriggerbotFOVBox = function()
-    return FOVBoxes.updateTriggerbotFOVBox()
+Features.updateTriggerbotFOVBox = function(targetPart)
+    return FOVBoxes.updateTriggerbotFOVBox(targetPart)
 end
 
-Features.updateCamlockFOVBox = function()
-    return FOVBoxes.updateCamlockFOVBox()
+Features.updateCamlockFOVBox = function(targetPart)
+    return FOVBoxes.updateCamlockFOVBox(targetPart)
 end
 
-Features.updateSilentAimFOVBox = function()
-    return FOVBoxes.updateSilentAimFOVBox()
+Features.updateSilentAimFOVBox = function(targetPart)
+    return FOVBoxes.updateSilentAimFOVBox(targetPart)
 end
 
 Features.hideTriggerbotFOVBox = function()
