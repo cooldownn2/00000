@@ -57,13 +57,15 @@ local function isTargetValid(char)
     if not char then return false end
     local hum = char:FindFirstChild("Humanoid")
     if not hum or hum.Health <= 0 then return false end
+    -- Target must be fully spawned in — server rejects hits on half-loaded chars
+    if not char:FindFirstChild("FULLY_LOADED_CHAR") then return false end
+    if char:FindFirstChild("FORCEFIELD") then return false end
     local be = char:FindFirstChild("BodyEffects")
     if not be then return true end
     local ko   = be:FindFirstChild("K.O")
     local dead = be:FindFirstChild("Dead")
     if ko   and ko.Value   then return false end
     if dead and dead.Value then return false end
-    if char:FindFirstChild("FORCEFIELD") then return false end
     return true
 end
 
@@ -159,6 +161,12 @@ local function getTargetPart(tool, targetChar)
 end
 
 local function buildShotParams(tool, targetChar)
+    -- Re-check FORCEFIELD here — it may have appeared between isTargetValid
+    -- and now (e.g. the target just picked up a force-field item).
+    if targetChar:FindFirstChild("FORCEFIELD") then return nil end
+    -- workspace.Ticking must exist — server's canShoot returns nil without it
+    if not workspace:FindFirstChild("Ticking") then return nil end
+
     local handle = tool:FindFirstChild("Handle")
     local ammo   = tool:FindFirstChild("Ammo")
     if ammo and ammo.Value <= 0 then return nil end
@@ -188,13 +196,30 @@ local function buildShotParams(tool, targetChar)
     }
 end
 
-local function fireBurst(tool, targetChar)
-    if not Settings.ForceHitEnabled or not canSelfShoot() then return end
-    if isUnloaded() then return end
-    if not isInRange(tool, targetChar) then return end
+-- Reusable args table for GH.shoot — avoids a fresh allocation every burst.
+-- Fields are overwritten before each call so this is safe.
+local _shootArgs = {
+    Shooter      = nil,
+    Handle       = nil,
+    ForcedOrigin = nil,
+    AimPosition  = nil,
+    BeamColor    = BEAM_COLOR,
+    Range        = 1e9,
+}
 
+local function fireBurst(tool, targetChar)
     local p = buildShotParams(tool, targetChar)
     if not p then return end
+
+    local isShotgun = SHOTGUN_NAMES[tool.Name]
+
+    -- Clear ShotgunDebounce + LastGunShot before the burst.
+    -- The server's canShoot blocks all shots after the first when these are set.
+    -- Clearing them here lets every ShootGun event register independently.
+    if isShotgun then
+        pcall(targetChar.SetAttribute, targetChar, "ShotgunDebounce", nil)
+        pcall(LP.Character.SetAttribute, LP.Character, "LastGunShot", nil)
+    end
 
     if p.remote then
         pcall(p.remote.FireServer, p.remote, "Shoot")
@@ -204,32 +229,33 @@ local function fireBurst(tool, targetChar)
         pcall(playerShotFn, p.handle)
     end
 
-    pcall(GH.shoot, {
-        Shooter      = LP.Character,
-        Handle       = p.handle,
-        ForcedOrigin = p.muzzlePos,
-        AimPosition  = p.targetPos,
-        BeamColor    = Color3.new(1, 0.545098, 0.14902),
-        Range        = 1e9,
-    })
+    _shootArgs.Shooter      = LP.Character
+    _shootArgs.Handle       = p.handle
+    _shootArgs.ForcedOrigin = p.muzzlePos
+    _shootArgs.AimPosition  = p.targetPos
+    pcall(GH.shoot, _shootArgs)
 
-    -- Fetch server time once, right before we fire — keeps timestamps anchored
-    -- to the actual firing moment rather than whenever buildShotParams ran.
     local baseTime = getServerNow()
     if not baseTime then return end
 
-    local step = TIMESTAMP_STEP
+    -- Hoist method ref — avoids repeated __index on MainEvent for every shot
+    local fireServer = MainEvent.FireServer
+    local step       = TIMESTAMP_STEP
     for i = 1, p.shots do
-        if not Settings.ForceHitEnabled or isUnloaded() then break end
         if p.hum.Health <= 0 then break end
         if p.ammo and p.ammo.Value <= 0 then break end
+        -- Re-clear mid-burst: server re-sets debounce after each valid hit
+        if isShotgun then
+            pcall(targetChar.SetAttribute, targetChar, "ShotgunDebounce", nil)
+            pcall(LP.Character.SetAttribute, LP.Character, "LastGunShot", nil)
+        end
 
-        local jitter    = (math.random() - 0.5) * step * TIMESTAMP_JITTER_SCALE
+        local jitter    = (random() - 0.5) * step * TIMESTAMP_JITTER_SCALE
         local timestamp = baseTime + (i * step) + jitter
 
         for _ = 1, p.pellets do
             pcall(
-                MainEvent.FireServer, MainEvent,
+                fireServer, MainEvent,
                 "ShootGun",
                 p.handle,
                 p.origin,
@@ -239,8 +265,6 @@ local function fireBurst(tool, targetChar)
                 timestamp
             )
         end
-        -- No task.wait() — all shots fire in one frame.
-        -- Timestamps already encode the per-shot timing stagger for the server.
     end
 
     if p.remote then
