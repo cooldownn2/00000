@@ -1,151 +1,133 @@
 local DrawingLib = rawget(_G, "Drawing") or Drawing
 
+-- Localize frequently called globals — avoids _ENV table lookup every frame
+local exp   = math.exp
+local min   = math.min
+local clock = os.clock
+local V2    = Vector2.new
+local C3    = Color3.fromRGB
+
 local FOVBoxes = {}
 
 local Settings, UIS
 local getTriggerbotBoxForPart, getCamlockBoxForPart
 
+-- Exponential decay speed (1/second). Frame-rate independent.
+-- At speed=30: ~63% of the way in 33 ms, ~95% in ~100 ms.
+local LERP_SPEED = 30
+local WHITE      = C3(255, 255, 255)
+
 local TriggerbotFOVBox = nil
 local CamlockFOVBox    = nil
 
--- Lerp state: persists between frames so the box moves smoothly.
--- Set to nil when the feature is toggled off so the next enable snaps cleanly.
-local _tbPrev     = nil
-local _cbPrev     = nil
+-- Lerp state tables. Mutated in-place each frame — zero per-frame GC allocation
+-- after the first frame. Reset to nil when the feature is toggled off so the
+-- next enable snaps cleanly.
+local _tbState    = nil  -- { left, top, width, height }
+local _cbState    = nil
 local _tbLastTime = nil
 local _cbLastTime = nil
 
--- Exponential decay speed (1/second). Frame-rate independent — compensates
--- automatically for 30 fps, 60 fps, 144 fps, etc.
--- At speed=30: ~63 % of the way in 33 ms, ~95 % in ~100 ms.
-local LERP_SPEED = 30
+-- Creates a Square Drawing object if one doesn't exist yet.
+local function ensureBox(existing)
+    if existing or not DrawingLib then return existing end
+    local ok, box = pcall(function() return DrawingLib.new("Square") end)
+    if not ok or not box then return nil end
+    box.Visible      = false
+    box.Filled       = false
+    box.Thickness    = 1
+    box.Transparency = 1
+    box.Color        = WHITE
+    return box
+end
 
-local function lerpBox(prev, target, dt)
-    if not prev then return target end
-    local a = 1 - math.exp(-LERP_SPEED * dt)
-    return {
-        left   = prev.left   + (target.left   - prev.left)   * a,
-        top    = prev.top    + (target.top    - prev.top)    * a,
-        width  = prev.width  + (target.width  - prev.width)  * a,
-        height = prev.height + (target.height - prev.height) * a,
-    }
+-- Lerps state toward target, mutating state in-place to avoid GC pressure.
+-- Allocates once on first call (when state is nil), then reuses the table.
+local function lerpInPlace(state, target, dt)
+    if not state then
+        return { left = target.left, top = target.top, width = target.width, height = target.height }
+    end
+    local a = 1 - exp(-LERP_SPEED * dt)
+    state.left   = state.left   + (target.left   - state.left)   * a
+    state.top    = state.top    + (target.top    - state.top)    * a
+    state.width  = state.width  + (target.width  - state.width)  * a
+    state.height = state.height + (target.height - state.height) * a
+    return state
+end
+
+-- Shared update logic used by both triggerbot and camlock.
+-- Returns updated state and current timestamp for the caller to store.
+local function applyUpdate(drawBox, state, lastTime, rawBox, baseColor, hoverKey)
+    local now = clock()
+    local dt  = lastTime and min(now - lastTime, 0.1) or (1 / 60)
+    local s   = lerpInPlace(state, rawBox, dt)
+
+    drawBox.Size     = V2(s.width, s.height)
+    drawBox.Position = V2(s.left,  s.top)
+
+    if UIS and Settings[hoverKey] == true then
+        local mp    = UIS:GetMouseLocation()
+        local isHov = mp.X >= s.left and mp.X <= (s.left + s.width)
+                   and mp.Y >= s.top  and mp.Y <= (s.top  + s.height)
+        drawBox.Color = isHov and (Settings.SelectionColor or baseColor) or baseColor
+    else
+        drawBox.Color = baseColor
+    end
+    drawBox.Visible = true
+    return s, now
 end
 
 local function hideTriggerbotFOVBox()
-    _tbPrev     = nil
+    _tbState    = nil
     _tbLastTime = nil
     if TriggerbotFOVBox then TriggerbotFOVBox.Visible = false end
 end
 
-local function ensureTriggerbotFOVBox()
-    if TriggerbotFOVBox or not DrawingLib then return end
-    local ok, box = pcall(function() return DrawingLib.new("Square") end)
-    if not ok or not box then return end
-    box.Visible      = false
-    box.Filled       = false
-    box.Thickness    = 1
-    box.Transparency = 1
-    box.Color        = Color3.fromRGB(255, 255, 255)
-    TriggerbotFOVBox = box
-end
-
-local function updateTriggerbotFOVBox(part, precomputedBox)
-    if not Settings.TriggerbotFOVVisualizeEnabled then
-        _tbPrev = nil
-        hideTriggerbotFOVBox()
-        return
-    end
-    ensureTriggerbotFOVBox()
-    if not TriggerbotFOVBox then return end
-
-    local rawBox = precomputedBox or (part and getTriggerbotBoxForPart(part))
-    if not rawBox then
-        _tbPrev = nil
-        hideTriggerbotFOVBox()
-        return
-    end
-
-    local now = os.clock()
-    local dt  = _tbLastTime and math.min(now - _tbLastTime, 0.1) or (1 / 60)
-    _tbLastTime = now
-    local smoothed = lerpBox(_tbPrev, rawBox, dt)
-    _tbPrev = smoothed
-
-    TriggerbotFOVBox.Size     = Vector2.new(smoothed.width, smoothed.height)
-    TriggerbotFOVBox.Position = Vector2.new(smoothed.left,  smoothed.top)
-
-    local baseColor    = Settings.TriggerbotFOVVisualizeColor or Color3.fromRGB(255, 255, 255)
-    local hoverEnabled = Settings.TriggerbotFOVVisualizeHover == true
-    if UIS and hoverEnabled then
-        local mp    = UIS:GetMouseLocation()
-        local isHov = mp.X >= smoothed.left and mp.X <= (smoothed.left + smoothed.width)
-                   and mp.Y >= smoothed.top  and mp.Y <= (smoothed.top  + smoothed.height)
-        TriggerbotFOVBox.Color = isHov and (Settings.SelectionColor or baseColor) or baseColor
-    else
-        TriggerbotFOVBox.Color = baseColor
-    end
-    TriggerbotFOVBox.Visible = true
-end
-
 local function hideCamlockFOVBox()
-    _cbPrev     = nil
+    _cbState    = nil
     _cbLastTime = nil
     if CamlockFOVBox then CamlockFOVBox.Visible = false end
 end
 
-local function ensureCamlockFOVBox()
-    if CamlockFOVBox or not DrawingLib then return end
-    local ok, box = pcall(function() return DrawingLib.new("Square") end)
-    if not ok or not box then return end
-    box.Visible      = false
-    box.Filled       = false
-    box.Thickness    = 1
-    box.Transparency = 1
-    box.Color        = Color3.fromRGB(255, 255, 255)
-    CamlockFOVBox = box
+local function updateTriggerbotFOVBox(part, precomputedBox)
+    if not Settings.TriggerbotFOVVisualizeEnabled then
+        hideTriggerbotFOVBox()
+        return
+    end
+    TriggerbotFOVBox = ensureBox(TriggerbotFOVBox)
+    if not TriggerbotFOVBox then return end
+
+    local rawBox = precomputedBox or (part and getTriggerbotBoxForPart(part))
+    if not rawBox then
+        hideTriggerbotFOVBox()
+        return
+    end
+
+    local color = Settings.TriggerbotFOVVisualizeColor or WHITE
+    _tbState, _tbLastTime = applyUpdate(TriggerbotFOVBox, _tbState, _tbLastTime, rawBox, color, "TriggerbotFOVVisualizeHover")
 end
 
 local function updateCamlockFOVBox(part, precomputedBox)
     if not Settings.CamlockFOVVisualizeEnabled then
-        _cbPrev = nil
         hideCamlockFOVBox()
         return
     end
-    ensureCamlockFOVBox()
+    CamlockFOVBox = ensureBox(CamlockFOVBox)
     if not CamlockFOVBox then return end
 
     local rawBox = precomputedBox or (part and getCamlockBoxForPart(part))
     if not rawBox then
-        _cbPrev = nil
         hideCamlockFOVBox()
         return
     end
 
-    local now = os.clock()
-    local dt  = _cbLastTime and math.min(now - _cbLastTime, 0.1) or (1 / 60)
-    _cbLastTime = now
-    local smoothed = lerpBox(_cbPrev, rawBox, dt)
-    _cbPrev = smoothed
-
-    CamlockFOVBox.Size     = Vector2.new(smoothed.width, smoothed.height)
-    CamlockFOVBox.Position = Vector2.new(smoothed.left,  smoothed.top)
-
-    local baseColor    = Settings.CamlockFOVVisualizeColor or Color3.fromRGB(255, 255, 255)
-    local hoverEnabled = Settings.CamlockFOVVisualizeHover == true
-    if UIS and hoverEnabled then
-        local mp    = UIS:GetMouseLocation()
-        local isHov = mp.X >= smoothed.left and mp.X <= (smoothed.left + smoothed.width)
-                   and mp.Y >= smoothed.top  and mp.Y <= (smoothed.top  + smoothed.height)
-        CamlockFOVBox.Color = isHov and (Settings.SelectionColor or baseColor) or baseColor
-    else
-        CamlockFOVBox.Color = baseColor
-    end
-    CamlockFOVBox.Visible = true
+    local color = Settings.CamlockFOVVisualizeColor or WHITE
+    _cbState, _cbLastTime = applyUpdate(CamlockFOVBox, _cbState, _cbLastTime, rawBox, color, "CamlockFOVVisualizeHover")
 end
 
 local function cleanupFOVBox()
-    _tbPrev     = nil
-    _cbPrev     = nil
+    _tbState    = nil
+    _cbState    = nil
     _tbLastTime = nil
     _cbLastTime = nil
     if TriggerbotFOVBox then
