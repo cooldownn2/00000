@@ -4,7 +4,7 @@ local UIS     = game:GetService("UserInputService")
 local Movement = {}
 
 local LP       = Players.LocalPlayer
-local Settings, State
+local Settings, State, gameStyle
 
 local MOUSE1          = Enum.UserInputType.MouseButton1
 local GROUND_BRAKE    = 0.93
@@ -63,6 +63,28 @@ local function getReloadingFlag()
     if flag:IsA("BoolValue")   then return flag.Value end
     if flag:IsA("NumberValue") or flag:IsA("IntValue") then return flag.Value > 0 end
     return false
+end
+
+local function shouldBypassReduceWalk()
+    if gameStyle ~= "newgame" then return false end
+    return State.Enabled
+        or State.LockedTarget ~= nil
+        or State.TriggerbotHoldActive
+        or State.TriggerbotToggleActive
+        or State.CamlockHoldActive
+        or State.CamlockToggleActive
+        or State.ForceHitActive
+end
+
+local function clearReduceWalkFlags()
+    if not _bodyEffects then return end
+    local movementFolder = _bodyEffects:FindFirstChild("Movement")
+    if not movementFolder then return end
+    for _, child in ipairs(movementFolder:GetChildren()) do
+        if child.Name == "ReduceWalk" then
+            pcall(child.Destroy, child)
+        end
+    end
 end
 
 -- Internal utilities --------------------------------------------------------------
@@ -149,6 +171,10 @@ local function applySpeedModification(tool, deltaTime)
 
     applyAntiTrip(hum, root)
 
+    if shouldBypassReduceWalk() then
+        clearReduceWalkFlags()
+    end
+
     if not Settings.SpeedEnabled or not State.SpeedActive then
         resetSpeedModification()
         return
@@ -214,6 +240,7 @@ end
 local function init(deps)
     Settings = deps.Settings
     State    = deps.State
+    gameStyle = deps.gameStyle
 end
 
 Movement.init                   = init
