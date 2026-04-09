@@ -77,20 +77,38 @@ local function getRootAnchoredBoxForPart(part, padLeft, padRight, padUp, padDown
     if not onScreen or screenRoot.Z <= 0 then return nil end
 
     local depth = screenRoot.Z
-    local cx = screenRoot.X
-    local cy = screenRoot.Y
-    local pixTop = studsToPixels(3.0 + padUp, depth)
-    local pixBottom = studsToPixels(2.0 + padDown, depth)
-    local pixLeft = studsToPixels(1.0 + padLeft, depth)
-    local pixRight = studsToPixels(1.0 + padRight, depth)
+    local cx    = screenRoot.X
+    local cy    = screenRoot.Y
+
+    -- Use the actual head top for an accurate upper bound instead of a fixed
+    -- 3-stud estimate, so the box stays tight when players crouch or jump.
+    local topY
+    local head = char:FindFirstChild("Head")
+    if head then
+        local screenHead, headVisible = Camera:WorldToViewportPoint(
+            head.Position + Vector3.new(0, head.Size.Y * 0.5, 0)
+        )
+        if headVisible and screenHead.Z > 0 then
+            topY = screenHead.Y
+        end
+    end
+    if not topY then
+        topY = cy - studsToPixels(3.0, depth)
+    end
+    local bottomY = cy + studsToPixels(2.5, depth)
+
+    local padTopPx    = studsToPixels(padUp,          depth)
+    local padBottomPx = studsToPixels(padDown,         depth)
+    local padLeftPx   = studsToPixels(1.0 + padLeft,  depth)
+    local padRightPx  = studsToPixels(1.0 + padRight, depth)
 
     return {
-        left = cx - pixLeft,
-        top = cy - pixTop,
-        width = pixLeft + pixRight,
-        height = pixTop + pixBottom,
+        left    = cx - padLeftPx,
+        top     = topY  - padTopPx,
+        width   = padLeftPx + padRightPx,
+        height  = (bottomY - topY) + padTopPx + padBottomPx,
         centerX = cx,
-        centerY = cy,
+        centerY = (topY + bottomY) * 0.5,
     }
 end
 
