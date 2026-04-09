@@ -1,6 +1,7 @@
 local SilentAim = {}
 
 local State
+local Settings
 local cloneArgs
 local applyRangePolicy
 local getSpreadAimPosition
@@ -83,6 +84,7 @@ end
 
 local function init(deps)
     State                  = deps.State
+    Settings               = deps.Settings
     cloneArgs              = deps.cloneArgs
     applyRangePolicy       = deps.applyRangePolicy
     getSpreadAimPosition   = deps.getSpreadAimPosition
@@ -110,6 +112,13 @@ local function redirectNewGamePayload(payload)
     end
 
     if not hitPart or not aimPos then return end
+
+    -- New-game payloads do not have a Range field. To support Infinite Range,
+    -- spoof the server-visible StartPoint to the aimed position the same way
+    -- ForceHit does for this profile.
+    if Settings and Settings.InfiniteRange and payload.StartPoint then
+        payload.StartPoint = aimPos
+    end
 
     if type(payload.Pellets) == "table" then
         for _, p in ipairs(payload.Pellets) do

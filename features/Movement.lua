@@ -87,6 +87,14 @@ local function clearReduceWalkFlags()
     end
 end
 
+local function restoreBaselineWalkSpeed(hum)
+    if not hum then return end
+    local baseline = State.DefaultWalkSpeed or BASE_WALK_SPEED
+    if math.abs((hum.WalkSpeed or baseline) - baseline) > 0.05 then
+        hum.WalkSpeed = baseline
+    end
+end
+
 -- Internal utilities --------------------------------------------------------------
 
 local function resolveSpeedState(hum, tool, isReloading)
@@ -173,6 +181,9 @@ local function applySpeedModification(tool, deltaTime)
 
     if shouldBypassReduceWalk() then
         clearReduceWalkFlags()
+        if not Settings.SpeedEnabled or not State.SpeedActive then
+            restoreBaselineWalkSpeed(hum)
+        end
     end
 
     if not Settings.SpeedEnabled or not State.SpeedActive then
