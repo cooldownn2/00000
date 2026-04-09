@@ -60,11 +60,12 @@ local gameStyle = activeProfile and activeProfile.Style or nil
 
 local MainEvent, GH, oldShoot
 if gameStyle == "newgame" then
-    MainEvent = RS:WaitForChild("MainRemotes"):WaitForChild("MainRemoteEvent")
+    local mainRemotes = RS:WaitForChild("MainRemotes", 8)
+    MainEvent = mainRemotes and mainRemotes:WaitForChild("MainRemoteEvent", 8) or nil
     GH        = {}
     oldShoot  = function() end
 else
-    MainEvent = RS:WaitForChild("MainEvent")
+    MainEvent = RS:WaitForChild("MainEvent", 8)
     GH        = require(RS.Modules.GunHandler)
     oldShoot  = GH.shoot
 end

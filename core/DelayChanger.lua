@@ -62,19 +62,53 @@ local function findViaGC(tool, cd)
 	return nil, nil, nil
 end
 
-local function findCooldownUpvalue(tool)
+local function findViaConfigTable(tool)
+	local ok, conns = pcall(getconnections, tool.Activated)
+	if not ok or not conns then return nil end
+	for _, conn in ipairs(conns) do
+		local fn = conn.Function
+		if not fn then continue end
+		for i = 1, 64 do
+			local val, valid = readUpvalue(fn, i)
+			if not valid then break end
+			if type(val) == "table"
+				and type(val["Cooldown"]) == "number"
+				and val["Cooldown"] > 0 then
+				return val
+			end
+		end
+	end
+	return nil
+end
+
+-- Returns a mode-tagged handle describing how to get/set the cooldown for a tool.
+local function findCooldownAny(tool)
+	-- Try ShootingCooldown-value based approach first (Dashood style).
 	local cdObj = tool:FindFirstChild("ShootingCooldown")
-	if not cdObj then return nil, nil, nil end
-	local cd = cdObj.Value
-	local fn, idx, val = findViaConnections(tool, cd)
-	if fn then return fn, idx, val end
-	return findViaGC(tool, cd)
+	if cdObj then
+		local cd = cdObj.Value
+		local fn, idx, val = findViaConnections(tool, cd)
+		if not fn then fn, idx, val = findViaGC(tool, cd) end
+		if fn then
+			return { mode = "upvalue", fn = fn, idx = idx, original = val }
+		end
+	end
+	-- Fallback: config-table cooldown (new-game style, e.g. {["Cooldown"]=0.13,...}).
+	local configTable = findViaConfigTable(tool)
+	if configTable then
+		return { mode = "config", tbl = configTable, original = configTable["Cooldown"] }
+	end
+	return nil
 end
 
 local function restore(tool)
 	local saved = patched[tool]
 	if not saved then return end
-	pcall(debug.setupvalue, saved.fn, saved.idx, saved.original)
+	if saved.mode == "config" then
+		pcall(function() saved.tbl["Cooldown"] = saved.original end)
+	else
+		pcall(debug.setupvalue, saved.fn, saved.idx, saved.original)
+	end
 	patched[tool] = nil
 end
 
@@ -83,20 +117,28 @@ local function apply(tool)
 	local delay = getDelay(tool.Name)
 	if delay == nil then restore(tool); return end
 	if patched[tool] then
-		pcall(debug.setupvalue, patched[tool].fn, patched[tool].idx, delay)
+		if patched[tool].mode == "config" then
+			pcall(function() patched[tool].tbl["Cooldown"] = delay end)
+		else
+			pcall(debug.setupvalue, patched[tool].fn, patched[tool].idx, delay)
+		end
 		return
 	end
-	local fn, idx, original = findCooldownUpvalue(tool)
-	if not fn then return end
-	patched[tool] = { fn = fn, idx = idx, original = original }
-	debug.setupvalue(fn, idx, delay)
+	local handle = findCooldownAny(tool)
+	if not handle then return end
+	patched[tool] = handle
+	if handle.mode == "config" then
+		handle.tbl["Cooldown"] = delay
+	else
+		debug.setupvalue(handle.fn, handle.idx, delay)
+	end
 end
 
 local function patchAll()
 	for _, container in ipairs({LP.Character, LP:FindFirstChild("Backpack")}) do
 		if not container then continue end
 		for _, child in ipairs(container:GetChildren()) do
-			if child:IsA("Tool") and child:FindFirstChild("ShootingCooldown") then
+			if child:IsA("Tool") then
 				apply(child)
 			end
 		end
@@ -116,7 +158,7 @@ local function onCharacterAdded(char)
 
 	connections.equipped = char.ChildAdded:Connect(function(child)
 		if isUnloaded() then return end
-		if child:IsA("Tool") and child:FindFirstChild("ShootingCooldown") then
+		if child:IsA("Tool") then
 			task.defer(apply, child)
 		end
 	end)
@@ -127,9 +169,7 @@ local function onCharacterAdded(char)
 			if isUnloaded() then return end
 			if not child:IsA("Tool") then return end
 			task.wait(0.5)
-			if child:FindFirstChild("ShootingCooldown") then
-				apply(child)
-			end
+			apply(child)
 		end)
 	end
 end
