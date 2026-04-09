@@ -31,7 +31,9 @@ local function buildHooks()
                     aimPos  = computedPos
                 end
                 if hitPart and aimPos then
-                    -- Reuse _shootData — copy incoming fields then override aim fields.
+                    -- Wipe _shootData first so no stale keys from a previous shot bleed in,
+                    -- then copy current data and override only the aim fields.
+                    for k in pairs(_shootData) do _shootData[k] = nil end
                     for k, v in pairs(data) do _shootData[k] = v end
                     _shootData.AimPosition = aimPos
                     _shootData.Hit         = hitPart
@@ -57,36 +59,40 @@ local function buildHooks()
 
     hookedNamecall = function(self, ...)
         if State.Unloaded then return oldNamecall(self, ...) end
-        if getnamecallmethod() == "FireServer" and rawequal(self, MainEvent) then
-            local args = {...}
-            if isStoredShootArgsValid(args) then
-                State.LastShootArgs = cloneArgs(args)
+        -- Gate on method name and target BEFORE unpacking varargs into a table.
+        -- __namecall fires for every : call game-wide; early exit avoids an
+        -- allocation on the vast majority of calls that aren't FireServer on MainEvent.
+        if getnamecallmethod() ~= "FireServer" or not rawequal(self, MainEvent) then
+            return oldNamecall(self, ...)
+        end
+        local args = {...}
+        if isStoredShootArgsValid(args) then
+            State.LastShootArgs = cloneArgs(args)
+        end
+        if State.FakePart and isStoredShootArgsValid(args) and isTargetFeatureAllowed() then
+            local headPos = State.FakePos or State.FakePart.Position
+            args[3] = headPos
+            args[4] = State.FakePart
+            args[6] = headPos
+            -- Clear before firing — prevents stale state if the tap loop errors
+            State.FakePart = nil
+            State.FakePos  = nil
+            local result = oldNamecall(self, table.unpack(args))
+            -- Tap extra shots: call oldNamecall directly (bypasses hook) so
+            -- SkipNextFireServer is never needed and can't be left dirty.
+            local extra = Taps.getTapCount(args) - 1
+            for _ = 1, extra do
+                oldNamecall(self, table.unpack(args))
             end
-            if State.FakePart and isStoredShootArgsValid(args) and isTargetFeatureAllowed() then
-                local headPos = State.FakePos or State.FakePart.Position
-                args[3] = headPos
-                args[4] = State.FakePart
-                args[6] = headPos
-                -- Clear before firing — prevents stale state if the tap loop errors
-                State.FakePart = nil
-                State.FakePos  = nil
-                local result = oldNamecall(self, table.unpack(args))
-                -- Tap extra shots: call oldNamecall directly (bypasses hook) so
-                -- SkipNextFireServer is never needed and can't be left dirty.
-                local extra = Taps.getTapCount(args) - 1
-                for _ = 1, extra do
-                    oldNamecall(self, table.unpack(args))
-                end
-                return result
+            return result
+        end
+        if isStoredShootArgsValid(args) then
+            local result = oldNamecall(self, ...)
+            local extra = Taps.getTapCount(args) - 1
+            for _ = 1, extra do
+                oldNamecall(self, table.unpack(args))
             end
-            if isStoredShootArgsValid(args) then
-                local result = oldNamecall(self, ...)
-                local extra = Taps.getTapCount(args) - 1
-                for _ = 1, extra do
-                    oldNamecall(self, table.unpack(args))
-                end
-                return result
-            end
+            return result
         end
         return oldNamecall(self, ...)
     end
