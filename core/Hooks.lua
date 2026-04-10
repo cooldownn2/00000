@@ -38,8 +38,6 @@ local function buildHooks()
         if gameStyle == "zeehood" then
             -- Zeehood: redirect the payload in-place (keeps StartPoint at muzzle
             -- so server validates properly) then send a single modified shot.
-            -- All oldNamecall calls are pcall'd so any C-level error can't crash
-            -- the gun local's coroutine and leave it stuck with GunFiring=true.
             if isStoredShootArgsValid(args) then
                 pcall(SilentAim.recordShootArgs, args)
 
@@ -53,13 +51,13 @@ local function buildHooks()
                 local tapCount = 1
                 pcall(function() tapCount = Taps.getTapCount(args) end)
 
-                pcall(oldNamecall, self, ...)
+                oldNamecall(self, table.unpack(args))
                 for _ = 2, tapCount do
-                    pcall(oldNamecall, self, ...)
+                    oldNamecall(self, table.unpack(args))
                 end
                 return nil
             end
-            pcall(oldNamecall, self, ...)
+            oldNamecall(self, ...)
             return nil
         end
 
