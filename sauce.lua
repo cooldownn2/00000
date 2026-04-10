@@ -26,11 +26,12 @@ local ESP        = load("ui/ESP")
 local TargetCard = load("ui/TargetCard")
 local Features   = load("Features")
 local Movement   = load("features/Movement")
+local CharacterModel = load("features/CharacterModel")
 local AimAssist  = load("features/AimAssist")
 local Triggerbot = load("features/Triggerbot")
 local FOVBoxes   = load("features/FOVBoxes")
 local Hooks      = load("core/Hooks")
-local SilentAim  = load("core/SilentAim")
+local SilentAim  = load("features/SilentAim")
 local Visuals    = load("ui/Visuals")
 local ForceHit      = load("aim/ForceHit")
 local BodyParts     = load("core/BodyParts")
@@ -38,7 +39,7 @@ local ClosestPoint  = load("aim/ClosestPoint")
 local DelayChanger  = load("core/DelayChanger")
 local Spread        = load("aim/Spread")
 local Taps          = load("aim/Taps")
-local Targeting     = load("core/Targeting")
+local Targeting     = load("aim/Targeting")
 
 local settings   = Config.settings
 local Settings   = Config.Settings
@@ -285,6 +286,9 @@ Targeting.init(mergeDeps({
     resolveLockPartForCharacter = resolveLockPartForCharacter,
 }))
 
+CharacterModel.init(mergeDeps({}))
+CharacterModel.update()
+
 local function watchCharacterTools(char)
     if not char then return end
     for _, child in ipairs(char:GetChildren()) do
@@ -304,6 +308,7 @@ local function cleanup()
     ClosestPoint.pruneCaches(true)
     TargetCard.bumpToggleId()
     ForceHit.cleanup()
+    CharacterModel.cleanup()
     DelayChanger.cleanup()
     Spread.cleanup()
     State.FakePart, State.FakePos = nil, nil
@@ -441,6 +446,7 @@ connect(LP.CharacterAdded, function(char)
     if State.Unloaded then return end
     clearCombatState(true)
     State.SpeedCharacter = nil; State.DefaultWalkSpeed = nil; State.SpeedStatesPatched = false
+    CharacterModel.onCharacterAdded(char)
     watchCharacterTools(char)
 end)
 
@@ -456,6 +462,7 @@ end)
 connect(RunService.RenderStepped, function(deltaTime)
     if State.Unloaded then return end
     if Camera ~= workspace.CurrentCamera then Camera = workspace.CurrentCamera end
+    CharacterModel.update()
     ClosestPoint.pruneCaches(false)
     enforceDeathCheckOnCurrentLock()
     ESP.updateEsp()

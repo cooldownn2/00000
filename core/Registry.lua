@@ -36,6 +36,8 @@ local SettingPaths = {
     AntiTripEnabled             = {"Character", "Anti Trip", "Enabled"},
     PanicGroundEnabled          = {"Character", "Panic Ground", "Enabled"},
     PanicGroundKey              = {"Character", "Panic Ground", "Key"},
+    CharacterModelEnabled       = {"Character Model", "Enabled"},
+    CharacterModelUserId        = {"Character Model", "User ID"},
 
     TriggerbotEnabled           = {"Triggerbot", "Enabled"},
     TriggerbotVisCheck          = {"Triggerbot", "VisCheck"},
