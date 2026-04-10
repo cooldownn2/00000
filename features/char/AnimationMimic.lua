@@ -327,7 +327,7 @@ function AnimationMimic:startRecoveryWatcher(character, animationSet)
             return
         end
 
-        if self:hasNativeLocomotionTrack(character) then
+        if self:hasNativePlayingTrack(character) then
             watcher.noTrackSince = nil
             self:stopPosePrimer(character)
             return
@@ -694,47 +694,54 @@ function AnimationMimic:getAnimationSetFromTempRig(userId)
     return set
 end
 
--- FIX 2 (previous): pickBetter priority tiebreak was backwards.
--- Coverage is the primary ranking factor. Source trust: live (3) > rig (2) > desc (1).
+-- Merge by slot so partial live Animate trees do not block better rig/description
+-- data for uncovered folders.
 function AnimationMimic:getAnimationSetFromUserId(userId)
     local cached = self:getCachedAnimationSet(userId)
     if cached then return cached end
 
     local fromLive = self:getAnimationSetFromLivePlayer(userId)
-    local liveCoverage = countAnimationSetCoverage(fromLive)
-    if liveCoverage >= (self.settings.minLiveCoverage or 1) and liveCoverage > 0 then
-        self:setCachedAnimationSet(userId, fromLive)
-        return fromLive
-    end
-
     local fromDesc = self:getAnimationSetFromDescription(userId)
     local fromRig  = self:getAnimationSetFromTempRig(userId)
 
-    local function pickBetter(currentBest, candidateSet, priority)
-        if not candidateSet then return currentBest end
-        local coverage = countAnimationSetCoverage(candidateSet)
-        if coverage <= 0 then return currentBest end
-        if not currentBest then
-            return { set = candidateSet, coverage = coverage, priority = priority }
+    local merged = {}
+    for _, key in ipairs(ANIM_KEYS) do
+        local liveSlot = fromLive and fromLive[key] or nil
+        local rigSlot = fromRig and fromRig[key] or nil
+        local descSlot = fromDesc and fromDesc[key] or nil
+
+        local picked = nil
+        if hasAnimationFolderData(liveSlot) then
+            picked = liveSlot
+        elseif hasAnimationFolderData(rigSlot) then
+            picked = rigSlot
+        elseif hasAnimationFolderData(descSlot) then
+            picked = descSlot
         end
-        if coverage > currentBest.coverage then
-            return { set = candidateSet, coverage = coverage, priority = priority }
+
+        if picked then
+            local copy = {
+                byName = {},
+                ordered = {},
+                first = picked.first,
+            }
+
+            for name, id in pairs(picked.byName or {}) do
+                copy.byName[name] = id
+            end
+
+            for i = 1, #(picked.ordered or {}) do
+                copy.ordered[i] = picked.ordered[i]
+            end
+
+            merged[key] = copy
         end
-        if coverage == currentBest.coverage and priority > currentBest.priority then
-            return { set = candidateSet, coverage = coverage, priority = priority }
-        end
-        return currentBest
     end
 
-    local best = nil
-    best = pickBetter(best, fromLive, 3)
-    best = pickBetter(best, fromRig,  2)
-    best = pickBetter(best, fromDesc, 1)
+    if countAnimationSetCoverage(merged) <= 0 then return nil end
 
-    if not best or not best.set then return nil end
-
-    self:setCachedAnimationSet(userId, best.set)
-    return best.set
+    self:setCachedAnimationSet(userId, merged)
+    return merged
 end
 
 function AnimationMimic:getAnimationSetFromUserIdWithRetry(userId, attempts)
@@ -1035,7 +1042,7 @@ function AnimationMimic:startDirectController(character, animationSet, opts)
         end
 
         if controller.assistMode then
-            if self:hasNativeLocomotionTrack(character) then
+            if self:hasNativePlayingTrack(character) then
                 controller.active = nil
                 for _, track in pairs(controller.tracks) do
                     pcall(function() if track.IsPlaying then track:Stop(0.08) end end)
