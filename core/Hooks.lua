@@ -102,17 +102,24 @@ local function isDashoodWallbangInNaturalRange(args)
         return false
     end
 
-    local root = LP and LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-    if not root then
-        return true
-    end
-
     local maxDist = getDashoodNaturalRange(args)
     if not maxDist then
         return true
     end
 
-    return (fakePart.Position - root.Position).Magnitude <= maxDist
+    local targetPos = (State and State.FakePos) or fakePart.Position
+    local origin = args and args[3]
+
+    if typeof(origin) ~= "Vector3" then
+        local root = LP and LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        origin = root and root.Position or nil
+    end
+
+    if typeof(origin) ~= "Vector3" then
+        return true
+    end
+
+    return (targetPos - origin).Magnitude <= maxDist
 end
 
 local function buildHooks()
@@ -188,6 +195,12 @@ local function buildHooks()
         -- Dashood / positional-args style.
         SilentAim.recordShootArgs(args)
         if SilentAim.shouldRedirectFireServer(args) then
+            if Settings and Settings.Wallbang ~= true and not State.CurrentPart then
+                if SilentAim.clearRedirectState then
+                    SilentAim.clearRedirectState()
+                end
+                return oldNamecall(self, ...)
+            end
             if not isDashoodWallbangInNaturalRange(args) then
                 if SilentAim.clearRedirectState then
                     SilentAim.clearRedirectState()

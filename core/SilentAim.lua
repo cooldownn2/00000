@@ -71,7 +71,7 @@ local function resolveAimTarget()
         return typeof(v) == "Vector3"
     end
 
-    if State.FakePart then
+    if gameStyle == "zeehood" and State.FakePart then
         if isValidPart(State.FakePart) then
             hitPart = State.FakePart
             aimPos  = isValidVec3(State.FakePos) and State.FakePos or hitPart.Position
@@ -151,7 +151,18 @@ local function recordShootArgs(args)
 end
 
 local function shouldRedirectFireServer(args)
-    return State.FakePart and isStoredShootArgsValid(args) and isTargetFeatureAllowed()
+    if not (State.FakePart and isStoredShootArgsValid(args) and isTargetFeatureAllowed()) then
+        return false
+    end
+
+    -- Dashood: when wallbang is disabled, never allow stale fake state to
+    -- redirect through walls. CurrentPart is only set when visibility passes.
+    if gameStyle ~= "zeehood" and Settings.Wallbang ~= true and not State.CurrentPart then
+        clearFakeState()
+        return false
+    end
+
+    return true
 end
 
 local function applyFireServerRedirect(args)
