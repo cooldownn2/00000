@@ -99,13 +99,13 @@ local function applyFaceTexture(char, texture)
     local head = char:FindFirstChild("Head")
     if not head then return end
 
+    if not texture or texture == "" then return end
+
     for _, child in ipairs(head:GetChildren()) do
         if child:IsA("Decal") and (child.Name == "face" or child.Face == Enum.NormalId.Front) then
             pcall(function() child:Destroy() end)
         end
     end
-
-    if not texture or texture == "" then return end
 
     local decal = Instance.new("Decal")
     decal.Name = "face"
@@ -187,7 +187,7 @@ local function pickBestSourceHead(headA, headB)
     return headB
 end
 
-local function applyHeadVisualFromSource(char, sourceHead, desiredFaceTexture)
+local function applyHeadVisualFromSource(char, sourceHead, desiredFaceTexture, faceState)
     local destHead = char and char:FindFirstChild("Head")
     if not destHead or not sourceHead then
         applyFaceTexture(char, desiredFaceTexture)
@@ -202,8 +202,12 @@ local function applyHeadVisualFromSource(char, sourceHead, desiredFaceTexture)
 
     pcall(function()
         if sourceHead:IsA("MeshPart") and destHead:IsA("MeshPart") then
-            destHead.MeshId = sourceHead.MeshId
-            destHead.TextureID = sourceHead.TextureID
+            if sourceHead.MeshId and sourceHead.MeshId ~= "" then
+                destHead.MeshId = sourceHead.MeshId
+            end
+            if sourceHead.TextureID and sourceHead.TextureID ~= "" then
+                destHead.TextureID = sourceHead.TextureID
+            end
         end
     end)
 
@@ -215,14 +219,22 @@ local function applyHeadVisualFromSource(char, sourceHead, desiredFaceTexture)
             dm.Parent = destHead
         end
         dm.MeshType = Enum.MeshType.FileMesh
-        dm.MeshId = sourceHead.MeshId or ""
-        dm.TextureId = sourceHead.TextureID or ""
+        if sourceHead.MeshId and sourceHead.MeshId ~= "" then
+            dm.MeshId = sourceHead.MeshId
+        end
+        if sourceHead.TextureID and sourceHead.TextureID ~= "" then
+            dm.TextureId = sourceHead.TextureID
+        end
     elseif not sourceHead:IsA("MeshPart") and destHead:IsA("MeshPart") then
         local sm = sourceHead:FindFirstChildOfClass("SpecialMesh")
         if sm then
             pcall(function()
-                destHead.MeshId = sm.MeshId or ""
-                destHead.TextureID = sm.TextureId or ""
+                if sm.MeshId and sm.MeshId ~= "" then
+                    destHead.MeshId = sm.MeshId
+                end
+                if sm.TextureId and sm.TextureId ~= "" then
+                    destHead.TextureID = sm.TextureId
+                end
             end)
         end
     end
@@ -270,7 +282,16 @@ local function applyHeadVisualFromSource(char, sourceHead, desiredFaceTexture)
         return
     end
 
-    applyFaceTexture(char, desiredFaceTexture)
+    if desiredFaceTexture and desiredFaceTexture ~= "" then
+        applyFaceTexture(char, desiredFaceTexture)
+        return
+    end
+
+    -- Unknown means we could not reliably resolve face source; preserve
+    -- whatever ApplyDescription already produced instead of wiping decals.
+    if faceState == "faceless" then
+        clearHeadFaceDecals(destHead)
+    end
 end
 
 local function toColor3(value)
@@ -624,13 +645,13 @@ function OutfitMimic:applyAppearance(userId, char, applyToken)
     local secondaryHead = sourceModel and sourceModel:FindFirstChild("Head") or nil
     local sourceHead = pickBestSourceHead(primaryHead, secondaryHead) or primaryHead or secondaryHead
     local appearanceModelForFace = (sourceHead and sourceHead.Parent) or bodySourceModel
-    local desiredFaceTexture = self.shared:resolveFaceTexture(userId, appearanceModelForFace, targetDesc)
+    local desiredFaceTexture, faceState = self.shared:resolveFaceTexture(userId, appearanceModelForFace, targetDesc)
     local sourcePartSizeMap = buildSourcePartSizeMap(bodySourceModel)
     local charPartMap = buildBasePartMap(char)
     local attachmentCarrierMap = buildAttachmentCarrierMap(charPartMap)
 
     local function enforceHeadVisualNow()
-        applyHeadVisualFromSource(char, sourceHead, desiredFaceTexture)
+        applyHeadVisualFromSource(char, sourceHead, desiredFaceTexture, faceState)
     end
 
     for _, partName in ipairs(BODY_PART_NAMES) do
