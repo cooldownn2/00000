@@ -555,31 +555,45 @@ function Common:resolveFaceTexture(userId, appearanceModel, targetDesc)
     end
 
     local appearanceHead = appearanceModel and appearanceModel:FindFirstChild("Head")
-    local direct = firstDecalTextureFromHead(appearanceHead)
+
+    -- Some avatar loaders attach decals a few frames later. Give it a short
+    -- window before concluding there is no direct face texture.
+    local direct = nil
+    for _ = 1, 4 do
+        direct = firstDecalTextureFromHead(appearanceHead)
+        if direct then break end
+        task.wait(0.05)
+    end
     if direct then
         return self:cacheSetTimed(self.faceTextureCache, self.faceTextureCacheTime, userId, direct, CACHE_MAX_ENTRIES.faceTexture)
     end
 
     if targetDesc and targetDesc.Face ~= nil then
         if targetDesc.Face == 0 then
-            self:cacheSetTimed(self.faceTextureCache, self.faceTextureCacheTime, userId, NO_FACE_TOKEN, CACHE_MAX_ENTRIES.faceTexture)
-            return nil
+            -- Do not cache faceless immediately here. Dynamic heads and some
+            -- custom heads may present face visuals without a Face asset id.
+            -- We only cache faceless once all probes are exhausted.
+        else
+            return self:resolveFaceFromAssetId(targetDesc.Face, userId)
         end
-        return self:resolveFaceFromAssetId(targetDesc.Face, userId)
     end
 
     local info = self:getCharacterAppearanceInfoCached(userId)
     if info and info.assets then
+        local foundFaceAsset = false
         for _, asset in ipairs(info.assets) do
             if asset.assetType and asset.assetType.id == 18 and asset.id then
+                foundFaceAsset = true
                 return self:resolveFaceFromAssetId(asset.id, userId)
             end
         end
-        -- Appearance info resolved but no face asset exists: treat as faceless.
-        self:cacheSetTimed(self.faceTextureCache, self.faceTextureCacheTime, userId, NO_FACE_TOKEN, CACHE_MAX_ENTRIES.faceTexture)
-        return nil
+        if foundFaceAsset then
+            return nil
+        end
     end
 
+    -- Final check: if source head has no face decals after the short wait and
+    -- there is no face asset in description/info, treat as faceless.
     self:cacheSetTimed(self.faceTextureCache, self.faceTextureCacheTime, userId, NO_FACE_TOKEN, CACHE_MAX_ENTRIES.faceTexture)
     return nil
 end

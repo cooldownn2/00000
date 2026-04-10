@@ -123,6 +123,32 @@ local function clearHeadFaceDecals(head)
     end
 end
 
+local function copyHeadFrontFaceFromSource(destHead, sourceHead)
+    if not destHead or not sourceHead then return false end
+
+    local sourceFront = nil
+    local sourceAny = nil
+    for _, child in ipairs(sourceHead:GetChildren()) do
+        if child:IsA("Decal") and child.Texture ~= "" then
+            if not sourceAny then sourceAny = child end
+            if child.Face == Enum.NormalId.Front then
+                sourceFront = child
+                break
+            end
+        end
+    end
+
+    local picked = sourceFront or sourceAny
+    if not picked then return false end
+
+    clearHeadFaceDecals(destHead)
+    local clone = picked:Clone()
+    clone.Name = "face"
+    clone.Face = Enum.NormalId.Front
+    clone.Parent = destHead
+    return true
+end
+
 local function applyHeadVisualFromSource(char, sourceHead, desiredFaceTexture)
     local destHead = char and char:FindFirstChild("Head")
     if not destHead or not sourceHead then
@@ -178,6 +204,11 @@ local function applyHeadVisualFromSource(char, sourceHead, desiredFaceTexture)
     -- If the source head is effectively hidden (headless-style), never add face decals.
     if sourceHead.Transparency >= 0.98 then
         clearHeadFaceDecals(destHead)
+        return
+    end
+
+    -- Prefer the exact face decal from the source head when present.
+    if copyHeadFrontFaceFromSource(destHead, sourceHead) then
         return
     end
 
@@ -451,7 +482,24 @@ end
 function OutfitMimic:applyAppearance(userId, char, applyToken)
     if not self:isApplyStillCurrent(applyToken) then return end
 
-    local model = self.shared:getCharacterAppearanceModel(userId)
+    local modelDone, descDone = false, false
+    local model, targetDesc = nil, nil
+
+    task.spawn(function()
+        model = self.shared:getCharacterAppearanceModel(userId)
+        modelDone = true
+    end)
+
+    task.spawn(function()
+        targetDesc = self.shared:getTargetDescriptionCached(userId)
+        descDone = true
+    end)
+
+    while not (modelDone and descDone) do
+        if not self:isApplyStillCurrent(applyToken) then return end
+        task.wait()
+    end
+
     if not model then return end
     if not self:isApplyStillCurrent(applyToken) then model:Destroy(); return end
 
@@ -477,8 +525,6 @@ function OutfitMimic:applyAppearance(userId, char, applyToken)
         model:Destroy()
         return
     end
-
-    local targetDesc = self.shared:getTargetDescriptionCached(userId)
 
     local bodyApplied = applyBodyFromDescription(targetDesc, char)
     task.wait()
