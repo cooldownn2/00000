@@ -189,12 +189,6 @@ local function init(deps)
     gameStyle              = deps.gameStyle
 end
 
-local function applyZeehoodRangePolicy(payload)
-    if Settings.InfiniteRange then
-        payload.Range = 1e9
-    end
-end
-
 local function rewriteZeehoodPellets(payload, aimPos, hitPart)
     -- Preserve the original pellet spread shape by translating the
     -- existing pellet pattern so its center lands on the locked aim point.
@@ -242,7 +236,6 @@ local function redirectZeehoodPayload(payload)
 
     -- Do NOT change StartPoint — keep it at the real muzzle position so the
     -- server passes its origin-vs-character-position validation check.
-    applyZeehoodRangePolicy(payload)
 
     if type(payload.Pellets) == "table" then
         rewriteZeehoodPellets(payload, aimPos, hitPart)
