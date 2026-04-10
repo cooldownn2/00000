@@ -6,6 +6,7 @@ local SilentAim
 local LP, UIS, Mouse
 local hookedShoot, hookedNamecall, hookedIndex
 local gameStyle
+local isClosestPointMode
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
 
@@ -63,7 +64,7 @@ local function buildHooks()
 
         if gameStyle == "zeehood" and Mouse and rawequal(self, Mouse) and key == "Hit" then
             local firing = UIS and UIS:IsMouseButtonPressed(MOUSE1)
-            if firing then
+            if firing and not (isClosestPointMode and isClosestPointMode()) then
                 local ok, aimPos = pcall(function()
                     if SilentAim.getCurrentAimPosition then
                         return SilentAim.getCurrentAimPosition()
@@ -182,6 +183,7 @@ local function init(deps)
     UIS                    = deps.UIS
     Mouse                  = LP and LP:GetMouse() or nil
     gameStyle              = deps.gameStyle
+    isClosestPointMode     = deps.isClosestPointMode
     SilentAim.init(deps)
     -- Build closures once here so install() just wires them in without re-allocating.
     buildHooks()
