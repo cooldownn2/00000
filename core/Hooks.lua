@@ -24,55 +24,10 @@ local function sendZeehoodAssistShot(self, baseArgs, burstIndex)
     if ForceHit and ForceHit.sendAssistShot then
         local ok, sent = pcall(ForceHit.sendAssistShot)
         if ok and sent == true then
-            return true
-        end
-    end
+            -- Zeehood stability mode: strict passthrough for manual GunFired.
+            -- This keeps damage/reload behavior identical to the game's native
+            -- flow while lock aim steering is handled by Mouse.Hit (__index).
 
-    local payload
-
-    local ok = pcall(function()
-        if SilentAim.buildZeehoodAssistPayload then
-            payload = SilentAim.buildZeehoodAssistPayload(baseArgs[2], burstIndex)
-        end
-    end)
-
-    if not ok or type(payload) ~= "table" then
-        return false
-    end
-
-    pcall(oldNamecall, self, "GunFired", payload)
-    return true
-end
-
-local function buildHooks()
-    hookedShoot = function(data)
-        if State.Unloaded then return oldShoot(data) end
-        local shootData = data
-        if type(data) == "table" then
-            shootData = SilentAim.prepareShootData(data)
-        end
-        return oldShoot(shootData)
-    end
-
-    hookedIndex = function(self, key)
-        if State.Unloaded then return oldIndex(self, key) end
-
-        if gameStyle == "zeehood" and Mouse and rawequal(self, Mouse) and key == "Hit" then
-            local firing = UIS and UIS:IsMouseButtonPressed(MOUSE1)
-            if firing then
-                local ok, aimPos = pcall(function()
-                    if SilentAim.getCurrentMouseHitPosition then
-                        return SilentAim.getCurrentMouseHitPosition()
-                    end
-                    if SilentAim.getCurrentAimPosition then
-                        return SilentAim.getCurrentAimPosition()
-                    end
-                    return nil
-                end)
-                if ok and typeof(aimPos) == "Vector3" then
-                    local cOk, aimedCf = pcall(CFrame.new, aimPos)
-                    if cOk and aimedCf then
-                        return aimedCf
                     end
                 end
             end
