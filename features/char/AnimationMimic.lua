@@ -114,6 +114,12 @@ local function scrubTracksForDuration(character, seconds)
     for _, track in ipairs(tracksEnd) do track:Stop(0) end
 end
 
+local function hasAnyPlayingTrack(humanoid)
+    if not humanoid then return false end
+    local tracks = humanoid:GetPlayingAnimationTracks()
+    return #tracks > 0
+end
+
 function AnimationMimic.new(deps)
     local self = setmetatable({}, AnimationMimic)
 
@@ -125,6 +131,7 @@ function AnimationMimic.new(deps)
     self.connections = {}
     self.originalByCharacter = {}
     self.directControllerByChar = {}
+    self.posePrimerByChar = {}
 
     self.lastTargetInput = nil
     self.pinnedTargetUserId = nil
@@ -151,6 +158,125 @@ function AnimationMimic.new(deps)
     }
 
     return self
+end
+
+function AnimationMimic:stopPosePrimer(character)
+    if not character then return end
+    local rec = self.posePrimerByChar[character]
+    if not rec then return end
+    rec.active = false
+    if rec.track then
+        pcall(function() rec.track:Stop(0.08) end)
+        pcall(function() rec.track:Destroy() end)
+    end
+    if rec.anim then
+        pcall(function() rec.anim:Destroy() end)
+    end
+    self.posePrimerByChar[character] = nil
+end
+
+function AnimationMimic:stopAllPosePrimers()
+    local chars = {}
+    for c in pairs(self.posePrimerByChar) do chars[#chars + 1] = c end
+    for _, c in ipairs(chars) do self:stopPosePrimer(c) end
+end
+
+function AnimationMimic:ensureIdlePrimer(character, animationSet)
+    if not character or not character.Parent then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    if hasAnyPlayingTrack(humanoid) then return end
+
+    local idleId = self:resolveIdFromFolderDataWithFallback(
+        animationSet and animationSet.idle,
+        "Animation1",
+        1,
+        R15_FALLBACK_ANIMATIONS.idle1
+    )
+    if not idleId then return end
+
+    local existing = self.posePrimerByChar[character]
+    if existing and existing.active then return end
+
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then
+        local okNew, newAnimator = pcall(function() return Instance.new("Animator") end)
+        if okNew and newAnimator then
+            newAnimator.Parent = humanoid
+            animator = newAnimator
+        end
+    end
+    if not animator then return end
+
+    local anim = Instance.new("Animation")
+    anim.Name = "Mimic_IdlePrimer"
+    anim.AnimationId = idleId
+
+    local okTrack, track = pcall(function() return animator:LoadAnimation(anim) end)
+    if not okTrack or not track then
+        anim:Destroy()
+        return
+    end
+
+    track.Priority = Enum.AnimationPriority.Idle
+    track.Looped = true
+
+    local primer = { active = true, anim = anim, track = track }
+    self.posePrimerByChar[character] = primer
+
+    pcall(function() track:Play(0.08, 1, 1) end)
+
+    task.defer(function()
+        local deadline = os.clock() + 1.8
+        while primer.active and self.active and character.Parent and os.clock() < deadline do
+            task.wait(0.06)
+
+            local tracks = humanoid:GetPlayingAnimationTracks()
+            local hasOtherTrack = false
+            for _, t in ipairs(tracks) do
+                if t ~= track and t.IsPlaying then
+                    hasOtherTrack = true
+                    break
+                end
+            end
+
+            if hasOtherTrack then
+                break
+            end
+        end
+
+        if primer.active then
+            self:stopPosePrimer(character)
+        end
+    end)
+end
+
+function AnimationMimic:unstickPoseAfterApply(character, animationSet)
+    if not character or not character.Parent then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    forceAnimationKick(character)
+
+    task.defer(function()
+        task.wait(0.07)
+        if not self.active or not character.Parent then return end
+
+        if hasAnyPlayingTrack(humanoid) then
+            self:stopPosePrimer(character)
+            return
+        end
+
+        self:ensureIdlePrimer(character, animationSet)
+
+        task.wait(0.22)
+        if not self.active or not character.Parent then return end
+        if hasAnyPlayingTrack(humanoid) then return end
+
+        refreshAnimate(character)
+        forceAnimationKick(character)
+        self:ensureIdlePrimer(character, animationSet)
+    end)
 end
 
 function AnimationMimic:rememberOriginal(character, animationObject)
@@ -473,6 +599,12 @@ function AnimationMimic:pruneStaleCharacterAnimationState(currentCharacter)
             self:stopDirectController(character)
         end
     end
+
+    for character in pairs(self.posePrimerByChar) do
+        if character ~= currentCharacter and (not character.Parent or character ~= self.localPlayer.Character) then
+            self:stopPosePrimer(character)
+        end
+    end
 end
 
 function AnimationMimic:startDirectController(character, animationSet)
@@ -667,17 +799,19 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
 
     if applied > 0 then
         self:stopDirectController(character)
+        self:stopPosePrimer(character)
         refreshAnimate(character)
     else
         local descApplied = self:applyAnimationSetViaDescription(humanoid, animationSet)
         if descApplied then
             self:stopDirectController(character)
+            self:stopPosePrimer(character)
         else
             if not self:startDirectController(character, animationSet) then return false end
         end
     end
 
-    forceAnimationKick(character)
+    self:unstickPoseAfterApply(character, animationSet)
     self:replicateAnimationStateForOthers(character, animationSet)
 
     if type(self.onAfterApply) == "function" then
@@ -715,17 +849,19 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
 
     if applied > 0 then
         self:stopDirectController(character)
+        self:stopPosePrimer(character)
         refreshAnimate(character)
     else
         if self:applyAnimationSetViaDescription(humanoid, ownSet) then
             self:stopDirectController(character)
+            self:stopPosePrimer(character)
         else
             if not self.active then return false end
             if not self:startDirectController(character, ownSet) then return false end
         end
     end
 
-    forceAnimationKick(character)
+    self:unstickPoseAfterApply(character, ownSet)
     self:replicateAnimationStateForOthers(character, ownSet)
 
     return true
@@ -868,6 +1004,7 @@ function AnimationMimic:setEnabled(enabled)
         self.pinnedTargetUserId = nil
         local character = self.localPlayer.Character
         self:stopAllDirectControllers()
+        self:stopAllPosePrimers()
         self:resetCharacterAnimations(character)
         self.originalByCharacter = {}
         flushAnimationState(character)
@@ -883,6 +1020,7 @@ function AnimationMimic:cleanup()
 
     local character = self.localPlayer.Character
     self:stopAllDirectControllers()
+    self:stopAllPosePrimers()
     self:resetCharacterAnimations(character)
     self.originalByCharacter = {}
 
