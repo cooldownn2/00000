@@ -203,6 +203,11 @@ local function getFreshZeehoodTimestamp(burstIndex)
     return os.clock()
 end
 
+local function stampZeehoodPayloadTimestamp(payload, burstIndex)
+    if type(payload) ~= "table" then return end
+    payload.Timestamp = getFreshZeehoodTimestamp(burstIndex)
+end
+
 local function rewriteZeehoodPellets(payload, aimPos, hitPart)
     -- Preserve the original pellet spread shape by translating the
     -- existing pellet pattern so its center lands on the locked aim point.
@@ -264,44 +269,6 @@ local function redirectZeehoodPayload(payload)
     return true
 end
 
-local function buildZeehoodAssistPayload(basePayload, burstIndex)
-    if not isTargetFeatureAllowed() then return nil end
-    if type(basePayload) ~= "table" then return nil end
-
-    local hitPart, aimPos = resolveAimTarget()
-    if not hitPart or not aimPos then return nil end
-
-    local payload = {
-        ToolName   = basePayload.ToolName,
-        StartPoint = typeof(basePayload.StartPoint) == "Vector3" and basePayload.StartPoint or aimPos,
-        Timestamp  = getFreshZeehoodTimestamp(burstIndex),
-    }
-
-    applyZeehoodOriginPolicy(payload, aimPos)
-
-    applyZeehoodRangePolicy(payload)
-
-    if type(basePayload.Pellets) == "table" then
-        local pelletCount = #basePayload.Pellets
-        if pelletCount < 1 then pelletCount = 5 end
-        local pellets = table.create and table.create(pelletCount) or {}
-        for i = 1, pelletCount do
-            pellets[i] = {
-                HitPosition = aimPos,
-                HitInstance = hitPart,
-            }
-        end
-        payload.Pellets = pellets
-        payload.HitPosition = aimPos
-        payload.HitInstance = hitPart
-    else
-        payload.HitPosition = aimPos
-        payload.HitInstance = hitPart
-    end
-
-    return payload
-end
-
 local function getCurrentAimPosition()
     local ok, _, aimPos = pcall(resolveAimTarget)
     if not ok then
@@ -350,7 +317,7 @@ end
 
 SilentAim.init                   = init
 SilentAim.redirectZeehoodPayload = redirectZeehoodPayload
-SilentAim.buildZeehoodAssistPayload = buildZeehoodAssistPayload
+SilentAim.stampZeehoodPayloadTimestamp = stampZeehoodPayloadTimestamp
 SilentAim.getCurrentAimPosition  = getCurrentAimPosition
 SilentAim.getCurrentMouseHitPosition = getCurrentMouseHitPosition
 SilentAim.prepareShootData = prepareShootData

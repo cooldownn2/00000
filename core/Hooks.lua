@@ -13,23 +13,6 @@ local function setReadOnlySafe(value)
     if setreadonly then setreadonly(mt, value) end
 end
 
-local function sendZeehoodAssistShot(self, baseArgs, burstIndex)
-    local payload
-
-    local ok = pcall(function()
-        if SilentAim.buildZeehoodAssistPayload then
-            payload = SilentAim.buildZeehoodAssistPayload(baseArgs[2], burstIndex)
-        end
-    end)
-
-    if not ok or type(payload) ~= "table" then
-        return false
-    end
-
-    pcall(oldNamecall, self, "GunFired", payload)
-    return true
-end
-
 local function buildHooks()
     hookedShoot = function(data)
         if State.Unloaded then return oldShoot(data) end
@@ -75,22 +58,41 @@ local function buildHooks()
         local args = {...}
 
         if gameStyle == "zeehood" then
-            -- Zeehood style: keep the original shot path untouched for weapon
-            -- state stability, then send a redirected assist shot when a valid
-            -- lock exists (forcehit-style behavior).
+            -- Zeehood style: redirect the live GunFired payload directly.
+            -- This keeps triggerbot/manual paths unified and avoids duplicate
+            -- assist-shot rejection paths.
             if isStoredShootArgsValid(args) then
                 local tapCount = 1
+                local redirectApplied = false
                 local prepOk = pcall(function()
                     SilentAim.recordShootArgs(args)
                     tapCount = Taps.getTapCount(args)
+                    if type(args[2]) == "table" then
+                        redirectApplied = SilentAim.redirectZeehoodPayload(args[2]) == true
+                        if redirectApplied and SilentAim.stampZeehoodPayloadTimestamp then
+                            SilentAim.stampZeehoodPayloadTimestamp(args[2], 1)
+                        end
+                    end
                 end)
 
                 if prepOk then
-                    local result = oldNamecall(self, ...)
-                    sendZeehoodAssistShot(self, args, 1)
+                    local result
+                    if redirectApplied then
+                        result = oldNamecall(self, table.unpack(args))
+                    else
+                        result = oldNamecall(self, ...)
+                    end
                     for _ = 2, tapCount do
-                        pcall(oldNamecall, self, ...)
-                        sendZeehoodAssistShot(self, args, _)
+                        if redirectApplied then
+                            pcall(function()
+                                if SilentAim.stampZeehoodPayloadTimestamp then
+                                    SilentAim.stampZeehoodPayloadTimestamp(args[2], _)
+                                end
+                            end)
+                            pcall(oldNamecall, self, table.unpack(args))
+                        else
+                            pcall(oldNamecall, self, ...)
+                        end
                     end
                     return result
                 end
