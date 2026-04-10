@@ -122,9 +122,35 @@ local function redirectZeehoodPayload(payload)
     -- tracers from the real muzzle origin for all players.
 
     if type(payload.Pellets) == "table" then
+        -- Preserve the original pellet spread shape by translating the
+        -- existing pellet pattern so its center lands on the locked aim point.
+        local center = Vector3.new(0, 0, 0)
+        local count = 0
+
         for _, p in ipairs(payload.Pellets) do
-            p.HitPosition = aimPos
-            p.HitInstance = hitPart
+            if type(p) == "table" and typeof(p.HitPosition) == "Vector3" then
+                center = center + p.HitPosition
+                count = count + 1
+            end
+        end
+
+        if count > 0 then
+            center = center / count
+            for _, p in ipairs(payload.Pellets) do
+                if type(p) == "table" then
+                    local origPos = typeof(p.HitPosition) == "Vector3" and p.HitPosition or center
+                    local spreadOffset = origPos - center
+                    p.HitPosition = aimPos + spreadOffset
+                    p.HitInstance = hitPart
+                end
+            end
+        else
+            for _, p in ipairs(payload.Pellets) do
+                if type(p) == "table" then
+                    p.HitPosition = aimPos
+                    p.HitInstance = hitPart
+                end
+            end
         end
         -- Some Zeehood handlers use top-level fields for visuals even when
         -- pellet data exists; mirror them here for tracer compatibility.
