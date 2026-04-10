@@ -160,6 +160,55 @@ function AnimationMimic.new(deps)
     return self
 end
 
+function AnimationMimic:getGuaranteedFallbackSet()
+    return {
+        climb = self:makeSingleAnimationData("ClimbAnim", R15_FALLBACK_ANIMATIONS.climb),
+        fall = self:makeSingleAnimationData("FallAnim", R15_FALLBACK_ANIMATIONS.fall),
+        jump = self:makeSingleAnimationData("JumpAnim", R15_FALLBACK_ANIMATIONS.jump),
+        run = self:makeSingleAnimationData("RunAnim", R15_FALLBACK_ANIMATIONS.run),
+        walk = self:makeSingleAnimationData("WalkAnim", R15_FALLBACK_ANIMATIONS.walk),
+        swim = self:makeSingleAnimationData("Swim", R15_FALLBACK_ANIMATIONS.swim),
+        idle = {
+            byName = {
+                Animation1 = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.idle1),
+                Animation2 = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.idle2),
+            },
+            ordered = {
+                self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.idle1),
+                self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.idle2),
+            },
+            first = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.idle1),
+        },
+    }
+end
+
+function AnimationMimic:hasNativePlayingTrack(character)
+    if not character then return false end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
+
+    local ignored = {}
+    local controller = self.directControllerByChar[character]
+    if controller and controller.tracks then
+        for _, t in pairs(controller.tracks) do
+            ignored[t] = true
+        end
+    end
+
+    local primer = self.posePrimerByChar[character]
+    if primer and primer.track then
+        ignored[primer.track] = true
+    end
+
+    for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
+        if track.IsPlaying and not ignored[track] then
+            return true
+        end
+    end
+
+    return false
+end
+
 function AnimationMimic:stopPosePrimer(character)
     if not character then return end
     local rec = self.posePrimerByChar[character]
@@ -271,11 +320,26 @@ function AnimationMimic:unstickPoseAfterApply(character, animationSet)
 
         task.wait(0.22)
         if not self.active or not character.Parent then return end
-        if hasAnyPlayingTrack(humanoid) then return end
+        if self:hasNativePlayingTrack(character) then
+            self:stopPosePrimer(character)
+            return
+        end
 
         refreshAnimate(character)
         forceAnimationKick(character)
         self:ensureIdlePrimer(character, animationSet)
+
+        task.wait(0.30)
+        if not self.active or not character.Parent then return end
+        if self:hasNativePlayingTrack(character) then
+            self:stopPosePrimer(character)
+            return
+        end
+
+        local started = self:startDirectController(character, animationSet, { assistMode = true })
+        if not started then
+            self:startDirectController(character, self:getGuaranteedFallbackSet(), { assistMode = true })
+        end
     end)
 end
 
@@ -607,13 +671,17 @@ function AnimationMimic:pruneStaleCharacterAnimationState(currentCharacter)
     end
 end
 
-function AnimationMimic:startDirectController(character, animationSet)
+function AnimationMimic:startDirectController(character, animationSet, opts)
+    opts = opts or {}
+    local assistMode = opts.assistMode == true
+
     if not self.settings.useDirectTrackFallback then return false end
 
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not humanoid or not animationSet then return false end
 
     self:stopDirectController(character)
+    self:stopPosePrimer(character)
 
     local animator = humanoid:FindFirstChildOfClass("Animator")
     if not animator then
@@ -660,7 +728,18 @@ function AnimationMimic:startDirectController(character, animationSet)
         return false
     end
 
-    local controller = { tracks = tracks, animations = animations, connection = nil, active = nil, nextUpdateAt = 0 }
+    local ownTrackSet = {}
+    for _, t in pairs(tracks) do ownTrackSet[t] = true end
+
+    local controller = {
+        tracks = tracks,
+        trackSet = ownTrackSet,
+        animations = animations,
+        connection = nil,
+        active = nil,
+        nextUpdateAt = 0,
+        assistMode = assistMode,
+    }
     self.directControllerByChar[character] = controller
 
     local function playState(nextState)
@@ -684,6 +763,20 @@ function AnimationMimic:startDirectController(character, animationSet)
         if not self.active or not character.Parent then
             self:stopDirectController(character)
             return
+        end
+
+        if controller.assistMode then
+            local hasNativeTrack = false
+            for _, t in ipairs(humanoid:GetPlayingAnimationTracks()) do
+                if t.IsPlaying and not controller.trackSet[t] then
+                    hasNativeTrack = true
+                    break
+                end
+            end
+            if hasNativeTrack then
+                self:stopDirectController(character)
+                return
+            end
         end
 
         local now = os.clock()
@@ -1008,6 +1101,15 @@ function AnimationMimic:setEnabled(enabled)
         self:resetCharacterAnimations(character)
         self.originalByCharacter = {}
         flushAnimationState(character)
+    else
+        local character = self.localPlayer.Character
+        if character and character.Parent and self.lastSourceUserId then
+            task.defer(function()
+                if self.active then
+                    self:mimicFromUserId(self.lastSourceUserId, true)
+                end
+            end)
+        end
     end
 end
 
