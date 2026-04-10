@@ -93,20 +93,24 @@ local function buildHooks()
         local args = {...}
 
         if gameStyle == "zeehood" then
-            -- Zeehood style: keep the original payload and drive aim through
-            -- Mouse.Hit sync only. Rewriting GunFired payloads here can cause
-            -- server-side desync (fake bullets/reload lock) in this game.
+            -- Zeehood style: redirect payload safely (for wallbang/infinite
+            -- range support) while keeping hard fallbacks on any failure.
             if isStoredShootArgsValid(args) then
                 local tapCount = 1
+                local sendArgs = cloneZeehoodArgs(args)
                 local prepOk = pcall(function()
                     SilentAim.recordShootArgs(args)
+                    SilentAim.redirectZeehoodPayload(sendArgs[2])
                     tapCount = Taps.getTapCount(args)
                 end)
 
                 if prepOk then
-                    local result = oldNamecall(self, ...)
+                    local sendOk, result = pcall(oldNamecall, self, table.unpack(sendArgs))
+                    if not sendOk then
+                        return oldNamecall(self, ...)
+                    end
                     for _ = 2, tapCount do
-                        pcall(oldNamecall, self, ...)
+                        pcall(oldNamecall, self, table.unpack(sendArgs))
                     end
                     return result
                 end

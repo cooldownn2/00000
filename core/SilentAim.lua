@@ -72,15 +72,21 @@ local function resolveAimTarget()
     end
 
     if gameStyle == "zeehood" and isValidPart(hitPart) then
-        -- Zeehood shot validation is stricter than Dashood. Keep Closest Point
-        -- part selection, but anchor aim position to a stable body-part center.
-        local safePart = resolveZeehoodSafePart(hitPart)
-        if not isValidPart(safePart) then
-            return nil, nil
-        end
-        hitPart = safePart
-        if isClosestPointMode() or not isValidVec3(aimPos) then
-            aimPos = safePart.Position
+        -- Preserve true Closest Point behavior in Zeehood. Only coerce to a
+        -- safe fallback part when not using Closest Point mode.
+        if isClosestPointMode() then
+            if not isValidVec3(aimPos) then
+                aimPos = hitPart.Position
+            end
+        else
+            local safePart = resolveZeehoodSafePart(hitPart)
+            if not isValidPart(safePart) then
+                return nil, nil
+            end
+            hitPart = safePart
+            if not isValidVec3(aimPos) then
+                aimPos = safePart.Position
+            end
         end
     end
 
@@ -169,8 +175,21 @@ local function redirectZeehoodPayload(payload)
 
     if not hitPart or not aimPos then return end
 
-    -- Keep StartPoint untouched so Zeehood can replicate server-side bullet
-    -- tracers from the real muzzle origin for all players.
+    if Settings.InfiniteRange then
+        payload.Range = 1e9
+        local startPoint = payload.StartPoint
+        if typeof(startPoint) == "Vector3" then
+            local delta = aimPos - startPoint
+            if delta.Magnitude > 10 then
+                payload.StartPoint = aimPos - delta.Unit * 3
+            end
+        else
+            payload.StartPoint = aimPos
+        end
+    end
+
+    -- Keep StartPoint untouched by default for normal tracer replication.
+    -- Infinite Range mode above may move it closer to the aim point.
 
     if type(payload.Pellets) == "table" then
         -- Preserve the original pellet spread shape by translating the
