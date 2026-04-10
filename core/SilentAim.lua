@@ -189,6 +189,38 @@ local function init(deps)
     gameStyle              = deps.gameStyle
 end
 
+local function applyZeehoodOriginPolicy(payload, aimPos)
+    -- Forcehit-style origin spoof for redirected assist shots: spawn the shot
+    -- near the target so map geometry between shooter/target doesn't block it.
+    local startPoint = payload.StartPoint
+    local dir = nil
+    if typeof(startPoint) == "Vector3" then
+        local delta = startPoint - aimPos
+        if delta.Magnitude > 0.01 then
+            dir = delta.Unit
+        end
+    end
+    if not dir then
+        dir = Vector3.new(0, 1, 0)
+    end
+    payload.StartPoint = aimPos + dir * 0.25
+end
+
+local function applyZeehoodRangePolicy(payload)
+    if Settings.InfiniteRange then
+        payload.Range = 1e9
+    end
+end
+
+local function getFreshZeehoodTimestamp(burstIndex)
+    local ok, serverNow = pcall(workspace.GetServerTimeNow, workspace)
+    if ok and type(serverNow) == "number" then
+        local idx = tonumber(burstIndex) or 0
+        return serverNow + (idx * (1 / 120)) + ((random() - 0.5) * 0.0005)
+    end
+    return os.clock()
+end
+
 local function rewriteZeehoodPellets(payload, aimPos, hitPart)
     -- Preserve the original pellet spread shape by translating the
     -- existing pellet pattern so its center lands on the locked aim point.
@@ -223,9 +255,8 @@ local function rewriteZeehoodPellets(payload, aimPos, hitPart)
 end
 
 -- Redirect a zeehood-style FireServer payload table in-place to aim at the
--- current locked target. Keeps StartPoint as-is (original muzzle position)
--- so the server can validate the shot origin against player position.
--- Only HitPosition/HitInstance (and Pellets for shotguns) are redirected.
+-- current locked target.  Called directly from the namecall hook because
+-- Zeehood has no GH.shoot to serve as a redirect trigger.
 local function redirectZeehoodPayload(payload)
     if not isTargetFeatureAllowed() then return false end
     if not payload or type(payload) ~= "table" then return false end
@@ -234,11 +265,13 @@ local function redirectZeehoodPayload(payload)
 
     if not hitPart or not aimPos then return false end
 
-    -- Do NOT change StartPoint — keep it at the real muzzle position so the
-    -- server passes its origin-vs-character-position validation check.
+    applyZeehoodOriginPolicy(payload, aimPos)
+    applyZeehoodRangePolicy(payload)
 
     if type(payload.Pellets) == "table" then
         rewriteZeehoodPellets(payload, aimPos, hitPart)
+        -- Some Zeehood handlers use top-level fields for visuals even when
+        -- pellet data exists; mirror them here for tracer compatibility.
         payload.HitPosition = aimPos
         payload.HitInstance = hitPart
     else
@@ -247,6 +280,52 @@ local function redirectZeehoodPayload(payload)
     end
 
     return true
+end
+
+local function buildZeehoodAssistPayload(basePayload, burstIndex)
+    if not isTargetFeatureAllowed() then return nil end
+    if type(basePayload) ~= "table" then return nil end
+
+    local hitPart, aimPos = resolveAimTarget()
+    if not hitPart or not aimPos then return nil end
+    if not isPartOwnerAlive(hitPart) then return nil end
+
+    local payload = {
+        ToolName   = basePayload.ToolName,
+        StartPoint = aimPos,
+        Timestamp  = getFreshZeehoodTimestamp(burstIndex),
+    }
+
+    applyZeehoodRangePolicy(payload)
+
+    if type(basePayload.Pellets) == "table" then
+        local pelletCount = #basePayload.Pellets
+        if pelletCount < 1 then pelletCount = 5 end
+        local pellets = table.create and table.create(pelletCount) or {}
+        for i = 1, pelletCount do
+            pellets[i] = {
+                HitPosition = aimPos,
+                HitInstance = hitPart,
+            }
+        end
+        payload.Pellets = pellets
+        payload.HitPosition = aimPos
+        payload.HitInstance = hitPart
+    else
+        payload.HitPosition = aimPos
+        payload.HitInstance = hitPart
+    end
+
+    return payload
+end
+
+local function canUseZeehoodAssistShot()
+    if gameStyle ~= "zeehood" then return false end
+    if not isTargetFeatureAllowed() then return false end
+
+    local hitPart, aimPos = resolveAimTarget()
+    if not hitPart or not aimPos then return false end
+    return isPartOwnerAlive(hitPart)
 end
 
 local function getCurrentAimPosition()
@@ -297,6 +376,8 @@ end
 
 SilentAim.init                   = init
 SilentAim.redirectZeehoodPayload = redirectZeehoodPayload
+SilentAim.buildZeehoodAssistPayload = buildZeehoodAssistPayload
+SilentAim.canUseZeehoodAssistShot = canUseZeehoodAssistShot
 SilentAim.getCurrentAimPosition  = getCurrentAimPosition
 SilentAim.getCurrentMouseHitPosition = getCurrentMouseHitPosition
 SilentAim.prepareShootData = prepareShootData

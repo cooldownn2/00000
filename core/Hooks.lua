@@ -3,13 +3,45 @@ local GH, MainEvent, oldShoot, mt, oldNamecall, oldIndex
 local isStoredShootArgsValid
 local Taps
 local SilentAim
+local ForceHit
 local Settings
-local LP
+local LP, UIS, Mouse
 local hookedShoot, hookedNamecall, hookedIndex
 local gameStyle
 
+local MOUSE1 = Enum.UserInputType.MouseButton1
+
 local function setReadOnlySafe(value)
     if setreadonly then setreadonly(mt, value) end
+end
+
+local function sendZeehoodAssistShot(self, baseArgs, burstIndex)
+    -- Respect Visible Check semantics: when enabled, wallbang path stays off.
+    if Settings and Settings.VisCheck then
+        return false
+    end
+
+    if ForceHit and ForceHit.sendAssistShot then
+        local ok, sent = pcall(ForceHit.sendAssistShot)
+        if ok and sent then
+            return true
+        end
+    end
+
+    local payload
+
+    local ok = pcall(function()
+        if SilentAim.buildZeehoodAssistPayload then
+            payload = SilentAim.buildZeehoodAssistPayload(baseArgs[2], burstIndex)
+        end
+    end)
+
+    if not ok or type(payload) ~= "table" then
+        return false
+    end
+
+    pcall(oldNamecall, self, "GunFired", payload)
+    return true
 end
 
 local function buildHooks()
@@ -25,6 +57,27 @@ local function buildHooks()
     hookedIndex = function(self, key)
         if State.Unloaded then return oldIndex(self, key) end
 
+        if gameStyle == "zeehood" and Mouse and rawequal(self, Mouse) and key == "Hit" then
+            local firing = UIS and UIS:IsMouseButtonPressed(MOUSE1)
+            if firing then
+                local ok, aimPos = pcall(function()
+                    if SilentAim.getCurrentMouseHitPosition then
+                        return SilentAim.getCurrentMouseHitPosition()
+                    end
+                    if SilentAim.getCurrentAimPosition then
+                        return SilentAim.getCurrentAimPosition()
+                    end
+                    return nil
+                end)
+                if ok and typeof(aimPos) == "Vector3" then
+                    local cOk, aimedCf = pcall(CFrame.new, aimPos)
+                    if cOk and aimedCf then
+                        return aimedCf
+                    end
+                end
+            end
+        end
+
         return oldIndex(self, key)
     end
 
@@ -36,54 +89,64 @@ local function buildHooks()
         local args = {...}
 
         if gameStyle == "zeehood" then
-            -- Zeehood: redirect the payload in-place (keeps StartPoint at muzzle
-            -- so server validates properly) then send a single modified shot.
+            -- Zeehood style: keep the original shot path untouched for weapon
+            -- state stability, then send a redirected assist shot when a valid
+            -- lock exists (forcehit-style behavior).
             if isStoredShootArgsValid(args) then
-                pcall(SilentAim.recordShootArgs, args)
-
-                -- Redirect HitPosition/Pellets/HitInstance to locked target.
-                pcall(function()
-                    if SilentAim.redirectZeehoodPayload then
-                        SilentAim.redirectZeehoodPayload(args[2])
-                    end
+                local tapCount = 1
+                local prepOk = pcall(function()
+                    SilentAim.recordShootArgs(args)
+                    tapCount = Taps.getTapCount(args)
                 end)
 
-                local tapCount = 1
-                pcall(function() tapCount = Taps.getTapCount(args) end)
+                if prepOk then
+                    local canAssist = false
+                    pcall(function()
+                        if SilentAim.canUseZeehoodAssistShot then
+                            canAssist = SilentAim.canUseZeehoodAssistShot()
+                        end
+                    end)
 
-                oldNamecall(self, table.unpack(args))
-                for _ = 2, tapCount do
-                    oldNamecall(self, table.unpack(args))
+                    local result = oldNamecall(self, ...)
+                    if canAssist then
+                        sendZeehoodAssistShot(self, args, 1)
+                    end
+                    for _ = 2, tapCount do
+                        pcall(oldNamecall, self, ...)
+                        if canAssist then
+                            sendZeehoodAssistShot(self, args, _)
+                        end
+                    end
+                    return result
                 end
-                return nil
+
+                return oldNamecall(self, ...)
             end
-            oldNamecall(self, ...)
-            return nil
+            return oldNamecall(self, ...)
         end
 
         -- Dashood / positional-args style.
         SilentAim.recordShootArgs(args)
         if SilentAim.shouldRedirectFireServer(args) then
             SilentAim.applyFireServerRedirect(args)
-            oldNamecall(self, table.unpack(args))
+            local result = oldNamecall(self, table.unpack(args))
             -- Tap extra shots: call oldNamecall directly (bypasses hook) so
             -- SkipNextFireServer is never needed and can't be left dirty.
             local extra = Taps.getTapCount(args) - 1
             for _ = 1, extra do
                 oldNamecall(self, table.unpack(args))
             end
-            return nil
+            return result
         end
         if isStoredShootArgsValid(args) then
-            oldNamecall(self, ...)
+            local result = oldNamecall(self, ...)
             local extra = Taps.getTapCount(args) - 1
             for _ = 1, extra do
                 oldNamecall(self, table.unpack(args))
             end
-            return nil
+            return result
         end
-        oldNamecall(self, ...)
-        return nil
+        return oldNamecall(self, ...)
     end
 end
 
@@ -118,8 +181,11 @@ local function init(deps)
     isStoredShootArgsValid = deps.isStoredShootArgsValid
     Taps                   = deps.Taps
     SilentAim              = deps.SilentAim
+    ForceHit               = deps.ForceHit
     Settings               = deps.Settings
     LP                     = deps.LP
+    UIS                    = deps.UIS
+    Mouse                  = LP and LP:GetMouse() or nil
     gameStyle              = deps.gameStyle
     SilentAim.init(deps)
     -- Build closures once here so install() just wires them in without re-allocating.
