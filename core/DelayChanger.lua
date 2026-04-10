@@ -194,8 +194,6 @@ local function apply(tool)
 		end
 	end
 
-	-- Infinite range patching
-
 	local desiredRange = getDesiredRange()
 	if desiredRange == nil then
 		restoreRange(tool)
