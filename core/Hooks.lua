@@ -12,38 +12,6 @@ local function setReadOnlySafe(value)
     if setreadonly then setreadonly(mt, value) end
 end
 
-local function shouldUseZeehoodAssistShot()
-    return Settings and (Settings.VisCheck == false)
-end
-
-local function sendZeehoodAssistShot(self, baseArgs, burstIndex)
-    if not shouldUseZeehoodAssistShot() then
-        return false
-    end
-
-    local payload
-
-    local ok = pcall(function()
-        if SilentAim.buildZeehoodAssistPayload then
-            payload = SilentAim.buildZeehoodAssistPayload(baseArgs[2], burstIndex)
-        end
-    end)
-
-    if not ok or type(payload) ~= "table" then
-        return false
-    end
-
-    pcall(oldNamecall, self, "GunFired", payload)
-    return true
-end
-
-local function queueZeehoodAssistShot(self, baseArgs, burstIndex)
-    task.defer(function()
-        if State.Unloaded then return end
-        pcall(sendZeehoodAssistShot, self, baseArgs, burstIndex)
-    end)
-end
-
 local function buildHooks()
     hookedShoot = function(data)
         if State.Unloaded then return oldShoot(data) end
@@ -68,42 +36,30 @@ local function buildHooks()
         local args = {...}
 
         if gameStyle == "zeehood" then
-            -- Zeehood style: keep the original shot path untouched for weapon
-            -- state stability, then send a redirected assist shot when a valid
-            -- lock exists (forcehit-style behavior).
+            -- Zeehood: redirect the payload in-place (keeps StartPoint at muzzle
+            -- so server validates properly) then send a single modified shot.
+            -- All oldNamecall calls are pcall'd so any C-level error can't crash
+            -- the gun local's coroutine and leave it stuck with GunFiring=true.
             if isStoredShootArgsValid(args) then
-                local tapCount = 1
-                local prepOk = pcall(function()
-                    SilentAim.recordShootArgs(args)
-                    tapCount = Taps.getTapCount(args)
+                pcall(SilentAim.recordShootArgs, args)
+
+                -- Redirect HitPosition/Pellets/HitInstance to locked target.
+                pcall(function()
+                    if SilentAim.redirectZeehoodPayload then
+                        SilentAim.redirectZeehoodPayload(args[2])
+                    end
                 end)
 
-                if prepOk then
-                    local canAssist = false
-                    pcall(function()
-                        if SilentAim.canUseZeehoodAssistShot then
-                            canAssist = SilentAim.canUseZeehoodAssistShot()
-                        end
-                    end)
-                    canAssist = canAssist and shouldUseZeehoodAssistShot()
+                local tapCount = 1
+                pcall(function() tapCount = Taps.getTapCount(args) end)
 
-                    oldNamecall(self, ...)
-                    if canAssist then
-                        queueZeehoodAssistShot(self, args, 1)
-                    end
-                    for _ = 2, tapCount do
-                        pcall(oldNamecall, self, ...)
-                        if canAssist then
-                            queueZeehoodAssistShot(self, args, _)
-                        end
-                    end
-                    return nil
+                pcall(oldNamecall, self, ...)
+                for _ = 2, tapCount do
+                    pcall(oldNamecall, self, ...)
                 end
-
-                oldNamecall(self, ...)
                 return nil
             end
-            oldNamecall(self, ...)
+            pcall(oldNamecall, self, ...)
             return nil
         end
 
