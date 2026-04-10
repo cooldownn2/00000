@@ -87,7 +87,7 @@ local function buildHooks()
                     end)
                     canAssist = canAssist and shouldUseZeehoodAssistShot()
 
-                    local result = oldNamecall(self, ...)
+                    oldNamecall(self, ...)
                     if canAssist then
                         queueZeehoodAssistShot(self, args, 1)
                     end
@@ -97,36 +97,39 @@ local function buildHooks()
                             queueZeehoodAssistShot(self, args, _)
                         end
                     end
-                    return result
+                    return nil
                 end
 
-                return oldNamecall(self, ...)
+                oldNamecall(self, ...)
+                return nil
             end
-            return oldNamecall(self, ...)
+            oldNamecall(self, ...)
+            return nil
         end
 
         -- Dashood / positional-args style.
         SilentAim.recordShootArgs(args)
         if SilentAim.shouldRedirectFireServer(args) then
             SilentAim.applyFireServerRedirect(args)
-            local result = oldNamecall(self, table.unpack(args))
+            oldNamecall(self, table.unpack(args))
             -- Tap extra shots: call oldNamecall directly (bypasses hook) so
             -- SkipNextFireServer is never needed and can't be left dirty.
             local extra = Taps.getTapCount(args) - 1
             for _ = 1, extra do
                 oldNamecall(self, table.unpack(args))
             end
-            return result
+            return nil
         end
         if isStoredShootArgsValid(args) then
-            local result = oldNamecall(self, ...)
+            oldNamecall(self, ...)
             local extra = Taps.getTapCount(args) - 1
             for _ = 1, extra do
                 oldNamecall(self, table.unpack(args))
             end
-            return result
+            return nil
         end
-        return oldNamecall(self, ...)
+        oldNamecall(self, ...)
+        return nil
     end
 end
 
