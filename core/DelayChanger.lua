@@ -1,5 +1,6 @@
 
 local LP = game:GetService("Players").LocalPlayer
+local RunService = game:GetService("RunService")
 
 local Settings, isUnloaded
 local gameStyle
@@ -8,8 +9,10 @@ local patchedDelay = {}
 local patchedRange = {}
 local patchedAmmo = {}
 local ammoConnections = {}
+local _lastAmmoSyncAt = 0
 
 local INFINITE_AMMO_VALUE = 9999
+local AMMO_SYNC_INTERVAL = 0.08
 
 local function getDelay(toolName)
 	local delays = Settings.CustomDelays
@@ -241,6 +244,22 @@ local function applyAmmo(tool)
 	end
 end
 
+local function syncInfiniteAmmoTick(now)
+	local desired = getDesiredAmmo()
+	if desired == nil then return end
+	if (now - _lastAmmoSyncAt) < AMMO_SYNC_INTERVAL then return end
+	_lastAmmoSyncAt = now
+
+	for _, container in ipairs({LP.Character, LP:FindFirstChild("Backpack")}) do
+		if not container then continue end
+		for _, child in ipairs(container:GetChildren()) do
+			if child:IsA("Tool") then
+				applyAmmo(child)
+			end
+		end
+	end
+end
+
 local function apply(tool)
 	if not tool then return end
 
@@ -334,6 +353,11 @@ local function onCharacterAdded(char)
 			apply(child)
 		end)
 	end
+
+	connections.ammoKeepalive = RunService.Heartbeat:Connect(function()
+		if isUnloaded() then return end
+		syncInfiniteAmmoTick(os.clock())
+	end)
 end
 
 local function cleanup()
