@@ -102,7 +102,9 @@ local function buildHooks()
                 if prepOk then
                     local canAssist = false
                     pcall(function()
-                        if SilentAim.canUseZeehoodAssistShot then
+                        if SilentAim.shouldUseZeehoodAssistShot then
+                            canAssist = (SilentAim.shouldUseZeehoodAssistShot() == true)
+                        elseif SilentAim.canUseZeehoodAssistShot then
                             canAssist = (SilentAim.canUseZeehoodAssistShot() == true)
                         end
                     end)

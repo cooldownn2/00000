@@ -9,6 +9,12 @@ local isTargetFeatureAllowed
 local isStoredShootArgsValid
 local gameStyle
 local random = math.random
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local _assistVisParams = RaycastParams.new()
+_assistVisParams.FilterType = Enum.RaycastFilterType.Exclude
+_assistVisParams.IgnoreWater = true
 
 -- Reused table for redirected GH.shoot payload.
 local _shootData = {}
@@ -328,6 +334,37 @@ local function canUseZeehoodAssistShot()
     return isPartOwnerAlive(hitPart)
 end
 
+local function shouldUseZeehoodAssistShot()
+    if not canUseZeehoodAssistShot() then return false end
+
+    local hitPart, aimPos = resolveAimTarget()
+    if not hitPart or not aimPos then return false end
+
+    local cam = workspace.CurrentCamera
+    if not cam then return false end
+
+    local origin = cam.CFrame.Position
+    local dir = aimPos - origin
+    if dir.Magnitude <= 0.001 then return false end
+
+    local lpChar = LocalPlayer and LocalPlayer.Character
+    _assistVisParams.FilterDescendantsInstances = lpChar and { lpChar } or {}
+
+    local result = workspace:Raycast(origin, dir, _assistVisParams)
+    if not result then
+        -- Clear line of sight: no need for wallbang assist.
+        return false
+    end
+
+    local hitInst = result.Instance
+    if hitInst and hitPart.Parent and hitInst:IsDescendantOf(hitPart.Parent) then
+        -- Ray reached target character, so this is not a blocked shot.
+        return false
+    end
+
+    return true
+end
+
 local function getCurrentAimPosition()
     local ok, _, aimPos = pcall(resolveAimTarget)
     if not ok then
@@ -378,6 +415,7 @@ SilentAim.init                   = init
 SilentAim.redirectZeehoodPayload = redirectZeehoodPayload
 SilentAim.buildZeehoodAssistPayload = buildZeehoodAssistPayload
 SilentAim.canUseZeehoodAssistShot = canUseZeehoodAssistShot
+SilentAim.shouldUseZeehoodAssistShot = shouldUseZeehoodAssistShot
 SilentAim.getCurrentAimPosition  = getCurrentAimPosition
 SilentAim.getCurrentMouseHitPosition = getCurrentMouseHitPosition
 SilentAim.prepareShootData = prepareShootData
