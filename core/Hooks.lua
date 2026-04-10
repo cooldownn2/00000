@@ -82,8 +82,16 @@ local function getDashoodNaturalRange(args)
     end
 
     local rangeObj = tool:FindFirstChild("Range")
-    if rangeObj and type(rangeObj.Value) == "number" and rangeObj.Value > 0 then
+    if rangeObj and type(rangeObj.Value) == "number" and rangeObj.Value > 0.1 then
         return rangeObj.Value
+    end
+
+    local distances = Settings and Settings.ForceHitDistances
+    if type(distances) == "table" then
+        local configured = distances[tool.Name]
+        if type(configured) == "number" and configured > 0.1 then
+            return configured
+        end
     end
 
     return nil
@@ -107,8 +115,17 @@ local function isDashoodWallbangInNaturalRange(args)
         return true
     end
 
-    local targetPos = (State and State.FakePos) or fakePart.Position
-    local origin = args and args[3]
+    local targetPos = (State and State.FakePos)
+    if typeof(targetPos) ~= "Vector3" then
+        targetPos = fakePart.Position
+    end
+
+    -- Dashood event arg[5] is the muzzle/world origin used by the gun client.
+    local origin = args and args[5]
+
+    if typeof(origin) ~= "Vector3" then
+        origin = args and args[3]
+    end
 
     if typeof(origin) ~= "Vector3" then
         local root = LP and LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
@@ -119,7 +136,7 @@ local function isDashoodWallbangInNaturalRange(args)
         return true
     end
 
-    return (targetPos - origin).Magnitude <= maxDist
+    return (targetPos - origin).Magnitude <= (maxDist + 2)
 end
 
 local function buildHooks()
