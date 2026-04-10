@@ -550,7 +550,7 @@ end
 function Common:resolveFaceTexture(userId, appearanceModel, targetDesc)
     local cached = self:cacheGetTimed(self.faceTextureCache, self.faceTextureCacheTime, userId, AVATAR_CACHE_TTL_SECONDS)
     if cached ~= nil then
-        if cached == NO_FACE_TOKEN then return nil, "faceless" end
+        if cached == NO_FACE_TOKEN then return nil, "unknown" end
         return cached, "texture"
     end
 
@@ -599,10 +599,9 @@ function Common:resolveFaceTexture(userId, appearanceModel, targetDesc)
         end
     end
 
-    -- Final check: if source head has no face decals after the short wait and
-    -- there is no face asset in description/info, treat as faceless.
-    self:cacheSetTimed(self.faceTextureCache, self.faceTextureCacheTime, userId, NO_FACE_TOKEN, CACHE_MAX_ENTRIES.faceTexture)
-    return nil, "faceless"
+    -- For modern head-based faces we cannot reliably infer faceless here.
+    -- Return unknown and preserve whatever ApplyDescription produced.
+    return nil, "unknown"
 end
 
 return Common

@@ -255,6 +255,24 @@ local function applyHeadVisualFromSource(char, sourceHead, desiredFaceTexture, f
         pcall(function() dstMesh:Destroy() end)
     end
 
+    local srcSurface = sourceHead:FindFirstChildOfClass("SurfaceAppearance")
+    local dstSurface = destHead:FindFirstChildOfClass("SurfaceAppearance")
+    if srcSurface then
+        if not dstSurface then
+            local okClone, clone = pcall(function() return srcSurface:Clone() end)
+            if okClone and clone then
+                pcall(function() clone.Parent = destHead end)
+                dstSurface = clone
+            end
+        else
+            pcall(function() dstSurface.ColorMap = srcSurface.ColorMap end)
+            pcall(function() dstSurface.NormalMap = srcSurface.NormalMap end)
+            pcall(function() dstSurface.MetalnessMap = srcSurface.MetalnessMap end)
+            pcall(function() dstSurface.RoughnessMap = srcSurface.RoughnessMap end)
+            pcall(function() dstSurface.AlphaMode = srcSurface.AlphaMode end)
+        end
+    end
+
     -- Keep head attachment layout aligned with source so face/head accessories
     -- mount correctly (face front overlays are sensitive to this).
     for _, child in ipairs(sourceHead:GetChildren()) do
