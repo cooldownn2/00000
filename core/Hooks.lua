@@ -49,6 +49,10 @@ local function cloneZeehoodArgs(args)
 end
 
 local function sendZeehoodAssistShot(self, baseArgs)
+    if SilentAim.shouldSendZeehoodAssistShot and not SilentAim.shouldSendZeehoodAssistShot() then
+        return false
+    end
+
     local sendArgs = cloneZeehoodArgs(baseArgs)
     local redirected = false
 

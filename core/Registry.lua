@@ -1,5 +1,7 @@
 local settings = {}
 
+local INFINITE_RANGE_PATH = {"Weapon Modifications", "Infinite Range"}
+
 local SettingPaths = {
     TargetAllowed               = {"Main", "Enabled"},
     TargetCardEnabled           = {"Main", "Target Card"},
@@ -16,6 +18,7 @@ local SettingPaths = {
     CustomDelays                = {"Weapon Modifications", "Custom Delays"},
     Taps                        = {"Weapon Modifications", "Taps"},
     InfiniteRange               = {"Weapon Modifications", "Infinite Range"},
+    Wallbang                    = {"Weapon Modifications", "Infinite Range", "Wallbang"},
 
     PersistLockOnDeath          = {"Main", "Checks", "Target", "Persist Lock On Death"},
     RetargetInterval            = {"Main", "Retarget Interval"},
@@ -109,8 +112,34 @@ local function setPathValue(root, path, value)
     current[path[#path]] = value
 end
 
+local function resolveInfiniteRangeSetting()
+    local v = getPathValue(settings, INFINITE_RANGE_PATH)
+    if type(v) == "table" then
+        if v.Enabled == nil then return true end
+        return v.Enabled == true
+    end
+    return v == true
+end
+
+local function resolveWallbangSetting()
+    local v = getPathValue(settings, INFINITE_RANGE_PATH)
+    if type(v) == "table" then
+        if v.Wallbang == nil then
+            return resolveInfiniteRangeSetting()
+        end
+        return v.Wallbang == true
+    end
+    return v == true
+end
+
 local Settings = setmetatable({}, {
     __index = function(_, key)
+        if key == "InfiniteRange" then
+            return resolveInfiniteRangeSetting()
+        end
+        if key == "Wallbang" then
+            return resolveWallbangSetting()
+        end
         local path = SettingPaths[key]
         if path then
             return getPathValue(settings, path)
@@ -118,6 +147,25 @@ local Settings = setmetatable({}, {
         return nil
     end,
     __newindex = function(_, key, value)
+        if key == "InfiniteRange" then
+            local current = getPathValue(settings, INFINITE_RANGE_PATH)
+            if type(current) == "table" and type(value) == "boolean" then
+                current.Enabled = value
+            else
+                setPathValue(settings, INFINITE_RANGE_PATH, value)
+            end
+            return
+        end
+        if key == "Wallbang" then
+            local current = getPathValue(settings, INFINITE_RANGE_PATH)
+            if type(current) ~= "table" then
+                current = { Enabled = (current == true), Wallbang = (value == true) }
+                setPathValue(settings, INFINITE_RANGE_PATH, current)
+            else
+                current.Wallbang = value
+            end
+            return
+        end
         local path = SettingPaths[key]
         if path then
             setPathValue(settings, path, value)
