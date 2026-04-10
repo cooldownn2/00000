@@ -17,13 +17,13 @@ end
 
 local function sendZeehoodAssistShot(self, baseArgs, burstIndex)
     -- Respect Visible Check semantics: when enabled, wallbang path stays off.
-    if Settings and Settings.VisCheck then
+    if Settings and Settings.VisCheck == true then
         return false
     end
 
     if ForceHit and ForceHit.sendAssistShot then
         local ok, sent = pcall(ForceHit.sendAssistShot)
-        if ok and sent then
+        if ok and sent == true then
             return true
         end
     end
@@ -103,21 +103,27 @@ local function buildHooks()
                     local canAssist = false
                     pcall(function()
                         if SilentAim.canUseZeehoodAssistShot then
-                            canAssist = SilentAim.canUseZeehoodAssistShot()
+                            canAssist = (SilentAim.canUseZeehoodAssistShot() == true)
                         end
                     end)
 
-                    local sendOk, result = pcall(oldNamecall, self, ...)
+                    local sendOk, result = pcall(oldNamecall, self, table.unpack(args))
                     if not sendOk then
-                        return nil
+                        local fallbackOk, fallbackResult = pcall(oldNamecall, self, ...)
+                        if fallbackOk then
+                            result = fallbackResult
+                        else
+                            return nil
+                        end
                     end
-                    if canAssist then
+
+                    if canAssist == true then
                         sendZeehoodAssistShot(self, args, 1)
                     end
-                    for _ = 2, tapCount do
-                        pcall(oldNamecall, self, ...)
-                        if canAssist then
-                            sendZeehoodAssistShot(self, args, _)
+                    for i = 2, tapCount do
+                        pcall(oldNamecall, self, table.unpack(args))
+                        if canAssist == true then
+                            sendZeehoodAssistShot(self, args, i)
                         end
                     end
                     return result
