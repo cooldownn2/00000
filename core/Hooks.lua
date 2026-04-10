@@ -48,6 +48,22 @@ local function cloneZeehoodArgs(args)
     return out
 end
 
+local function sendZeehoodAssistShot(self, baseArgs)
+    local sendArgs = cloneZeehoodArgs(baseArgs)
+    local redirected = false
+
+    local ok = pcall(function()
+        redirected = SilentAim.redirectZeehoodPayload(sendArgs[2]) == true
+    end)
+
+    if not ok or not redirected then
+        return false
+    end
+
+    pcall(oldNamecall, self, table.unpack(sendArgs))
+    return true
+end
+
 local function buildHooks()
     hookedShoot = function(data)
         if State.Unloaded then return oldShoot(data) end
@@ -93,24 +109,22 @@ local function buildHooks()
         local args = {...}
 
         if gameStyle == "zeehood" then
-            -- Zeehood style: redirect payload safely (for wallbang/infinite
-            -- range support) while keeping hard fallbacks on any failure.
+            -- Zeehood style: keep the original shot path untouched for weapon
+            -- state stability, then send a redirected assist shot when a valid
+            -- lock exists (forcehit-style behavior).
             if isStoredShootArgsValid(args) then
                 local tapCount = 1
-                local sendArgs = cloneZeehoodArgs(args)
                 local prepOk = pcall(function()
                     SilentAim.recordShootArgs(args)
-                    SilentAim.redirectZeehoodPayload(sendArgs[2])
                     tapCount = Taps.getTapCount(args)
                 end)
 
                 if prepOk then
-                    local sendOk, result = pcall(oldNamecall, self, table.unpack(sendArgs))
-                    if not sendOk then
-                        return oldNamecall(self, ...)
-                    end
+                    local result = oldNamecall(self, ...)
+                    sendZeehoodAssistShot(self, args)
                     for _ = 2, tapCount do
-                        pcall(oldNamecall, self, table.unpack(sendArgs))
+                        pcall(oldNamecall, self, ...)
+                        sendZeehoodAssistShot(self, args)
                     end
                     return result
                 end

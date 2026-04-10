@@ -168,12 +168,12 @@ end
 -- current locked target.  Called directly from the namecall hook because
 -- Zeehood has no GH.shoot to serve as a redirect trigger.
 local function redirectZeehoodPayload(payload)
-    if not isTargetFeatureAllowed() then return end
-    if not payload or type(payload) ~= "table" then return end
+    if not isTargetFeatureAllowed() then return false end
+    if not payload or type(payload) ~= "table" then return false end
 
     local hitPart, aimPos = resolveAimTarget()
 
-    if not hitPart or not aimPos then return end
+    if not hitPart or not aimPos then return false end
 
     if Settings.InfiniteRange then
         payload.Range = 1e9
@@ -230,6 +230,8 @@ local function redirectZeehoodPayload(payload)
         payload.HitPosition = aimPos
         payload.HitInstance = hitPart
     end
+
+    return true
 end
 
 local function getCurrentAimPosition()
