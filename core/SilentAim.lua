@@ -175,21 +175,26 @@ local function redirectZeehoodPayload(payload)
 
     if not hitPart or not aimPos then return false end
 
-    if Settings.InfiniteRange then
-        payload.Range = 1e9
+    -- Forcehit-style origin spoof for redirected assist shots: spawn the shot
+    -- near the target so map geometry between shooter/target doesn't block it.
+    do
         local startPoint = payload.StartPoint
+        local dir = nil
         if typeof(startPoint) == "Vector3" then
-            local delta = aimPos - startPoint
-            if delta.Magnitude > 10 then
-                payload.StartPoint = aimPos - delta.Unit * 3
+            local delta = startPoint - aimPos
+            if delta.Magnitude > 0.01 then
+                dir = delta.Unit
             end
-        else
-            payload.StartPoint = aimPos
         end
+        if not dir then
+            dir = Vector3.new(0, 1, 0)
+        end
+        payload.StartPoint = aimPos + dir * 0.25
     end
 
-    -- Keep StartPoint untouched by default for normal tracer replication.
-    -- Infinite Range mode above may move it closer to the aim point.
+    if Settings.InfiniteRange then
+        payload.Range = 1e9
+    end
 
     if type(payload.Pellets) == "table" then
         -- Preserve the original pellet spread shape by translating the
