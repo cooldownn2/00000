@@ -149,6 +149,44 @@ local function copyHeadFrontFaceFromSource(destHead, sourceHead)
     return true
 end
 
+local function getHeadVisualScore(head)
+    if not head or not head:IsA("BasePart") then return -1 end
+
+    local score = 0
+
+    if head.Transparency >= 0.98 then
+        score = score + 3
+    else
+        score = score + 1
+    end
+
+    if head:IsA("MeshPart") then
+        if head.MeshId and head.MeshId ~= "" then score = score + 20 end
+        if head.TextureID and head.TextureID ~= "" then score = score + 50 end
+    end
+
+    local sm = head:FindFirstChildOfClass("SpecialMesh")
+    if sm then
+        if sm.MeshId and sm.MeshId ~= "" then score = score + 20 end
+        if sm.TextureId and sm.TextureId ~= "" then score = score + 45 end
+    end
+
+    for _, child in ipairs(head:GetChildren()) do
+        if child:IsA("Decal") and child.Texture ~= "" then
+            score = score + ((child.Face == Enum.NormalId.Front) and 15 or 10)
+        end
+    end
+
+    return score
+end
+
+local function pickBestSourceHead(headA, headB)
+    local scoreA = getHeadVisualScore(headA)
+    local scoreB = getHeadVisualScore(headB)
+    if scoreA >= scoreB then return headA end
+    return headB
+end
+
 local function applyHeadVisualFromSource(char, sourceHead, desiredFaceTexture)
     local destHead = char and char:FindFirstChild("Head")
     if not destHead or not sourceHead then
@@ -168,6 +206,26 @@ local function applyHeadVisualFromSource(char, sourceHead, desiredFaceTexture)
             destHead.TextureID = sourceHead.TextureID
         end
     end)
+
+    -- Handle Part<->MeshPart mismatches so modern head textures still transfer.
+    if sourceHead:IsA("MeshPart") and not destHead:IsA("MeshPart") then
+        local dm = destHead:FindFirstChildOfClass("SpecialMesh")
+        if not dm then
+            dm = Instance.new("SpecialMesh")
+            dm.Parent = destHead
+        end
+        dm.MeshType = Enum.MeshType.FileMesh
+        dm.MeshId = sourceHead.MeshId or ""
+        dm.TextureId = sourceHead.TextureID or ""
+    elseif not sourceHead:IsA("MeshPart") and destHead:IsA("MeshPart") then
+        local sm = sourceHead:FindFirstChildOfClass("SpecialMesh")
+        if sm then
+            pcall(function()
+                destHead.MeshId = sm.MeshId or ""
+                destHead.TextureID = sm.TextureId or ""
+            end)
+        end
+    end
 
     local srcMesh = sourceHead:FindFirstChildOfClass("SpecialMesh")
     local dstMesh = destHead:FindFirstChildOfClass("SpecialMesh")
@@ -562,8 +620,11 @@ function OutfitMimic:applyAppearance(userId, char, applyToken)
     end
 
     local bodySourceModel = bodyModel or sourceModel
-    local sourceHead = bodySourceModel:FindFirstChild("Head") or sourceModel:FindFirstChild("Head")
-    local desiredFaceTexture = self.shared:resolveFaceTexture(userId, bodySourceModel, targetDesc)
+    local primaryHead = bodySourceModel and bodySourceModel:FindFirstChild("Head") or nil
+    local secondaryHead = sourceModel and sourceModel:FindFirstChild("Head") or nil
+    local sourceHead = pickBestSourceHead(primaryHead, secondaryHead) or primaryHead or secondaryHead
+    local appearanceModelForFace = (sourceHead and sourceHead.Parent) or bodySourceModel
+    local desiredFaceTexture = self.shared:resolveFaceTexture(userId, appearanceModelForFace, targetDesc)
     local sourcePartSizeMap = buildSourcePartSizeMap(bodySourceModel)
     local charPartMap = buildBasePartMap(char)
     local attachmentCarrierMap = buildAttachmentCarrierMap(charPartMap)
