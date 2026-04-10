@@ -145,6 +145,7 @@ function AnimationMimic.new(deps)
         minLiveCoverage = 1,
         replicateDescriptionToOthers = false,
         invalidateAnimationCacheOnTargetSwitch = false,
+        alwaysAssistAfterApply = true,
     }
 
     self.fallbackNumericIds = {
@@ -207,6 +208,15 @@ function AnimationMimic:hasNativePlayingTrack(character)
     end
 
     return false
+end
+
+function AnimationMimic:ensureAssistController(character, animationSet)
+    if not self.settings.useDirectTrackFallback then return false end
+    local existing = self.directControllerByChar[character]
+    if existing and existing.assistMode then
+        return true
+    end
+    return self:startDirectController(character, animationSet, { assistMode = true })
 end
 
 function AnimationMimic:stopPosePrimer(character)
@@ -333,6 +343,10 @@ function AnimationMimic:unstickPoseAfterApply(character, animationSet)
         if not self.active or not character.Parent then return end
         if self:hasNativePlayingTrack(character) then
             self:stopPosePrimer(character)
+            return
+        end
+
+        if self.directControllerByChar[character] then
             return
         end
 
@@ -904,6 +918,13 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
         end
     end
 
+    if self.settings.alwaysAssistAfterApply then
+        local startedAssist = self:ensureAssistController(character, animationSet)
+        if not startedAssist then
+            self:ensureAssistController(character, self:getGuaranteedFallbackSet())
+        end
+    end
+
     self:unstickPoseAfterApply(character, animationSet)
     self:replicateAnimationStateForOthers(character, animationSet)
 
@@ -951,6 +972,13 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
         else
             if not self.active then return false end
             if not self:startDirectController(character, ownSet) then return false end
+        end
+    end
+
+    if self.settings.alwaysAssistAfterApply then
+        local startedAssist = self:ensureAssistController(character, ownSet)
+        if not startedAssist then
+            self:ensureAssistController(character, self:getGuaranteedFallbackSet())
         end
     end
 
