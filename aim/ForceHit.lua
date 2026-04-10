@@ -215,9 +215,10 @@ local _shootArgs = {
 
 local function fireBurst(tool, targetChar, forcedShots, assistMode)
     local p = buildShotParams(tool, targetChar)
-    if not p then return end
+    if not p then return false end
 
     local isAssist = assistMode == true
+    local sentAny = false
 
     local isShotgun = SHOTGUN_NAMES[tool.Name]
 
@@ -280,6 +281,7 @@ local function fireBurst(tool, targetChar, forcedShots, assistMode)
                     Timestamp  = timestamp,
                 }
                 pcall(fireServer, MainEvent, "GunFired", payload)
+                sentAny = true
             else
                 local payload = {
                     ToolName    = tool.Name,
@@ -289,6 +291,7 @@ local function fireBurst(tool, targetChar, forcedShots, assistMode)
                     Timestamp   = timestamp,
                 }
                 pcall(fireServer, MainEvent, "GunFired", payload)
+                sentAny = true
             end
         else
             -- Dashood style: positional args, repeat per pellet.
@@ -303,6 +306,7 @@ local function fireBurst(tool, targetChar, forcedShots, assistMode)
                     p.targetPos,
                     timestamp
                 )
+                sentAny = true
             end
         end
 
@@ -320,6 +324,8 @@ local function fireBurst(tool, targetChar, forcedShots, assistMode)
     if p.remote and not isAssist then
         pcall(p.remote.FireServer, p.remote)
     end
+
+    return sentAny
 end
 
 local function sendAssistShot()
@@ -351,8 +357,8 @@ local function sendAssistShot()
     if not char or not isTargetValid(char) then return false end
     if not isInRange(tool, char) then return false end
 
-    local ok = pcall(fireBurst, tool, char, 1, true)
-    return ok
+    local ok, sent = pcall(fireBurst, tool, char, 1, true)
+    return ok and sent == true
 end
 
 local function startLoop()
