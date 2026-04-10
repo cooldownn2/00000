@@ -581,6 +581,7 @@ end
 -- ── Public: getAimPosition ────────────────────────────────────────────────────
 local function getAimPosition(part)
     if not part or not Settings or not State then return nil end
+    if typeof(part) ~= "Instance" or not part:IsA("BasePart") then return nil end
 
     local scaleValue = getClosestPointScale()
     local rayOrigin, rayDir, mouseX, mouseY = getCrosshairRay()

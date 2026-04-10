@@ -24,16 +24,31 @@ local function resolveAimTarget()
 
     local hitPart, aimPos
 
-    if State.FakePart then
-        hitPart = State.FakePart
-        aimPos  = State.FakePos or hitPart.Position
-    elseif State.Enabled and State.CurrentPart then
-        local computedPos, aimPart = getSpreadAimPosition(State.CurrentPart)
-        hitPart = aimPart or State.CurrentPart
-        aimPos  = computedPos
+    local function isValidPart(part)
+        return typeof(part) == "Instance" and part:IsA("BasePart") and part.Parent ~= nil
     end
 
-    if not hitPart or not aimPos then
+    local function isValidVec3(v)
+        return typeof(v) == "Vector3"
+    end
+
+    if State.FakePart then
+        if isValidPart(State.FakePart) then
+            hitPart = State.FakePart
+            aimPos  = isValidVec3(State.FakePos) and State.FakePos or hitPart.Position
+        end
+    elseif State.Enabled and State.CurrentPart then
+        local ok, computedPos, aimPart = pcall(getSpreadAimPosition, State.CurrentPart)
+        if ok then
+            local candidatePart = aimPart or State.CurrentPart
+            if isValidPart(candidatePart) and isValidVec3(computedPos) then
+                hitPart = candidatePart
+                aimPos  = computedPos
+            end
+        end
+    end
+
+    if not isValidPart(hitPart) or not isValidVec3(aimPos) then
         return nil, nil
     end
 
@@ -163,8 +178,11 @@ local function redirectZeehoodPayload(payload)
 end
 
 local function getCurrentAimPosition()
-    local _, aimPos = resolveAimTarget()
-    return aimPos
+    local ok, _, aimPos = pcall(resolveAimTarget)
+    if not ok then
+        return nil
+    end
+    return typeof(aimPos) == "Vector3" and aimPos or nil
 end
 
 SilentAim.init                   = init

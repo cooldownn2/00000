@@ -64,9 +64,17 @@ local function buildHooks()
         if gameStyle == "zeehood" and Mouse and rawequal(self, Mouse) and key == "Hit" then
             local firing = UIS and UIS:IsMouseButtonPressed(MOUSE1)
             if firing then
-                local aimPos = SilentAim.getCurrentAimPosition and SilentAim.getCurrentAimPosition() or nil
-                if aimPos then
-                    return CFrame.new(aimPos)
+                local ok, aimPos = pcall(function()
+                    if SilentAim.getCurrentAimPosition then
+                        return SilentAim.getCurrentAimPosition()
+                    end
+                    return nil
+                end)
+                if ok and typeof(aimPos) == "Vector3" then
+                    local cOk, aimedCf = pcall(CFrame.new, aimPos)
+                    if cOk and aimedCf then
+                        return aimedCf
+                    end
                 end
             end
         end
