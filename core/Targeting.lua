@@ -221,19 +221,10 @@ end
 
 local function resolveCurrentPartFromLinePart(linePart)
     if not linePart then return nil end
-
-    -- Wallbang disabled means targeting should behave like visible-check is ON,
-    -- even if the user disabled Main.Visible in config.
-    local requiresVisibility = (Settings.Wallbang ~= true) or Settings.VisCheck
-    if not requiresVisibility then
-        return linePart
-    end
-
+    if not Settings.VisCheck then return linePart end
     local lockedCharacter = State.LockedTarget and State.LockedTarget.Character or nil
     if not lockedCharacter or not isAlive(lockedCharacter) then return nil end
-    -- When visibility is required here, force a raw raycast check regardless
-    -- of Main.Visible so WallBang=false always behaves as "no through walls".
-    return isPartVisibleRaw(linePart, lockedCharacter) and linePart or nil
+    return isPartVisible(linePart, lockedCharacter) and linePart or nil
 end
 
 local function ensureValidLockedTarget()

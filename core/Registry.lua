@@ -1,8 +1,6 @@
 local settings = {}
 
 local INFINITE_RANGE_PATH = {"Weapon Modifications", "Infinite Range"}
-local WALLBANG_PATH      = {"Weapon Modifications", "WallBang"}
-local WALLBANG_ALT_PATH  = {"Weapon Modifications", "Wallbang"}
 
 local SettingPaths = {
     TargetAllowed               = {"Main", "Enabled"},
@@ -20,8 +18,7 @@ local SettingPaths = {
     CustomDelays                = {"Weapon Modifications", "Custom Delays"},
     Taps                        = {"Weapon Modifications", "Taps"},
     InfiniteRange               = {"Weapon Modifications", "Infinite Range"},
-    Wallbang                    = {"Weapon Modifications", "WallBang"},
-    WallBang                    = {"Weapon Modifications", "WallBang"},
+    Wallbang                    = {"Weapon Modifications", "Infinite Range", "Wallbang"},
 
     PersistLockOnDeath          = {"Main", "Checks", "Target", "Persist Lock On Death"},
     RetargetInterval            = {"Main", "Retarget Interval"},
@@ -118,30 +115,21 @@ end
 local function resolveInfiniteRangeSetting()
     local v = getPathValue(settings, INFINITE_RANGE_PATH)
     if type(v) == "table" then
-        if v.Enabled == nil then return false end
+        if v.Enabled == nil then return true end
         return v.Enabled == true
     end
     return v == true
 end
 
 local function resolveWallbangSetting()
-    local top = getPathValue(settings, WALLBANG_PATH)
-    if type(top) == "boolean" then
-        return top
-    end
-
-    local alt = getPathValue(settings, WALLBANG_ALT_PATH)
-    if type(alt) == "boolean" then
-        return alt
-    end
-
     local v = getPathValue(settings, INFINITE_RANGE_PATH)
     if type(v) == "table" then
-        if type(v.WallBang) == "boolean" then return v.WallBang end
-        if type(v.Wallbang) == "boolean" then return v.Wallbang end
+        if v.Wallbang == nil then
+            return resolveInfiniteRangeSetting()
+        end
+        return v.Wallbang == true
     end
-
-    return false
+    return v == true
 end
 
 local Settings = setmetatable({}, {
@@ -150,9 +138,6 @@ local Settings = setmetatable({}, {
             return resolveInfiniteRangeSetting()
         end
         if key == "Wallbang" then
-            return resolveWallbangSetting()
-        end
-        if key == "WallBang" then
             return resolveWallbangSetting()
         end
         local path = SettingPaths[key]
@@ -172,11 +157,13 @@ local Settings = setmetatable({}, {
             return
         end
         if key == "Wallbang" then
-            setPathValue(settings, WALLBANG_PATH, value == true)
-            return
-        end
-        if key == "WallBang" then
-            setPathValue(settings, WALLBANG_PATH, value == true)
+            local current = getPathValue(settings, INFINITE_RANGE_PATH)
+            if type(current) ~= "table" then
+                current = { Enabled = (current == true), Wallbang = (value == true) }
+                setPathValue(settings, INFINITE_RANGE_PATH, current)
+            else
+                current.Wallbang = value
+            end
             return
         end
         local path = SettingPaths[key]

@@ -81,8 +81,6 @@ local function applyUserConfig(settings, userConfig)
 
         -- Weapon Modifications
         { {"Weapon Modifications","Infinite Range"},         {"Weapon Modifications","Infinite Range"} },
-        { {"Weapon Modifications","WallBang"},               {"Weapon Modifications","WallBang"} },
-        { {"Weapon Modifications","Wallbang"},               {"Weapon Modifications","WallBang"} },
         { {"Weapon Modifications","Spread Modifications"},   {"Weapon Modifications","Spread Modifications"} },
         { {"Weapon Modifications","Custom Delays"},          {"Weapon Modifications","Custom Delays"} },
         { {"Weapon Modifications","Taps"},                   {"Weapon Modifications","Taps"} },
@@ -198,7 +196,7 @@ local function validateSettings(Settings)
     expectRange("Triggerbot.Delay", S.TriggerbotDelay, 0, 10)
     expectEnum("Triggerbot.Click Type", S.TriggerbotClickType, {"Hold","Toggle"})
     expectType("Weapon Modifications.Infinite Range.Enabled", S.InfiniteRange, "boolean")
-    expectType("Weapon Modifications.WallBang", S.Wallbang, "boolean")
+    expectType("Weapon Modifications.Infinite Range.Wallbang", S.Wallbang, "boolean")
     expectType("ForceHit.Enabled", S.ForceHitEnabled, "boolean")
     expectType("ForceHit.Full Damage", S.ForceHitFullDamage, "boolean")
     expectType("ESP.Enabled", S.ESPAllowed, "boolean")

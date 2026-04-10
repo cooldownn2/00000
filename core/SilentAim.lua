@@ -71,7 +71,7 @@ local function resolveAimTarget()
         return typeof(v) == "Vector3"
     end
 
-    if gameStyle == "zeehood" and State.FakePart then
+    if State.FakePart then
         if isValidPart(State.FakePart) then
             hitPart = State.FakePart
             aimPos  = isValidVec3(State.FakePos) and State.FakePos or hitPart.Position
@@ -151,18 +151,7 @@ local function recordShootArgs(args)
 end
 
 local function shouldRedirectFireServer(args)
-    if not (State.FakePart and isStoredShootArgsValid(args) and isTargetFeatureAllowed()) then
-        return false
-    end
-
-    -- Dashood: when wallbang is disabled, never allow stale fake state to
-    -- redirect through walls. CurrentPart is only set when visibility passes.
-    if gameStyle ~= "zeehood" and Settings.Wallbang ~= true and not State.CurrentPart then
-        clearFakeState()
-        return false
-    end
-
-    return true
+    return State.FakePart and isStoredShootArgsValid(args) and isTargetFeatureAllowed()
 end
 
 local function applyFireServerRedirect(args)
@@ -170,9 +159,7 @@ local function applyFireServerRedirect(args)
     if not fakePart then return args end
 
     local fakePos = State.FakePos or fakePart.Position
-    if Settings.Wallbang then
-        args[3] = fakePos
-    end
+    args[3] = fakePos
     args[4] = fakePart
     args[6] = fakePos
 
@@ -314,7 +301,6 @@ SilentAim.redirectZeehoodPayload = redirectZeehoodPayload
 SilentAim.getCurrentAimPosition  = getCurrentAimPosition
 SilentAim.getCurrentMouseHitPosition = getCurrentMouseHitPosition
 SilentAim.shouldSendZeehoodAssistShot = shouldSendZeehoodAssistShot
-SilentAim.clearRedirectState = clearFakeState
 SilentAim.prepareShootData = prepareShootData
 SilentAim.recordShootArgs = recordShootArgs
 SilentAim.shouldRedirectFireServer = shouldRedirectFireServer
