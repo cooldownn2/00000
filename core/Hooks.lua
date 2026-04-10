@@ -10,7 +10,7 @@ local hookedShoot, hookedNamecall, hookedIndex
 local gameStyle
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
-local ASSIST_MIN_INTERVAL = 0.06
+local ASSIST_MIN_INTERVAL = 0.5
 local _lastAssistSendAt = 0
 
 local function setReadOnlySafe(value)
