@@ -89,9 +89,9 @@ local function buildHooks()
         local args = {...}
 
         if gameStyle == "zeehood" then
-            -- Zeehood style: keep the original shot path untouched for weapon
-            -- state stability, then send a redirected assist shot when a valid
-            -- lock exists (forcehit-style behavior).
+            -- Zeehood stability mode: keep manual shooting 1:1 with native
+            -- game flow to prevent no-damage/reload desync. Target steering
+            -- still happens through Mouse.Hit in __index.
             if isStoredShootArgsValid(args) then
                 local tapCount = 1
                 local prepOk = pcall(function()
@@ -100,13 +100,6 @@ local function buildHooks()
                 end)
 
                 if prepOk then
-                    local canAssist = false
-                    pcall(function()
-                        if SilentAim.canUseZeehoodAssistShot then
-                            canAssist = (SilentAim.canUseZeehoodAssistShot() == true)
-                        end
-                    end)
-
                     local sendOk, result = pcall(oldNamecall, self, table.unpack(args))
                     if not sendOk then
                         local fallbackOk, fallbackResult = pcall(oldNamecall, self, ...)
@@ -117,14 +110,8 @@ local function buildHooks()
                         end
                     end
 
-                    if canAssist == true then
-                        sendZeehoodAssistShot(self, args, 1)
-                    end
                     for i = 2, tapCount do
                         pcall(oldNamecall, self, table.unpack(args))
-                        if canAssist == true then
-                            sendZeehoodAssistShot(self, args, i)
-                        end
                     end
                     return result
                 end
