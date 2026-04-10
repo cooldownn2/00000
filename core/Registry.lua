@@ -16,11 +16,6 @@ local SettingPaths = {
     CustomDelays                = {"Weapon Modifications", "Custom Delays"},
     Taps                        = {"Weapon Modifications", "Taps"},
     InfiniteRange               = {"Weapon Modifications", "Infinite Range"},
-    InfiniteAmmo                = {"Weapon Modifications", "Infinite Ammo"},
-    RemoteProbeEnabled          = {"Debug", "Remote Probe", "Enabled"},
-    RemoteProbeVerbose          = {"Debug", "Remote Probe", "Verbose"},
-    RemoteProbeCaptureAll       = {"Debug", "Remote Probe", "Capture All FireServer"},
-    RemoteProbeAutoDumpSeconds  = {"Debug", "Remote Probe", "Auto Dump Seconds"},
 
     PersistLockOnDeath          = {"Main", "Checks", "Target", "Persist Lock On Death"},
     RetargetInterval            = {"Main", "Retarget Interval"},

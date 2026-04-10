@@ -81,7 +81,6 @@ local function applyUserConfig(settings, userConfig)
 
         -- Weapon Modifications
         { {"Weapon Modifications","Infinite Range"},         {"Weapon Modifications","Infinite Range"} },
-        { {"Weapon Modifications","Infinite Ammo"},          {"Weapon Modifications","Infinite Ammo"} },
         { {"Weapon Modifications","Spread Modifications"},   {"Weapon Modifications","Spread Modifications"} },
         { {"Weapon Modifications","Custom Delays"},          {"Weapon Modifications","Custom Delays"} },
         { {"Weapon Modifications","Taps"},                   {"Weapon Modifications","Taps"} },
@@ -123,12 +122,6 @@ local function applyUserConfig(settings, userConfig)
 
         -- Visuals
         { {"Visuals","Target Card"},                         {"Main","Target Card"} },
-
-        -- Debug / Probe
-        { {"Debug","Remote Probe","Enabled"},              {"Debug","Remote Probe","Enabled"} },
-        { {"Debug","Remote Probe","Verbose"},              {"Debug","Remote Probe","Verbose"} },
-        { {"Debug","Remote Probe","Capture All FireServer"}, {"Debug","Remote Probe","Capture All FireServer"} },
-        { {"Debug","Remote Probe","Auto Dump Seconds"},    {"Debug","Remote Probe","Auto Dump Seconds"} },
     }
 
     for _, entry in ipairs(configMap) do
@@ -203,7 +196,6 @@ local function validateSettings(Settings)
     expectRange("Triggerbot.Delay", S.TriggerbotDelay, 0, 10)
     expectEnum("Triggerbot.Click Type", S.TriggerbotClickType, {"Hold","Toggle"})
     expectType("Weapon Modifications.Infinite Range", S.InfiniteRange, "boolean")
-    expectType("Weapon Modifications.Infinite Ammo", S.InfiniteAmmo, "boolean")
     expectType("ForceHit.Enabled", S.ForceHitEnabled, "boolean")
     expectType("ForceHit.Full Damage", S.ForceHitFullDamage, "boolean")
     expectType("ESP.Enabled", S.ESPAllowed, "boolean")
@@ -211,10 +203,6 @@ local function validateSettings(Settings)
     expectEnum("Hotkeys.ToggleStyle", S.HotkeysToggleStyle, {"pill","dot","none"})
     expectEnum("Triggerbot.FOV.Type", S.TriggerbotFOVType, {"Box","Direct"})
     expectEnum("Camlock.FOV.Type", S.CamlockFOVType, {"Box","Direct"})
-    expectType("Debug.Remote Probe.Enabled", S.RemoteProbeEnabled, "boolean")
-    expectType("Debug.Remote Probe.Verbose", S.RemoteProbeVerbose, "boolean")
-    expectType("Debug.Remote Probe.Capture All FireServer", S.RemoteProbeCaptureAll, "boolean")
-    expectRange("Debug.Remote Probe.Auto Dump Seconds", S.RemoteProbeAutoDumpSeconds, 0, 300)
 
     if type(S.Taps) == "table" then
         for weaponName, entry in pairs(S.Taps) do

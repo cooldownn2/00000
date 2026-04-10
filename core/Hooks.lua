@@ -4,7 +4,6 @@ local isStoredShootArgsValid
 local Taps
 local SilentAim
 local ForceHit
-local RemoteProbe
 local Settings
 local LP, UIS, Mouse
 local hookedShoot, hookedNamecall, hookedIndex
@@ -13,23 +12,6 @@ local gameStyle
 local MOUSE1 = Enum.UserInputType.MouseButton1
 local ASSIST_MIN_INTERVAL = 0.05
 local _lastAssistSendAt = 0
-local INF_AMMO_SYNC_INTERVAL = 0.45
-local _lastInfAmmoSyncAt = 0
-local _infAmmoShotsByTool = {}
-
-local INF_AMMO_CLIPS = {
-    ["[Revolver]"] = 6,
-    ["[Double-Barrel SG]"] = 2,
-    ["[TacticalShotgun]"] = 5,
-    ["[Shotgun]"] = 5,
-    ["[Drum-Shotgun]"] = 8,
-    ["[SMG]"] = 25,
-    ["[AR]"] = 30,
-}
-
-local function getInfAmmoClip(toolName)
-    return INF_AMMO_CLIPS[toolName] or 12
-end
 
 local function setReadOnlySafe(value)
     if setreadonly then setreadonly(mt, value) end
@@ -55,38 +37,6 @@ local function trySendZeehoodWallbangAssist()
     -- Defer so native gun local flow finishes first.
     task.defer(function()
         pcall(ForceHit.sendAssistShot)
-    end)
-end
-
-local function trySendZeehoodInfAmmoServerSync(toolName, shotCount)
-    if gameStyle ~= "zeehood" then return end
-    if not Settings or Settings.InfiniteAmmo ~= true then return end
-    if type(toolName) ~= "string" then return end
-
-    local count = tonumber(shotCount) or 1
-    if count < 1 then count = 1 end
-
-    local nextCount = (_infAmmoShotsByTool[toolName] or 0) + count
-    _infAmmoShotsByTool[toolName] = nextCount
-
-    local clip = getInfAmmoClip(toolName)
-    local triggerAt = math.max(1, clip - 1)
-    if nextCount < triggerAt then return end
-
-    local char = LP and LP.Character
-    local be = char and char:FindFirstChild("BodyEffects")
-    local reloadFlag = be and (be:FindFirstChild("Reload") or be:FindFirstChild("Reloading"))
-    if reloadFlag and reloadFlag.Value == true then return end
-
-    local now = os.clock()
-    if now - _lastInfAmmoSyncAt < INF_AMMO_SYNC_INTERVAL then return end
-    _lastInfAmmoSyncAt = now
-    _infAmmoShotsByTool[toolName] = 0
-
-    task.defer(function()
-        pcall(function()
-            MainEvent:FireServer("Reload")
-        end)
     end)
 end
 
@@ -131,10 +81,6 @@ local function buildHooks()
         if State.Unloaded then return oldNamecall(self, ...) end
 
         local method = getnamecallmethod()
-        if method == "FireServer" and RemoteProbe and RemoteProbe.observeNamecall then
-            local probeArgs = {...}
-            pcall(RemoteProbe.observeNamecall, self, method, probeArgs)
-        end
 
         if method ~= "FireServer" or not rawequal(self, MainEvent) then
             return oldNamecall(self, ...)
@@ -146,14 +92,9 @@ local function buildHooks()
             -- Zeehood stability: strict native passthrough for manual shooting.
             if isStoredShootArgsValid(args) then
                 local tapCount = 1
-                local toolName
                 pcall(function()
                     SilentAim.recordShootArgs(args)
                     tapCount = Taps.getTapCount(args)
-                    local payload = args[2]
-                    if type(payload) == "table" then
-                        toolName = payload.ToolName
-                    end
                 end)
 
                 local result = oldNamecall(self, ...)
@@ -161,7 +102,6 @@ local function buildHooks()
                     oldNamecall(self, ...)
                 end
 
-                trySendZeehoodInfAmmoServerSync(toolName, tapCount)
                 trySendZeehoodWallbangAssist()
                 return result
             end
@@ -224,7 +164,6 @@ local function init(deps)
     Taps                   = deps.Taps
     SilentAim              = deps.SilentAim
     ForceHit               = deps.ForceHit
-    RemoteProbe            = deps.RemoteProbe
     Settings               = deps.Settings
     LP                     = deps.LP
     UIS                    = deps.UIS
