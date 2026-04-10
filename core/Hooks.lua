@@ -6,7 +6,6 @@ local SilentAim
 local LP, UIS, Mouse
 local hookedShoot, hookedNamecall, hookedIndex
 local gameStyle
-local random = math.random
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
 
@@ -14,68 +13,20 @@ local function setReadOnlySafe(value)
     if setreadonly then setreadonly(mt, value) end
 end
 
-local function cloneZeehoodArgs(args)
-    local out = table.clone and table.clone(args) or { unpack(args) }
-    local payload = args[2]
-    if type(payload) ~= "table" then return out end
-
-    local payloadCopy = table.clone and table.clone(payload) or {}
-    if not table.clone then
-        for k, v in pairs(payload) do
-            payloadCopy[k] = v
-        end
-    end
-
-    local pellets = payload.Pellets
-    if type(pellets) == "table" then
-        local pelletsCopy = table.create and table.create(#pellets) or {}
-        for i, pellet in ipairs(pellets) do
-            if type(pellet) == "table" then
-                local pelletCopy = table.clone and table.clone(pellet) or {}
-                if not table.clone then
-                    for k, v in pairs(pellet) do
-                        pelletCopy[k] = v
-                    end
-                end
-                pelletsCopy[i] = pelletCopy
-            else
-                pelletsCopy[i] = pellet
-            end
-        end
-        payloadCopy.Pellets = pelletsCopy
-    end
-
-    out[2] = payloadCopy
-    return out
-end
-
-local function setFreshZeehoodTimestamp(payload, burstIndex)
-    if type(payload) ~= "table" then return end
-
-    local ok, serverNow = pcall(workspace.GetServerTimeNow, workspace)
-    if ok and type(serverNow) == "number" then
-        local idx = tonumber(burstIndex) or 0
-        payload.Timestamp = serverNow + (idx * (1 / 120)) + ((random() - 0.5) * 0.0005)
-        return
-    end
-
-    payload.Timestamp = os.clock()
-end
-
 local function sendZeehoodAssistShot(self, baseArgs, burstIndex)
-    local sendArgs = cloneZeehoodArgs(baseArgs)
-    setFreshZeehoodTimestamp(sendArgs[2], burstIndex)
-    local redirected = false
+    local payload
 
     local ok = pcall(function()
-        redirected = SilentAim.redirectZeehoodPayload(sendArgs[2]) == true
+        if SilentAim.buildZeehoodAssistPayload then
+            payload = SilentAim.buildZeehoodAssistPayload(baseArgs[2], burstIndex)
+        end
     end)
 
-    if not ok or not redirected then
+    if not ok or type(payload) ~= "table" then
         return false
     end
 
-    pcall(oldNamecall, self, table.unpack(sendArgs))
+    pcall(oldNamecall, self, "GunFired", payload)
     return true
 end
 
