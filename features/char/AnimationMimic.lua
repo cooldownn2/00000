@@ -162,7 +162,7 @@ function AnimationMimic.new(deps)
         useDirectTrackFallback = true,
         cacheTtlSeconds = 22,
         minLiveCoverage = 1,
-        replicateDescriptionToOthers = false,
+        replicateDescriptionToOthers = true,
         invalidateAnimationCacheOnTargetSwitch = false,
         alwaysAssistAfterApply = false,
         adaptiveAssistAfterApply = true,
@@ -200,7 +200,7 @@ function AnimationMimic:prepareRuntimeForApply(character, opts)
     local animate = character:FindFirstChild("Animate")
     local reenableAnimate = false
     local forceAnimatorRebuild = opts.forceAnimatorRebuild == true or self.settings.hardRebuildAnimatorOnApply == true
-    if forceAnimatorRebuild and animate and animate:IsA("LocalScript") and not animate.Disabled then
+    if animate and animate:IsA("LocalScript") and not animate.Disabled then
         animate.Disabled = true
         reenableAnimate = true
         task.wait()
@@ -1044,6 +1044,7 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     local animate = character:FindFirstChild("Animate")
 
     local ok = false
+    local needsAnimateRefresh = false
 
     local applied = 0
     if animate then
@@ -1059,6 +1060,7 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
 
     if applied > 0 then
         ok = true
+        needsAnimateRefresh = true
     else
         local descApplied = self:applyAnimationSetViaDescription(humanoid, animationSet)
         if descApplied then
@@ -1070,6 +1072,10 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
 
     self:finalizeRuntimeAfterApply(character, runtime)
     if not ok then return false end
+
+    if needsAnimateRefresh then
+        refreshAnimate(character)
+    end
 
     if self.settings.alwaysAssistAfterApply then
         local startedAssist = self:ensureAssistController(character, animationSet)
@@ -1105,6 +1111,7 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
     local animate = character:FindFirstChild("Animate")
 
     local ok = false
+    local needsAnimateRefresh = false
 
     local applied = 0
     if animate then
@@ -1120,6 +1127,7 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
 
     if applied > 0 then
         ok = true
+        needsAnimateRefresh = true
     else
         if self:applyAnimationSetViaDescription(humanoid, ownSet) then
             ok = true
@@ -1134,6 +1142,10 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
 
     self:finalizeRuntimeAfterApply(character, runtime)
     if not ok then return false end
+
+    if needsAnimateRefresh then
+        refreshAnimate(character)
+    end
 
     if self.settings.alwaysAssistAfterApply then
         local startedAssist = self:ensureAssistController(character, ownSet)
