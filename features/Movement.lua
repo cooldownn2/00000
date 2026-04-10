@@ -19,6 +19,7 @@ local antiTripPatched = false
 -- Character-scoped caches; refreshed lazily when LP.Character changes.
 local _char, _hum, _root
 local _bodyEffects, _reloadFlag
+local _gunFiringFlag
 
 local function refreshCharCache(char)
     local hum  = char and char:FindFirstChildOfClass("Humanoid") or nil
@@ -47,6 +48,7 @@ local function refreshCharCache(char)
         _bodyEffects:FindFirstChild("Reload") or
         _bodyEffects:FindFirstChild("Reloading")
     ) or nil
+    _gunFiringFlag = _bodyEffects and _bodyEffects:FindFirstChild("GunFiring") or nil
 
     State.SpeedCharacter   = char
     State.DefaultWalkSpeed = _hum and _hum.WalkSpeed or BASE_WALK_SPEED
@@ -82,6 +84,26 @@ end
 
 local function shouldBypassReduceWalk()
     if gameStyle ~= "zeehood" then return false end
+    local function isGunFiring()
+        if not _bodyEffects then return false end
+        local flag = _gunFiringFlag
+        if not flag then
+            flag = _bodyEffects:FindFirstChild("GunFiring")
+            _gunFiringFlag = flag
+        end
+        if not flag then return false end
+        if flag:IsA("BoolValue") then return flag.Value end
+        if flag:IsA("NumberValue") or flag:IsA("IntValue") then return flag.Value > 0 end
+        return false
+    end
+
+    local function hasReduceWalkDebuff()
+        if not _bodyEffects then return false end
+        local movementFolder = _bodyEffects:FindFirstChild("Movement")
+        if not movementFolder then return false end
+        return movementFolder:FindFirstChild("ReduceWalk") ~= nil
+    end
+
     local shootingGun = UIS:IsMouseButtonPressed(MOUSE1) and getEquippedTool() ~= nil
     return State.Enabled
         or State.LockedTarget ~= nil
@@ -91,6 +113,8 @@ local function shouldBypassReduceWalk()
         or State.CamlockToggleActive
         or State.ForceHitActive
         or shootingGun
+        or isGunFiring()
+        or (Settings.SpeedEnabled ~= false and hasReduceWalkDebuff())
 end
 
 local function clearReduceWalkFlags()
