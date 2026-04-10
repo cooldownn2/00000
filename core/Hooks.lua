@@ -91,27 +91,6 @@ local function buildHooks()
     hookedIndex = function(self, key)
         if State.Unloaded then return oldIndex(self, key) end
 
-        if gameStyle == "zeehood" and Mouse and rawequal(self, Mouse) and key == "Hit" then
-            local firing = UIS and UIS:IsMouseButtonPressed(MOUSE1)
-            if firing then
-                local ok, aimPos = pcall(function()
-                    if SilentAim.getCurrentMouseHitPosition then
-                        return SilentAim.getCurrentMouseHitPosition()
-                    end
-                    if SilentAim.getCurrentAimPosition then
-                        return SilentAim.getCurrentAimPosition()
-                    end
-                    return nil
-                end)
-                if ok and typeof(aimPos) == "Vector3" then
-                    local cOk, aimedCf = pcall(CFrame.new, aimPos)
-                    if cOk and aimedCf then
-                        return aimedCf
-                    end
-                end
-            end
-        end
-
         return oldIndex(self, key)
     end
 
