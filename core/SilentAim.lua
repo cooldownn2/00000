@@ -41,6 +41,30 @@ local function resolveZeehoodSafePart(part)
         or part
 end
 
+local function isPartOwnerAlive(part)
+    if typeof(part) ~= "Instance" or not part:IsA("BasePart") then
+        return false
+    end
+    local char = part.Parent
+    if typeof(char) ~= "Instance" then
+        return false
+    end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then
+        return false
+    end
+
+    local be = char:FindFirstChild("BodyEffects")
+    if be then
+        local ko = be:FindFirstChild("K.O")
+        if ko and ko.Value then return false end
+        local dead = be:FindFirstChild("Dead")
+        if dead and dead.Value then return false end
+    end
+
+    return true
+end
+
 local function resolveAimTarget()
     if not isTargetFeatureAllowed() then
         return nil, nil
@@ -56,7 +80,7 @@ local function resolveAimTarget()
         return typeof(v) == "Vector3"
     end
 
-    if State.FakePart then
+    if gameStyle ~= "zeehood" and State.FakePart then
         if isValidPart(State.FakePart) then
             hitPart = State.FakePart
             aimPos  = isValidVec3(State.FakePos) and State.FakePos or hitPart.Position
@@ -264,6 +288,7 @@ local function buildZeehoodAssistPayload(basePayload, burstIndex)
 
     local hitPart, aimPos = resolveAimTarget()
     if not hitPart or not aimPos then return nil end
+    if not isPartOwnerAlive(hitPart) then return nil end
 
     local payload = {
         ToolName   = basePayload.ToolName,
