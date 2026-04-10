@@ -11,7 +11,6 @@ local V3new = Vector3.new
 
 local LP = Players.LocalPlayer
 local Settings, State, safeCall, Movement
-local getSpreadAimPosition
 
 -- Focal-length cache only recomputed when viewport/FOV changes.
 local _cachedFocalLen = nil
@@ -125,38 +124,6 @@ local function canShootNow()
     return (clock() - (State.LastTriggerShot or 0)) >= _tbDelaySeconds
 end
 
-local function clearTriggerbotAimState()
-    State.TriggerbotPart = nil
-    State.TriggerbotPos = nil
-    State.TriggerbotAimExpires = 0
-end
-
-local function setTriggerbotAimState(part)
-    if not part then
-        clearTriggerbotAimState()
-        return
-    end
-
-    local aimPart = part
-    local aimPos = part.Position
-
-    if getSpreadAimPosition then
-        local ok, computedPos, computedPart = pcall(getSpreadAimPosition, part)
-        if ok then
-            if typeof(computedPart) == "Instance" and computedPart:IsA("BasePart") then
-                aimPart = computedPart
-            end
-            if typeof(computedPos) == "Vector3" then
-                aimPos = computedPos
-            end
-        end
-    end
-
-    State.TriggerbotPart = aimPart
-    State.TriggerbotPos = aimPos
-    State.TriggerbotAimExpires = clock() + math.max(_tbDelaySeconds, 0.25)
-end
-
 local function fireAtPart(part)
     local equippedTool = Movement.getEquippedTool()
     if not equippedTool then return end
@@ -164,7 +131,6 @@ local function fireAtPart(part)
     if Movement.getReloadingFlag() then return end
 
     local now = clock()
-    setTriggerbotAimState(part)
     State.LastTriggerShot = now
     State.NextTriggerShot = now + _tbDelaySeconds
 
@@ -175,28 +141,13 @@ local function fireAtPart(part)
 end
 
 local function run(part)
-    if not Settings.TriggerbotEnabled then
-        clearTriggerbotAimState()
-        return nil
-    end
-    if not isArmed() then
-        clearTriggerbotAimState()
-        return nil
-    end
-    if not part then
-        clearTriggerbotAimState()
-        return nil
-    end
-    if not isPartInDistance(part) then
-        clearTriggerbotAimState()
-        return nil
-    end
+    if not Settings.TriggerbotEnabled then return nil end
+    if not isArmed() then return nil end
+    if not part then return nil end
+    if not isPartInDistance(part) then return nil end
 
     local box = getBoxForPart(part)
-    if not isPartInsideTriggerFOV(box) then
-        clearTriggerbotAimState()
-        return box
-    end
+    if not isPartInsideTriggerFOV(box) then return box end
     if not canShootNow() then return box end
 
     fireAtPart(part)
@@ -220,7 +171,6 @@ local function init(deps)
     State    = deps.State
     safeCall = deps.safeCall
     Movement = deps.Movement
-    getSpreadAimPosition = deps.getSpreadAimPosition
 
     _tbLeft, _tbRight, _tbUp, _tbDown =
         parseBounds(Settings.TriggerbotFOVWidth, Settings.TriggerbotFOVHeight, 1)

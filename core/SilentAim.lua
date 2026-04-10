@@ -70,12 +70,6 @@ local function resolveAimTarget()
                 aimPos  = computedPos
             end
         end
-    elseif gameStyle == "zeehood" then
-        local exp = tonumber(State.TriggerbotAimExpires) or 0
-        if exp >= os.clock() and isValidPart(State.TriggerbotPart) then
-            hitPart = State.TriggerbotPart
-            aimPos  = isValidVec3(State.TriggerbotPos) and State.TriggerbotPos or hitPart.Position
-        end
     end
 
     if gameStyle == "zeehood" and isValidPart(hitPart) then
@@ -273,11 +267,9 @@ local function buildZeehoodAssistPayload(basePayload, burstIndex)
 
     local payload = {
         ToolName   = basePayload.ToolName,
-        StartPoint = typeof(basePayload.StartPoint) == "Vector3" and basePayload.StartPoint or aimPos,
+        StartPoint = aimPos,
         Timestamp  = getFreshZeehoodTimestamp(burstIndex),
     }
-
-    applyZeehoodOriginPolicy(payload, aimPos)
 
     applyZeehoodRangePolicy(payload)
 
