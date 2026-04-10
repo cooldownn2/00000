@@ -12,6 +12,41 @@ local function hasUsableEmotePayload(emoteData)
     return hasAnyTableEntries(emoteData.emotes) or hasAnyTableEntries(emoteData.equipped)
 end
 
+local function stableKeySort(a, b)
+    local ta, tb = typeof(a), typeof(b)
+    if ta ~= tb then
+        return ta < tb
+    end
+    return tostring(a) < tostring(b)
+end
+
+local function stableSerialize(value, out)
+    out = out or {}
+    local valueType = typeof(value)
+
+    if valueType == "table" then
+        out[#out + 1] = "{"
+        local keys = {}
+        for k in pairs(value) do keys[#keys + 1] = k end
+        table.sort(keys, stableKeySort)
+        for i = 1, #keys do
+            local k = keys[i]
+            out[#out + 1] = "["
+            stableSerialize(k, out)
+            out[#out + 1] = "]="
+            stableSerialize(value[k], out)
+            out[#out + 1] = ";"
+        end
+        out[#out + 1] = "}"
+        return out
+    end
+
+    out[#out + 1] = valueType
+    out[#out + 1] = ":"
+    out[#out + 1] = tostring(value)
+    return out
+end
+
 function EmoteMimic.new(deps)
     local self = setmetatable({}, EmoteMimic)
 
@@ -24,8 +59,22 @@ function EmoteMimic.new(deps)
     self.applyToken = 0
 
     self.cacheTtlSeconds = 20
+    self.minReapplyIntervalSeconds = 0.35
+
+    self.lastAppliedCharacter = nil
+    self.lastAppliedSignature = nil
+    self.lastAppliedAt = 0
 
     return self
+end
+
+function EmoteMimic:buildEmoteSignature(emoteData)
+    if not emoteData then return nil end
+    local payload = {
+        emotes = emoteData.emotes or {},
+        equipped = emoteData.equipped or {},
+    }
+    return table.concat(stableSerialize(payload, {}), "")
 end
 
 function EmoteMimic:getEmoteDataFromDescription(desc)
@@ -171,6 +220,14 @@ function EmoteMimic:mimicFromUserId(userId)
     if not emoteData then return false end
     if applyToken ~= self.applyToken or not self.active then return false end
 
+    local signature = self:buildEmoteSignature(emoteData)
+    if signature and self.currentUserId == numericUserId and self.lastAppliedCharacter == character then
+        local age = os.clock() - (self.lastAppliedAt or 0)
+        if self.lastAppliedSignature == signature and age <= self.minReapplyIntervalSeconds then
+            return true
+        end
+    end
+
     local ok = false
     for attempt = 1, 3 do
         ok = self:applyEmotesToHumanoid(humanoid, emoteData)
@@ -180,6 +237,9 @@ function EmoteMimic:mimicFromUserId(userId)
 
     if ok then
         self.currentUserId = numericUserId
+        self.lastAppliedCharacter = character
+        self.lastAppliedSignature = signature
+        self.lastAppliedAt = os.clock()
     end
 
     return ok
@@ -207,6 +267,10 @@ end
 
 function EmoteMimic:onCharacterAdded(char)
     if not self.active then return end
+
+    self.lastAppliedCharacter = nil
+    self.lastAppliedSignature = nil
+    self.lastAppliedAt = 0
 
     self.applyToken = self.applyToken + 1
     local respawnToken = self.applyToken
@@ -239,6 +303,9 @@ function EmoteMimic:setEnabled(enabled)
     if not enabled then
         self.currentUserId = nil
         self.targetInput = nil
+        self.lastAppliedCharacter = nil
+        self.lastAppliedSignature = nil
+        self.lastAppliedAt = 0
     end
 end
 
@@ -247,6 +314,9 @@ function EmoteMimic:cleanup()
     self.applyToken = self.applyToken + 1
     self.currentUserId = nil
     self.targetInput = nil
+    self.lastAppliedCharacter = nil
+    self.lastAppliedSignature = nil
+    self.lastAppliedAt = 0
 end
 
 return EmoteMimic

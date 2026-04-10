@@ -31,6 +31,7 @@ local BODY_PART_NAMES = {
 }
 
 local SCALE_REFRESH_MIN_INTERVAL = 0.08
+local RIG_REFRESH_MIN_INTERVAL = 0.08
 
 local function isCopyClass(className)
     return COPY_CLASS_SET[className] == true
@@ -745,6 +746,7 @@ function OutfitMimic:applyAppearance(userId, char, applyToken)
     end
 
     local rigRefreshToken = 0
+    local lastRigRefreshAt = 0
     local function requestRigAndFaceRefresh(delaySeconds)
         rigRefreshToken = rigRefreshToken + 1
         local token = rigRefreshToken
@@ -752,8 +754,14 @@ function OutfitMimic:applyAppearance(userId, char, applyToken)
             if token ~= rigRefreshToken then return end
             if not self:isApplyStillCurrent(applyToken) then return end
             if not char.Parent then return end
-            local h = char:FindFirstChildOfClass("Humanoid")
-            if h then pcall(function() h:BuildRigFromAttachments() end) end
+
+            local now = os.clock()
+            if now - lastRigRefreshAt >= RIG_REFRESH_MIN_INTERVAL then
+                local h = char:FindFirstChildOfClass("Humanoid")
+                if h then pcall(function() h:BuildRigFromAttachments() end) end
+                lastRigRefreshAt = now
+            end
+
             enforceHeadVisualNow()
         end)
     end
