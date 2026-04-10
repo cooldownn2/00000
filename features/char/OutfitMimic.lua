@@ -159,6 +159,22 @@ local function applyHeadVisualFromSource(char, sourceHead, desiredFaceTexture)
         pcall(function() dstMesh:Destroy() end)
     end
 
+    -- Keep head attachment layout aligned with source so face/head accessories
+    -- mount correctly (face front overlays are sensitive to this).
+    for _, child in ipairs(sourceHead:GetChildren()) do
+        if child:IsA("Attachment") then
+            local existing = destHead:FindFirstChild(child.Name)
+            if existing and existing:IsA("Attachment") then
+                existing.Position = child.Position
+                existing.Orientation = child.Orientation
+                existing.Axis = child.Axis
+                existing.SecondaryAxis = child.SecondaryAxis
+            else
+                child:Clone().Parent = destHead
+            end
+        end
+    end
+
     -- If the source head is effectively hidden (headless-style), never add face decals.
     if sourceHead.Transparency >= 0.98 then
         clearHeadFaceDecals(destHead)
@@ -369,6 +385,12 @@ function OutfitMimic:scaleAccessoryOnce(acc, char, sourcePartSizeMap, charPartMa
             local sz = math.max(srcSize.Z, 0.001)
             scale = (dstPart.Size.X / sx + dstPart.Size.Y / sy + dstPart.Size.Z / sz) / 3
         end
+    end
+
+    -- Head/face accessories are usually authored for exact head attachment
+    -- offsets; manual scale here often causes front-face clipping/offset.
+    if matchedPartName == "Head" then
+        scale = 1
     end
 
     local function applyScale(s)
