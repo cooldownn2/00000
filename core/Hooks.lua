@@ -8,10 +8,135 @@ local Settings
 local LP, UIS, Mouse
 local hookedShoot, hookedNamecall, hookedIndex
 local gameStyle
+local random = math.random
+local HUGE = math.huge
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
 local ASSIST_MIN_INTERVAL = 0.05
+local TAP_TIME_STEP = 1 / 120
+local TAP_TIME_JITTER = 0.0005
 local _lastAssistSendAt = 0
+
+local function isFiniteNumber(value)
+    return type(value) == "number" and value == value and value > -HUGE and value < HUGE
+end
+
+local function isVector3(value)
+    return typeof(value) == "Vector3"
+end
+
+local function isValidHitInstance(value)
+    return typeof(value) == "Instance" and value.Parent ~= nil
+end
+
+local function cloneArray(arr)
+    if table.clone then return table.clone(arr) end
+    local out = {}
+    for i = 1, #arr do
+        out[i] = arr[i]
+    end
+    return out
+end
+
+local function clonePayload(payload)
+    local copy = {}
+    for k, v in pairs(payload) do
+        if k == "Pellets" and type(v) == "table" then
+            local pellets = table.create and table.create(#v) or {}
+            for i = 1, #v do
+                local p = v[i]
+                if type(p) == "table" then
+                    pellets[i] = {
+                        HitPosition = p.HitPosition,
+                        HitInstance = p.HitInstance,
+                    }
+                else
+                    pellets[i] = p
+                end
+            end
+            copy[k] = pellets
+        else
+            copy[k] = v
+        end
+    end
+    return copy
+end
+
+local function getFreshTimestamp(burstIndex)
+    local ok, serverNow = pcall(workspace.GetServerTimeNow, workspace)
+    local base = (ok and type(serverNow) == "number") and serverNow or os.clock()
+    local idx = tonumber(burstIndex) or 0
+    return base + (idx * TAP_TIME_STEP) + ((random() - 0.5) * TAP_TIME_JITTER)
+end
+
+local function normalizeZeehoodPayload(payload, burstIndex, forceFreshTimestamp)
+    if type(payload) ~= "table" then return nil end
+    if type(payload.ToolName) ~= "string" or payload.ToolName == "" then return nil end
+
+    local out = clonePayload(payload)
+    local fallbackPos = isVector3(out.HitPosition) and out.HitPosition or nil
+    local fallbackHit = isValidHitInstance(out.HitInstance) and out.HitInstance or nil
+
+    if type(out.Pellets) == "table" then
+        local foundPelletPos = nil
+        local foundPelletHit = nil
+        for i, pellet in ipairs(out.Pellets) do
+            if type(pellet) == "table" then
+                local hitPos = isVector3(pellet.HitPosition) and pellet.HitPosition or fallbackPos
+                local hitInst = isValidHitInstance(pellet.HitInstance) and pellet.HitInstance or fallbackHit
+                if hitPos then
+                    pellet.HitPosition = hitPos
+                    pellet.HitInstance = hitInst
+                    if not foundPelletPos then foundPelletPos = hitPos end
+                    if not foundPelletHit and hitInst then foundPelletHit = hitInst end
+                elseif foundPelletPos then
+                    pellet.HitPosition = foundPelletPos
+                    pellet.HitInstance = foundPelletHit
+                else
+                    return nil
+                end
+            end
+        end
+        if not fallbackPos then fallbackPos = foundPelletPos end
+        if not fallbackHit then fallbackHit = foundPelletHit end
+        if not isVector3(out.HitPosition) then out.HitPosition = fallbackPos end
+        if out.HitInstance ~= nil and not isValidHitInstance(out.HitInstance) then
+            out.HitInstance = fallbackHit
+        elseif out.HitInstance == nil then
+            out.HitInstance = fallbackHit
+        end
+    else
+        if not fallbackPos then return nil end
+        out.HitPosition = fallbackPos
+        if out.HitInstance ~= nil and not isValidHitInstance(out.HitInstance) then
+            out.HitInstance = fallbackHit
+        end
+    end
+
+    if not isVector3(out.StartPoint) then
+        out.StartPoint = out.HitPosition
+    end
+    if not isVector3(out.StartPoint) then
+        return nil
+    end
+
+    if forceFreshTimestamp or not isFiniteNumber(out.Timestamp) then
+        out.Timestamp = getFreshTimestamp(burstIndex)
+    end
+
+    return out
+end
+
+local function buildZeehoodSendArgs(args, burstIndex, forceFreshTimestamp)
+    if type(args) ~= "table" then return nil end
+    local payload = args[2]
+    local normalized = normalizeZeehoodPayload(payload, burstIndex, forceFreshTimestamp)
+    if not normalized then return nil end
+
+    local out = cloneArray(args)
+    out[2] = normalized
+    return out
+end
 
 local function setReadOnlySafe(value)
     if setreadonly then setreadonly(mt, value) end
@@ -97,9 +222,11 @@ local function buildHooks()
                     tapCount = Taps.getTapCount(args)
                 end)
 
-                local result = oldNamecall(self, ...)
-                for _ = 2, tapCount do
-                    oldNamecall(self, ...)
+                local baseArgs = buildZeehoodSendArgs(args, 0, false) or args
+                local result = oldNamecall(self, table.unpack(baseArgs))
+                for burstIndex = 1, tapCount - 1 do
+                    local tapArgs = buildZeehoodSendArgs(args, burstIndex, true) or baseArgs
+                    oldNamecall(self, table.unpack(tapArgs))
                 end
 
                 trySendZeehoodWallbangAssist()
