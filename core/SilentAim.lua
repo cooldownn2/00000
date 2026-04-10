@@ -170,7 +170,7 @@ local function applyFireServerRedirect(args)
     if not fakePart then return args end
 
     local fakePos = State.FakePos or fakePart.Position
-    if Settings.InfiniteRange then
+    if Settings.Wallbang then
         args[3] = fakePos
     end
     args[4] = fakePart

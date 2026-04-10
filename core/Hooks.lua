@@ -69,6 +69,75 @@ local function sendZeehoodAssistShot(self, baseArgs)
     return true
 end
 
+local function getDashoodNaturalRange(args)
+    if not args then return nil end
+    local handle = args[2]
+    if typeof(handle) ~= "Instance" or not handle.Parent then
+        return nil
+    end
+
+    local tool = handle.Parent
+    if not tool:IsA("Tool") then
+        return nil
+    end
+
+    local rangeObj = tool:FindFirstChild("Range")
+    if rangeObj and type(rangeObj.Value) == "number" and rangeObj.Value > 0.1 then
+        return rangeObj.Value
+    end
+
+    local distances = Settings and Settings.ForceHitDistances
+    if type(distances) == "table" then
+        local configured = distances[tool.Name]
+        if type(configured) == "number" and configured > 0.1 then
+            return configured
+        end
+    end
+
+    return nil
+end
+
+local function isDashoodWallbangInNaturalRange(args)
+    if not Settings or Settings.InfiniteRange then
+        return true
+    end
+    if Settings.Wallbang ~= true then
+        return true
+    end
+
+    local fakePart = State and State.FakePart
+    if typeof(fakePart) ~= "Instance" or not fakePart:IsA("BasePart") then
+        return false
+    end
+
+    local maxDist = getDashoodNaturalRange(args)
+    if not maxDist then
+        return true
+    end
+
+    local targetPos = (State and State.FakePos)
+    if typeof(targetPos) ~= "Vector3" then
+        targetPos = fakePart.Position
+    end
+
+    -- Dashood event arg[5] is the muzzle/world origin used by the gun client.
+    local origin = args and args[5]
+    if typeof(origin) ~= "Vector3" then
+        origin = args and args[3]
+    end
+
+    if typeof(origin) ~= "Vector3" then
+        local root = LP and LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        origin = root and root.Position or nil
+    end
+
+    if typeof(origin) ~= "Vector3" then
+        return true
+    end
+
+    return (targetPos - origin).Magnitude <= (maxDist + 2)
+end
+
 local function buildHooks()
     hookedShoot = function(data)
         if State.Unloaded then return oldShoot(data) end
@@ -143,6 +212,12 @@ local function buildHooks()
         SilentAim.recordShootArgs(args)
         if SilentAim.shouldRedirectFireServer(args) then
             if Settings and Settings.Wallbang ~= true and not State.CurrentPart then
+                if SilentAim.clearRedirectState then
+                    SilentAim.clearRedirectState()
+                end
+                return oldNamecall(self, ...)
+            end
+            if not isDashoodWallbangInNaturalRange(args) then
                 if SilentAim.clearRedirectState then
                     SilentAim.clearRedirectState()
                 end
