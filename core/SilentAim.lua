@@ -159,7 +159,9 @@ local function applyFireServerRedirect(args)
     if not fakePart then return args end
 
     local fakePos = State.FakePos or fakePart.Position
-    args[3] = fakePos
+    if Settings.InfiniteRange or Settings.Wallbang then
+        args[3] = fakePos
+    end
     args[4] = fakePart
     args[6] = fakePos
 
@@ -301,6 +303,7 @@ SilentAim.redirectZeehoodPayload = redirectZeehoodPayload
 SilentAim.getCurrentAimPosition  = getCurrentAimPosition
 SilentAim.getCurrentMouseHitPosition = getCurrentMouseHitPosition
 SilentAim.shouldSendZeehoodAssistShot = shouldSendZeehoodAssistShot
+SilentAim.clearRedirectState = clearFakeState
 SilentAim.prepareShootData = prepareShootData
 SilentAim.recordShootArgs = recordShootArgs
 SilentAim.shouldRedirectFireServer = shouldRedirectFireServer

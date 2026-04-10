@@ -6,6 +6,7 @@ local SilentAim
 local LP, UIS, Mouse
 local hookedShoot, hookedNamecall, hookedIndex
 local gameStyle
+local Settings
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
 
@@ -66,6 +67,52 @@ local function sendZeehoodAssistShot(self, baseArgs)
 
     pcall(oldNamecall, self, table.unpack(sendArgs))
     return true
+end
+
+local function getDashoodNaturalRange(args)
+    if not args then return nil end
+    local handle = args[2]
+    if typeof(handle) ~= "Instance" or not handle.Parent then
+        return nil
+    end
+
+    local tool = handle.Parent
+    if not tool:IsA("Tool") then
+        return nil
+    end
+
+    local rangeObj = tool:FindFirstChild("Range")
+    if rangeObj and type(rangeObj.Value) == "number" and rangeObj.Value > 0 then
+        return rangeObj.Value
+    end
+
+    return nil
+end
+
+local function isDashoodWallbangInNaturalRange(args)
+    if not Settings or Settings.InfiniteRange then
+        return true
+    end
+    if Settings.Wallbang ~= true then
+        return true
+    end
+
+    local fakePart = State and State.FakePart
+    if typeof(fakePart) ~= "Instance" or not fakePart:IsA("BasePart") then
+        return false
+    end
+
+    local root = LP and LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if not root then
+        return true
+    end
+
+    local maxDist = getDashoodNaturalRange(args)
+    if not maxDist then
+        return true
+    end
+
+    return (fakePart.Position - root.Position).Magnitude <= maxDist
 end
 
 local function buildHooks()
@@ -141,6 +188,12 @@ local function buildHooks()
         -- Dashood / positional-args style.
         SilentAim.recordShootArgs(args)
         if SilentAim.shouldRedirectFireServer(args) then
+            if not isDashoodWallbangInNaturalRange(args) then
+                if SilentAim.clearRedirectState then
+                    SilentAim.clearRedirectState()
+                end
+                return oldNamecall(self, ...)
+            end
             SilentAim.applyFireServerRedirect(args)
             local result = oldNamecall(self, table.unpack(args))
             -- Tap extra shots: call oldNamecall directly (bypasses hook) so
@@ -198,6 +251,7 @@ local function init(deps)
     UIS                    = deps.UIS
     Mouse                  = LP and LP:GetMouse() or nil
     gameStyle              = deps.gameStyle
+    Settings               = deps.Settings
     SilentAim.init(deps)
     -- Build closures once here so install() just wires them in without re-allocating.
     buildHooks()
