@@ -3,14 +3,41 @@ local GH, MainEvent, oldShoot, mt, oldNamecall, oldIndex
 local isStoredShootArgsValid
 local Taps
 local SilentAim
+local ForceHit
+local Settings
 local LP, UIS, Mouse
 local hookedShoot, hookedNamecall, hookedIndex
 local gameStyle
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
+local ASSIST_MIN_INTERVAL = 0.06
+local _lastAssistSendAt = 0
 
 local function setReadOnlySafe(value)
     if setreadonly then setreadonly(mt, value) end
+end
+
+local function trySendZeehoodWallbangAssist()
+    if gameStyle ~= "zeehood" then return end
+    if not Settings or Settings.VisCheck == true then return end
+    if not ForceHit or not ForceHit.sendAssistShot then return end
+
+    local blocked = false
+    pcall(function()
+        if SilentAim.shouldUseZeehoodAssistShot then
+            blocked = (SilentAim.shouldUseZeehoodAssistShot() == true)
+        end
+    end)
+    if not blocked then return end
+
+    local now = os.clock()
+    if now - _lastAssistSendAt < ASSIST_MIN_INTERVAL then return end
+    _lastAssistSendAt = now
+
+    -- Defer so native gun local flow finishes first.
+    task.defer(function()
+        pcall(ForceHit.sendAssistShot)
+    end)
 end
 
 local function buildHooks()
@@ -71,6 +98,8 @@ local function buildHooks()
                 for _ = 2, tapCount do
                     oldNamecall(self, ...)
                 end
+
+                trySendZeehoodWallbangAssist()
                 return result
             end
             return oldNamecall(self, ...)
@@ -131,6 +160,8 @@ local function init(deps)
     isStoredShootArgsValid = deps.isStoredShootArgsValid
     Taps                   = deps.Taps
     SilentAim              = deps.SilentAim
+    ForceHit               = deps.ForceHit
+    Settings               = deps.Settings
     LP                     = deps.LP
     UIS                    = deps.UIS
     Mouse                  = LP and LP:GetMouse() or nil
