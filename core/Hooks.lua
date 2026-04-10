@@ -12,6 +12,23 @@ local gameStyle
 local MOUSE1 = Enum.UserInputType.MouseButton1
 local ASSIST_MIN_INTERVAL = 0.05
 local _lastAssistSendAt = 0
+local INF_AMMO_ASSIST_MIN_INTERVAL = 0.02
+local _lastInfAmmoAssistAt = 0
+local _infAmmoShotsByTool = {}
+
+local INF_AMMO_CLIPS = {
+    ["[Revolver]"] = 6,
+    ["[Double-Barrel SG]"] = 2,
+    ["[TacticalShotgun]"] = 5,
+    ["[Shotgun]"] = 5,
+    ["[Drum-Shotgun]"] = 8,
+    ["[SMG]"] = 25,
+    ["[AR]"] = 30,
+}
+
+local function getInfAmmoClip(toolName)
+    return INF_AMMO_CLIPS[toolName] or 12
+end
 
 local function setReadOnlySafe(value)
     if setreadonly then setreadonly(mt, value) end
@@ -35,6 +52,30 @@ local function trySendZeehoodWallbangAssist()
     _lastAssistSendAt = now
 
     -- Defer so native gun local flow finishes first.
+    task.defer(function()
+        pcall(ForceHit.sendAssistShot)
+    end)
+end
+
+local function trySendZeehoodInfAmmoAssist(toolName, shotCount)
+    if gameStyle ~= "zeehood" then return end
+    if not Settings or Settings.InfiniteAmmo ~= true then return end
+    if not ForceHit or not ForceHit.sendAssistShot then return end
+    if type(toolName) ~= "string" then return end
+
+    local count = tonumber(shotCount) or 1
+    if count < 1 then count = 1 end
+
+    local nextCount = (_infAmmoShotsByTool[toolName] or 0) + count
+    _infAmmoShotsByTool[toolName] = nextCount
+
+    local clip = getInfAmmoClip(toolName)
+    if nextCount <= clip then return end
+
+    local now = os.clock()
+    if now - _lastInfAmmoAssistAt < INF_AMMO_ASSIST_MIN_INTERVAL then return end
+    _lastInfAmmoAssistAt = now
+
     task.defer(function()
         pcall(ForceHit.sendAssistShot)
     end)
@@ -89,9 +130,14 @@ local function buildHooks()
             -- Zeehood stability: strict native passthrough for manual shooting.
             if isStoredShootArgsValid(args) then
                 local tapCount = 1
+                local toolName
                 pcall(function()
                     SilentAim.recordShootArgs(args)
                     tapCount = Taps.getTapCount(args)
+                    local payload = args[2]
+                    if type(payload) == "table" then
+                        toolName = payload.ToolName
+                    end
                 end)
 
                 local result = oldNamecall(self, ...)
@@ -99,6 +145,7 @@ local function buildHooks()
                     oldNamecall(self, ...)
                 end
 
+                trySendZeehoodInfAmmoAssist(toolName, tapCount)
                 trySendZeehoodWallbangAssist()
                 return result
             end
