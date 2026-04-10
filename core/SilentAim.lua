@@ -164,6 +164,62 @@ local function init(deps)
     gameStyle              = deps.gameStyle
 end
 
+local function applyZeehoodOriginPolicy(payload, aimPos)
+    -- Forcehit-style origin spoof for redirected assist shots: spawn the shot
+    -- near the target so map geometry between shooter/target doesn't block it.
+    local startPoint = payload.StartPoint
+    local dir = nil
+    if typeof(startPoint) == "Vector3" then
+        local delta = startPoint - aimPos
+        if delta.Magnitude > 0.01 then
+            dir = delta.Unit
+        end
+    end
+    if not dir then
+        dir = Vector3.new(0, 1, 0)
+    end
+    payload.StartPoint = aimPos + dir * 0.25
+end
+
+local function applyZeehoodRangePolicy(payload)
+    if Settings.InfiniteRange then
+        payload.Range = 1e9
+    end
+end
+
+local function rewriteZeehoodPellets(payload, aimPos, hitPart)
+    -- Preserve the original pellet spread shape by translating the
+    -- existing pellet pattern so its center lands on the locked aim point.
+    local center = Vector3.new(0, 0, 0)
+    local count = 0
+
+    for _, p in ipairs(payload.Pellets) do
+        if type(p) == "table" and typeof(p.HitPosition) == "Vector3" then
+            center = center + p.HitPosition
+            count = count + 1
+        end
+    end
+
+    if count > 0 then
+        center = center / count
+        for _, p in ipairs(payload.Pellets) do
+            if type(p) == "table" then
+                local origPos = typeof(p.HitPosition) == "Vector3" and p.HitPosition or center
+                local spreadOffset = origPos - center
+                p.HitPosition = aimPos + spreadOffset
+                p.HitInstance = hitPart
+            end
+        end
+    else
+        for _, p in ipairs(payload.Pellets) do
+            if type(p) == "table" then
+                p.HitPosition = aimPos
+                p.HitInstance = hitPart
+            end
+        end
+    end
+end
+
 -- Redirect a zeehood-style FireServer payload table in-place to aim at the
 -- current locked target.  Called directly from the namecall hook because
 -- Zeehood has no GH.shoot to serve as a redirect trigger.
@@ -175,58 +231,11 @@ local function redirectZeehoodPayload(payload)
 
     if not hitPart or not aimPos then return false end
 
-    -- Forcehit-style origin spoof for redirected assist shots: spawn the shot
-    -- near the target so map geometry between shooter/target doesn't block it.
-    do
-        local startPoint = payload.StartPoint
-        local dir = nil
-        if typeof(startPoint) == "Vector3" then
-            local delta = startPoint - aimPos
-            if delta.Magnitude > 0.01 then
-                dir = delta.Unit
-            end
-        end
-        if not dir then
-            dir = Vector3.new(0, 1, 0)
-        end
-        payload.StartPoint = aimPos + dir * 0.25
-    end
-
-    if Settings.InfiniteRange then
-        payload.Range = 1e9
-    end
+    applyZeehoodOriginPolicy(payload, aimPos)
+    applyZeehoodRangePolicy(payload)
 
     if type(payload.Pellets) == "table" then
-        -- Preserve the original pellet spread shape by translating the
-        -- existing pellet pattern so its center lands on the locked aim point.
-        local center = Vector3.new(0, 0, 0)
-        local count = 0
-
-        for _, p in ipairs(payload.Pellets) do
-            if type(p) == "table" and typeof(p.HitPosition) == "Vector3" then
-                center = center + p.HitPosition
-                count = count + 1
-            end
-        end
-
-        if count > 0 then
-            center = center / count
-            for _, p in ipairs(payload.Pellets) do
-                if type(p) == "table" then
-                    local origPos = typeof(p.HitPosition) == "Vector3" and p.HitPosition or center
-                    local spreadOffset = origPos - center
-                    p.HitPosition = aimPos + spreadOffset
-                    p.HitInstance = hitPart
-                end
-            end
-        else
-            for _, p in ipairs(payload.Pellets) do
-                if type(p) == "table" then
-                    p.HitPosition = aimPos
-                    p.HitInstance = hitPart
-                end
-            end
-        end
+        rewriteZeehoodPellets(payload, aimPos, hitPart)
         -- Some Zeehood handlers use top-level fields for visuals even when
         -- pellet data exists; mirror them here for tracer compatibility.
         payload.HitPosition = aimPos

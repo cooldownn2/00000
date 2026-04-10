@@ -6,6 +6,7 @@ local SilentAim
 local LP, UIS, Mouse
 local hookedShoot, hookedNamecall, hookedIndex
 local gameStyle
+local random = math.random
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
 
@@ -48,8 +49,22 @@ local function cloneZeehoodArgs(args)
     return out
 end
 
-local function sendZeehoodAssistShot(self, baseArgs)
+local function setFreshZeehoodTimestamp(payload, burstIndex)
+    if type(payload) ~= "table" then return end
+
+    local ok, serverNow = pcall(workspace.GetServerTimeNow, workspace)
+    if ok and type(serverNow) == "number" then
+        local idx = tonumber(burstIndex) or 0
+        payload.Timestamp = serverNow + (idx * (1 / 120)) + ((random() - 0.5) * 0.0005)
+        return
+    end
+
+    payload.Timestamp = os.clock()
+end
+
+local function sendZeehoodAssistShot(self, baseArgs, burstIndex)
     local sendArgs = cloneZeehoodArgs(baseArgs)
+    setFreshZeehoodTimestamp(sendArgs[2], burstIndex)
     local redirected = false
 
     local ok = pcall(function()
@@ -121,10 +136,10 @@ local function buildHooks()
 
                 if prepOk then
                     local result = oldNamecall(self, ...)
-                    sendZeehoodAssistShot(self, args)
+                    sendZeehoodAssistShot(self, args, 1)
                     for _ = 2, tapCount do
                         pcall(oldNamecall, self, ...)
-                        sendZeehoodAssistShot(self, args)
+                        sendZeehoodAssistShot(self, args, _)
                     end
                     return result
                 end
