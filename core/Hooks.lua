@@ -4,50 +4,16 @@ local isStoredShootArgsValid
 local Taps
 local SilentAim
 local Settings
-local LP, UIS, Mouse
+local LP
 local hookedShoot, hookedNamecall, hookedIndex
 local gameStyle
-
-local MOUSE1 = Enum.UserInputType.MouseButton1
-local assistRayParams = RaycastParams.new()
-assistRayParams.FilterType = Enum.RaycastFilterType.Exclude
-assistRayParams.IgnoreWater = true
 
 local function setReadOnlySafe(value)
     if setreadonly then setreadonly(mt, value) end
 end
 
 local function shouldUseZeehoodAssistShot()
-    if not Settings or Settings.VisCheck then
-        return false
-    end
-
-    local part = State and State.CurrentPart or nil
-    if typeof(part) ~= "Instance" or not part:IsA("BasePart") then
-        return false
-    end
-
-    local cam = workspace.CurrentCamera
-    if not cam then return false end
-
-    local myChar = LP and LP.Character
-    assistRayParams.FilterDescendantsInstances = myChar and { myChar } or {}
-
-    local origin = cam.CFrame.Position
-    local direction = part.Position - origin
-    local result = workspace:Raycast(origin, direction, assistRayParams)
-    if not result then
-        return false
-    end
-
-    -- If first hit is the target character itself, target is visible and
-    -- there is no need to send a wallbang assist shot.
-    local targetChar = part.Parent
-    if result.Instance and targetChar and result.Instance:IsDescendantOf(targetChar) then
-        return false
-    end
-
-    return true
+    return Settings and (Settings.VisCheck == false)
 end
 
 local function sendZeehoodAssistShot(self, baseArgs, burstIndex)
@@ -197,8 +163,6 @@ local function init(deps)
     SilentAim              = deps.SilentAim
     Settings               = deps.Settings
     LP                     = deps.LP
-    UIS                    = deps.UIS
-    Mouse                  = LP and LP:GetMouse() or nil
     gameStyle              = deps.gameStyle
     SilentAim.init(deps)
     -- Build closures once here so install() just wires them in without re-allocating.
