@@ -59,6 +59,24 @@ local function hardResetAnimator(humanoid)
     for _, track in ipairs(tracks) do track:Stop(0) end
 end
 
+local function recreateAnimator(humanoid)
+    if not humanoid then return nil end
+
+    local oldAnimator = humanoid:FindFirstChildOfClass("Animator")
+    if oldAnimator then
+        pcall(function() oldAnimator:Destroy() end)
+    end
+
+    local okNew, newAnimator = pcall(function()
+        local animator = Instance.new("Animator")
+        animator.Parent = humanoid
+        return animator
+    end)
+    if okNew and newAnimator then return newAnimator end
+
+    return humanoid:FindFirstChildOfClass("Animator")
+end
+
 local function flushAnimationState(character)
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
@@ -163,6 +181,48 @@ function AnimationMimic.new(deps)
     }
 
     return self
+end
+
+function AnimationMimic:prepareRuntimeForApply(character)
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then
+        return { humanoid = nil, animate = nil, reenableAnimate = false }
+    end
+
+    self:stopDirectController(character)
+    self:stopPosePrimer(character)
+
+    local animate = character:FindFirstChild("Animate")
+    local reenableAnimate = false
+    if animate and animate:IsA("LocalScript") and not animate.Disabled then
+        animate.Disabled = true
+        reenableAnimate = true
+        task.wait()
+    end
+
+    hardResetAnimator(humanoid)
+    recreateAnimator(humanoid)
+
+    return {
+        humanoid = humanoid,
+        animate = animate,
+        reenableAnimate = reenableAnimate,
+    }
+end
+
+function AnimationMimic:finalizeRuntimeAfterApply(character, runtime)
+    local animate = runtime and runtime.animate or nil
+    if animate and animate:IsA("LocalScript") and (runtime.reenableAnimate or animate.Disabled) then
+        animate.Disabled = false
+    end
+
+    local humanoid = (runtime and runtime.humanoid) or (character and character:FindFirstChildOfClass("Humanoid"))
+    if humanoid then
+        humanoid:Move(Vector3.zero, true)
+        humanoid:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
+        task.wait()
+        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+    end
 end
 
 function AnimationMimic:getGuaranteedFallbackSet()
@@ -922,11 +982,13 @@ end
 function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     if not character or not animationSet then return false end
 
-    local animate = character:FindFirstChild("Animate")
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local runtime = self:prepareRuntimeForApply(character)
+    local humanoid = runtime.humanoid
     if not humanoid then return false end
 
-    hardResetAnimator(humanoid)
+    local animate = character:FindFirstChild("Animate")
+
+    local ok = false
 
     local applied = 0
     if animate then
@@ -941,18 +1003,18 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     end
 
     if applied > 0 then
-        self:stopDirectController(character)
-        self:stopPosePrimer(character)
-        refreshAnimate(character)
+        ok = true
     else
         local descApplied = self:applyAnimationSetViaDescription(humanoid, animationSet)
         if descApplied then
-            self:stopDirectController(character)
-            self:stopPosePrimer(character)
+            ok = true
         else
-            if not self:startDirectController(character, animationSet) then return false end
+            ok = self:startDirectController(character, animationSet)
         end
     end
+
+    self:finalizeRuntimeAfterApply(character, runtime)
+    if not ok then return false end
 
     if self.settings.alwaysAssistAfterApply then
         local startedAssist = self:ensureAssistController(character, animationSet)
@@ -981,11 +1043,13 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
     local ownSet = self:getAnimationSetFromUserId(self.localPlayer.UserId)
     if not ownSet then return false end
 
-    local animate = character:FindFirstChild("Animate")
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local runtime = self:prepareRuntimeForApply(character)
+    local humanoid = runtime.humanoid
     if not humanoid then return false end
 
-    hardResetAnimator(humanoid)
+    local animate = character:FindFirstChild("Animate")
+
+    local ok = false
 
     local applied = 0
     if animate then
@@ -1000,18 +1064,21 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
     end
 
     if applied > 0 then
-        self:stopDirectController(character)
-        self:stopPosePrimer(character)
-        refreshAnimate(character)
+        ok = true
     else
         if self:applyAnimationSetViaDescription(humanoid, ownSet) then
-            self:stopDirectController(character)
-            self:stopPosePrimer(character)
+            ok = true
         else
-            if not self.active then return false end
-            if not self:startDirectController(character, ownSet) then return false end
+            if self.active then
+                ok = self:startDirectController(character, ownSet)
+            else
+                ok = false
+            end
         end
     end
+
+    self:finalizeRuntimeAfterApply(character, runtime)
+    if not ok then return false end
 
     if self.settings.alwaysAssistAfterApply then
         local startedAssist = self:ensureAssistController(character, ownSet)
