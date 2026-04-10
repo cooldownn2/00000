@@ -231,7 +231,9 @@ local function resolveCurrentPartFromLinePart(linePart)
 
     local lockedCharacter = State.LockedTarget and State.LockedTarget.Character or nil
     if not lockedCharacter or not isAlive(lockedCharacter) then return nil end
-    return isPartVisible(linePart, lockedCharacter) and linePart or nil
+    -- When visibility is required here, force a raw raycast check regardless
+    -- of Main.Visible so WallBang=false always behaves as "no through walls".
+    return isPartVisibleRaw(linePart, lockedCharacter) and linePart or nil
 end
 
 local function ensureValidLockedTarget()
