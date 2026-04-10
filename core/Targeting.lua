@@ -114,6 +114,9 @@ local function clearTargetState(clearLastArgs)
     State.CurrentPart = nil
     State.FakePart = nil
     State.FakePos = nil
+    State.TriggerbotPart = nil
+    State.TriggerbotPos = nil
+    State.TriggerbotAimExpires = 0
     State.TriggerbotToggleActive = false
     ClosestPoint.resetCache()
     if clearLastArgs then State.LastShootArgs = nil end
@@ -123,6 +126,9 @@ local function clearCombatState(keepLastArgs)
     State.FakePart = nil
     State.FakePos = nil
     State.CurrentPart = nil
+    State.TriggerbotPart = nil
+    State.TriggerbotPos = nil
+    State.TriggerbotAimExpires = 0
     if not keepLastArgs then State.LastShootArgs = nil end
 end
 

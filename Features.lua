@@ -16,6 +16,7 @@ local function init(deps)
         State    = deps.State,
         safeCall = deps.safeCall,
         Movement = Movement,
+        getSpreadAimPosition = deps.getSpreadAimPosition,
     })
     AimAssist.init({
         Settings              = deps.Settings,
