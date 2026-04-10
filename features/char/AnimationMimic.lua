@@ -145,7 +145,11 @@ function AnimationMimic.new(deps)
         minLiveCoverage = 1,
         replicateDescriptionToOthers = false,
         invalidateAnimationCacheOnTargetSwitch = false,
-        alwaysAssistAfterApply = true,
+        alwaysAssistAfterApply = false,
+        adaptiveAssistAfterApply = true,
+        assistGraceSeconds = 0.18,
+        directControllerStep = 0.03,
+        assistControllerStep = 0.05,
     }
 
     self.fallbackNumericIds = {
@@ -353,6 +357,36 @@ function AnimationMimic:unstickPoseAfterApply(character, animationSet)
         local started = self:startDirectController(character, animationSet, { assistMode = true })
         if not started then
             self:startDirectController(character, self:getGuaranteedFallbackSet(), { assistMode = true })
+        end
+    end)
+end
+
+function AnimationMimic:scheduleAssistIfNeeded(character, animationSet)
+    if not character or not character.Parent then return end
+    if not self.settings.useDirectTrackFallback then return end
+
+    local token = self.applyToken
+    local grace = self.settings.assistGraceSeconds or 0.18
+
+    task.defer(function()
+        task.wait(grace)
+
+        if not self.active then return end
+        if token ~= self.applyToken then return end
+        if not character.Parent then return end
+
+        if self:hasNativePlayingTrack(character) then
+            self:stopPosePrimer(character)
+            return
+        end
+
+        if self.directControllerByChar[character] then
+            return
+        end
+
+        local started = self:ensureAssistController(character, animationSet)
+        if not started then
+            self:ensureAssistController(character, self:getGuaranteedFallbackSet())
         end
     end)
 end
@@ -795,7 +829,9 @@ function AnimationMimic:startDirectController(character, animationSet, opts)
 
         local now = os.clock()
         if now < controller.nextUpdateAt then return end
-        controller.nextUpdateAt = now + 0.03
+        local step = controller.assistMode and (self.settings.assistControllerStep or 0.05)
+            or (self.settings.directControllerStep or 0.03)
+        controller.nextUpdateAt = now + step
 
         local moveMag = humanoid.MoveDirection.Magnitude
         local humState = humanoid:GetState()
@@ -923,6 +959,8 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
         if not startedAssist then
             self:ensureAssistController(character, self:getGuaranteedFallbackSet())
         end
+    elseif self.settings.adaptiveAssistAfterApply then
+        self:scheduleAssistIfNeeded(character, animationSet)
     end
 
     self:unstickPoseAfterApply(character, animationSet)
@@ -980,6 +1018,8 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
         if not startedAssist then
             self:ensureAssistController(character, self:getGuaranteedFallbackSet())
         end
+    elseif self.settings.adaptiveAssistAfterApply then
+        self:scheduleAssistIfNeeded(character, ownSet)
     end
 
     self:unstickPoseAfterApply(character, ownSet)

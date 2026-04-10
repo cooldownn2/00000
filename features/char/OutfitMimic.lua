@@ -30,6 +30,8 @@ local BODY_PART_NAMES = {
     "RightUpperLeg", "RightLowerLeg", "RightFoot",
 }
 
+local SCALE_REFRESH_MIN_INTERVAL = 0.08
+
 local function isCopyClass(className)
     return COPY_CLASS_SET[className] == true
 end
@@ -830,6 +832,7 @@ function OutfitMimic:applyAppearance(userId, char, applyToken)
 
     local scaleRefreshScheduled = false
     local scaleRefreshQueued = false
+    local lastScaleRefreshAt = 0
     local function scheduleScaleRefresh()
         if scaleRefreshScheduled then
             scaleRefreshQueued = true
@@ -841,6 +844,14 @@ function OutfitMimic:applyAppearance(userId, char, applyToken)
             scaleRefreshScheduled = false
             if not self:isApplyStillCurrent(applyToken) then self:disconnectAppearanceHooks(); return end
             if not char.Parent then self:disconnectAppearanceHooks(); return end
+
+            local now = os.clock()
+            local sinceLast = now - lastScaleRefreshAt
+            if sinceLast < SCALE_REFRESH_MIN_INTERVAL then
+                task.wait(SCALE_REFRESH_MIN_INTERVAL - sinceLast)
+            end
+            lastScaleRefreshAt = os.clock()
+
             local livePartMap = buildBasePartMap(char)
             local liveCarrierMap = buildAttachmentCarrierMap(livePartMap)
             self:scaleAllAccessories(char, sourcePartSizeMap, livePartMap, liveCarrierMap)

@@ -6,9 +6,12 @@ Common.__index = Common
 
 local AVATAR_CACHE_TTL_SECONDS = 20
 local RESOLVED_USERID_TTL_SECONDS = 600
+local FETCH_WAIT_TIMEOUT_SECONDS = 4
+local FETCH_WAIT_STEP_SECONDS = 0.03
 
 local CACHE_MAX_ENTRIES = {
     faceTexture = 80,
+    faceAssetTexture = 120,
     description = 40,
     appearanceModel = 24,
     appearanceInfo = 60,
@@ -18,6 +21,17 @@ local CACHE_MAX_ENTRIES = {
 }
 
 local NO_FACE_TOKEN = "__NO_FACE__"
+
+local function waitForPending(pendingMap, key, timeoutSeconds)
+    local started = os.clock()
+    while pendingMap[key] do
+        if os.clock() - started >= (timeoutSeconds or FETCH_WAIT_TIMEOUT_SECONDS) then
+            return false
+        end
+        task.wait(FETCH_WAIT_STEP_SECONDS)
+    end
+    return true
+end
 
 local function countMapEntries(map)
     local count = 0
@@ -100,6 +114,8 @@ function Common.new(localPlayer)
 
     self.faceTextureCache = {}
     self.faceTextureCacheTime = {}
+    self.faceAssetTextureCache = {}
+    self.faceAssetTextureCacheTime = {}
 
     self.descriptionCache = {}
     self.appearanceModelCache = {}
@@ -110,6 +126,11 @@ function Common.new(localPlayer)
 
     self.animationSetCache = {}
     self.emoteDataCache = {}
+
+    self.pendingAppearanceModel = {}
+    self.pendingDescription = {}
+    self.pendingAppearanceInfo = {}
+    self.pendingFaceAsset = {}
 
     return self
 end
@@ -142,6 +163,11 @@ function Common:clearAvatarCaches()
         self.faceTextureCacheTime[userId] = nil
     end
 
+    for assetId in pairs(self.faceAssetTextureCache) do
+        self.faceAssetTextureCache[assetId] = nil
+        self.faceAssetTextureCacheTime[assetId] = nil
+    end
+
     for cacheKey in pairs(self.resolvedUserIdCacheTime) do
         self.resolvedUserIdCache[cacheKey] = nil
         self.resolvedUserIdCacheTime[cacheKey] = nil
@@ -149,6 +175,11 @@ function Common:clearAvatarCaches()
 
     self.animationSetCache = {}
     self.emoteDataCache = {}
+
+    self.pendingAppearanceModel = {}
+    self.pendingDescription = {}
+    self.pendingAppearanceInfo = {}
+    self.pendingFaceAsset = {}
 end
 
 function Common:destroy()
@@ -426,6 +457,17 @@ function Common:getCharacterAppearanceModel(userId)
         if okClone and clone then return clone end
     end
 
+    if self.pendingAppearanceModel[userId] then
+        waitForPending(self.pendingAppearanceModel, userId, FETCH_WAIT_TIMEOUT_SECONDS)
+        local waitedEntry = self:cacheGetEntry(self.appearanceModelCache, userId, AVATAR_CACHE_TTL_SECONDS)
+        if waitedEntry and waitedEntry.model then
+            local okClone, clone = pcall(function() return waitedEntry.model:Clone() end)
+            if okClone and clone then return clone end
+        end
+    end
+
+    self.pendingAppearanceModel[userId] = true
+
     local ok, model = false, nil
     for attempt = 1, 2 do
         local okAttempt, result = pcall(function() return Players:GetCharacterAppearanceAsync(userId) end)
@@ -435,6 +477,8 @@ function Common:getCharacterAppearanceModel(userId)
         end
         if attempt == 1 then task.wait(0.15) end
     end
+
+    self.pendingAppearanceModel[userId] = nil
 
     if not (ok and model) then
         return nil
@@ -473,8 +517,22 @@ function Common:getTargetDescriptionCached(userId)
         if okClone and clone then return clone end
     end
 
+    if self.pendingDescription[userId] then
+        waitForPending(self.pendingDescription, userId, FETCH_WAIT_TIMEOUT_SECONDS)
+        local waitedEntry = self:cacheGetEntry(self.descriptionCache, userId, AVATAR_CACHE_TTL_SECONDS)
+        if waitedEntry and waitedEntry.desc then
+            local okClone, clone = pcall(function() return waitedEntry.desc:Clone() end)
+            if okClone and clone then return clone end
+        end
+    end
+
+    self.pendingDescription[userId] = true
+
     local okDesc, desc = pcall(function() return Players:GetHumanoidDescriptionFromUserId(userId) end)
-    if not okDesc or not desc then return nil end
+    if not okDesc or not desc then
+        self.pendingDescription[userId] = nil
+        return nil
+    end
 
     local okStore, stored = pcall(function() return desc:Clone() end)
     if okStore and stored then
@@ -495,12 +553,23 @@ function Common:getTargetDescriptionCached(userId)
     end
 
     local okRet, ret = pcall(function() return desc:Clone() end)
+    self.pendingDescription[userId] = nil
     return (okRet and ret) or desc
 end
 
 function Common:getCharacterAppearanceInfoCached(userId)
     local entry = self:cacheGetEntry(self.appearanceInfoCache, userId, AVATAR_CACHE_TTL_SECONDS)
     if entry and entry.info then return entry.info end
+
+    if self.pendingAppearanceInfo[userId] then
+        waitForPending(self.pendingAppearanceInfo, userId, FETCH_WAIT_TIMEOUT_SECONDS)
+        local waitedEntry = self:cacheGetEntry(self.appearanceInfoCache, userId, AVATAR_CACHE_TTL_SECONDS)
+        if waitedEntry and waitedEntry.info then
+            return waitedEntry.info
+        end
+    end
+
+    self.pendingAppearanceInfo[userId] = true
 
     local ok, info = pcall(function() return Players:GetCharacterAppearanceInfoAsync(userId) end)
     if ok and info then
@@ -510,13 +579,54 @@ function Common:getCharacterAppearanceInfoCached(userId)
             { info = info, timestamp = os.clock() },
             CACHE_MAX_ENTRIES.appearanceInfo
         )
+        self.pendingAppearanceInfo[userId] = nil
         return info
     end
+
+    self.pendingAppearanceInfo[userId] = nil
 
     return nil
 end
 
 function Common:resolveFaceFromAssetId(assetId, userId)
+    local assetKey = tostring(assetId)
+    local cachedByAsset = self:cacheGetTimed(
+        self.faceAssetTextureCache,
+        self.faceAssetTextureCacheTime,
+        assetKey,
+        AVATAR_CACHE_TTL_SECONDS
+    )
+    if cachedByAsset ~= nil then
+        return self:cacheSetTimed(
+            self.faceTextureCache,
+            self.faceTextureCacheTime,
+            userId,
+            cachedByAsset,
+            CACHE_MAX_ENTRIES.faceTexture
+        )
+    end
+
+    if self.pendingFaceAsset[assetKey] then
+        waitForPending(self.pendingFaceAsset, assetKey, FETCH_WAIT_TIMEOUT_SECONDS)
+        local waitedByAsset = self:cacheGetTimed(
+            self.faceAssetTextureCache,
+            self.faceAssetTextureCacheTime,
+            assetKey,
+            AVATAR_CACHE_TTL_SECONDS
+        )
+        if waitedByAsset ~= nil then
+            return self:cacheSetTimed(
+                self.faceTextureCache,
+                self.faceTextureCacheTime,
+                userId,
+                waitedByAsset,
+                CACHE_MAX_ENTRIES.faceTexture
+            )
+        end
+    end
+
+    self.pendingFaceAsset[assetKey] = true
+
     local okAsset, assetModel = pcall(function() return InsertService:LoadAsset(assetId) end)
     if okAsset and assetModel then
         local foundTexture = nil
@@ -528,6 +638,14 @@ function Common:resolveFaceFromAssetId(assetId, userId)
         end
         assetModel:Destroy()
         if foundTexture then
+            self:cacheSetTimed(
+                self.faceAssetTextureCache,
+                self.faceAssetTextureCacheTime,
+                assetKey,
+                foundTexture,
+                CACHE_MAX_ENTRIES.faceAssetTexture
+            )
+            self.pendingFaceAsset[assetKey] = nil
             return self:cacheSetTimed(
                 self.faceTextureCache,
                 self.faceTextureCacheTime,
@@ -538,11 +656,21 @@ function Common:resolveFaceFromAssetId(assetId, userId)
         end
     end
 
+    local fallback = "rbxassetid://" .. tostring(assetId)
+    self:cacheSetTimed(
+        self.faceAssetTextureCache,
+        self.faceAssetTextureCacheTime,
+        assetKey,
+        fallback,
+        CACHE_MAX_ENTRIES.faceAssetTexture
+    )
+    self.pendingFaceAsset[assetKey] = nil
+
     return self:cacheSetTimed(
         self.faceTextureCache,
         self.faceTextureCacheTime,
         userId,
-        "rbxassetid://" .. tostring(assetId),
+        fallback,
         CACHE_MAX_ENTRIES.faceTexture
     )
 end

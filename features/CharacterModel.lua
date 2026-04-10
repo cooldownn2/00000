@@ -208,13 +208,8 @@ local function update()
     lastUpdate = now
 
     local enabled = Settings.CharacterModelEnabled == true
-    if not enabled then
-        setEnabled(false)
-        return
-    end
-
-    if not ensureModules() then return end
-    setEnabled(true)
+    setEnabled(enabled)
+    if not enabled then return end
 
     local target = normalizeTarget(Settings.CharacterModelUserId)
     if target == "" then return end
