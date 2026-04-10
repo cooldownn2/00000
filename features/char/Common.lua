@@ -17,6 +17,8 @@ local CACHE_MAX_ENTRIES = {
     emoteData = 80,
 }
 
+local NO_FACE_TOKEN = "__NO_FACE__"
+
 local function countMapEntries(map)
     local count = 0
     for _ in pairs(map) do count = count + 1 end
@@ -547,7 +549,10 @@ end
 
 function Common:resolveFaceTexture(userId, appearanceModel, targetDesc)
     local cached = self:cacheGetTimed(self.faceTextureCache, self.faceTextureCacheTime, userId, AVATAR_CACHE_TTL_SECONDS)
-    if cached then return cached end
+    if cached ~= nil then
+        if cached == NO_FACE_TOKEN then return nil end
+        return cached
+    end
 
     local appearanceHead = appearanceModel and appearanceModel:FindFirstChild("Head")
     local direct = firstDecalTextureFromHead(appearanceHead)
@@ -555,7 +560,11 @@ function Common:resolveFaceTexture(userId, appearanceModel, targetDesc)
         return self:cacheSetTimed(self.faceTextureCache, self.faceTextureCacheTime, userId, direct, CACHE_MAX_ENTRIES.faceTexture)
     end
 
-    if targetDesc and targetDesc.Face and targetDesc.Face ~= 0 then
+    if targetDesc and targetDesc.Face ~= nil then
+        if targetDesc.Face == 0 then
+            self:cacheSetTimed(self.faceTextureCache, self.faceTextureCacheTime, userId, NO_FACE_TOKEN, CACHE_MAX_ENTRIES.faceTexture)
+            return nil
+        end
         return self:resolveFaceFromAssetId(targetDesc.Face, userId)
     end
 
@@ -566,18 +575,12 @@ function Common:resolveFaceTexture(userId, appearanceModel, targetDesc)
                 return self:resolveFaceFromAssetId(asset.id, userId)
             end
         end
+        -- Appearance info resolved but no face asset exists: treat as faceless.
+        self:cacheSetTimed(self.faceTextureCache, self.faceTextureCacheTime, userId, NO_FACE_TOKEN, CACHE_MAX_ENTRIES.faceTexture)
+        return nil
     end
 
-    local okModel, tempModel = pcall(function() return Players:CreateHumanoidModelFromUserId(userId) end)
-    if okModel and tempModel then
-        local tempHead = tempModel:FindFirstChild("Head")
-        local tempTexture = firstDecalTextureFromHead(tempHead)
-        tempModel:Destroy()
-        if tempTexture then
-            return self:cacheSetTimed(self.faceTextureCache, self.faceTextureCacheTime, userId, tempTexture, CACHE_MAX_ENTRIES.faceTexture)
-        end
-    end
-
+    self:cacheSetTimed(self.faceTextureCache, self.faceTextureCacheTime, userId, NO_FACE_TOKEN, CACHE_MAX_ENTRIES.faceTexture)
     return nil
 end
 
