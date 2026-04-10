@@ -93,6 +93,7 @@ screenGui.Parent           = game:GetService("CoreGui")
 local SHOOT_CMD   = gameStyle == "zeehood" and "GunFired" or "ShootGun"
 local mt          = getrawmetatable(game)
 local oldNamecall = mt.__namecall
+local oldIndex    = mt.__index
 
 local function cfgEnabled(pathArr, defaultIfMissing)
     local v = Config.getPathValue(settings, pathArr)
@@ -224,6 +225,7 @@ local sharedDeps = {
     GH                     = GH,
     oldShoot               = oldShoot,
     gameStyle              = gameStyle,
+    oldIndex               = oldIndex,
     cloneArgs              = cloneArgs,
     applyRangePolicy       = applyRangePolicy,
     getSpreadAimPosition   = getSpreadAimPosition,

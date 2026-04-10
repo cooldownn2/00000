@@ -1,10 +1,13 @@
 local State, safeCall
-local GH, MainEvent, oldShoot, mt, oldNamecall
+local GH, MainEvent, oldShoot, mt, oldNamecall, oldIndex
 local isStoredShootArgsValid
 local Taps
 local SilentAim
-local hookedShoot, hookedNamecall
+local LP, UIS, Mouse
+local hookedShoot, hookedNamecall, hookedIndex
 local gameStyle
+
+local MOUSE1 = Enum.UserInputType.MouseButton1
 
 local function setReadOnlySafe(value)
     if setreadonly then setreadonly(mt, value) end
@@ -53,6 +56,22 @@ local function buildHooks()
             shootData = SilentAim.prepareShootData(data)
         end
         return oldShoot(shootData)
+    end
+
+    hookedIndex = function(self, key)
+        if State.Unloaded then return oldIndex(self, key) end
+
+        if gameStyle == "zeehood" and Mouse and rawequal(self, Mouse) and key == "Hit" then
+            local firing = UIS and UIS:IsMouseButtonPressed(MOUSE1)
+            if firing then
+                local aimPos = SilentAim.getCurrentAimPosition and SilentAim.getCurrentAimPosition() or nil
+                if aimPos then
+                    return CFrame.new(aimPos)
+                end
+            end
+        end
+
+        return oldIndex(self, key)
     end
 
     hookedNamecall = function(self, ...)
@@ -124,6 +143,7 @@ local function install()
     -- Hooks are built once in init; install just wires them in.
     if GH.shoot ~= hookedShoot then GH.shoot = hookedShoot end
     setReadOnlySafe(false)
+    if mt.__index ~= hookedIndex then mt.__index = hookedIndex end
     if mt.__namecall ~= hookedNamecall then mt.__namecall = hookedNamecall end
     setReadOnlySafe(true)
 end
@@ -132,6 +152,7 @@ local function uninstall()
     if GH.shoot == hookedShoot then GH.shoot = oldShoot end
     safeCall(function()
         setReadOnlySafe(false)
+        if mt.__index == hookedIndex then mt.__index = oldIndex end
         if mt.__namecall == hookedNamecall then mt.__namecall = oldNamecall end
         setReadOnlySafe(true)
     end, "CleanupFails")
@@ -145,9 +166,13 @@ local function init(deps)
     oldShoot               = deps.oldShoot
     mt                     = deps.mt
     oldNamecall            = deps.oldNamecall
+    oldIndex               = deps.oldIndex
     isStoredShootArgsValid = deps.isStoredShootArgsValid
     Taps                   = deps.Taps
     SilentAim              = deps.SilentAim
+    LP                     = deps.LP
+    UIS                    = deps.UIS
+    Mouse                  = LP and LP:GetMouse() or nil
     gameStyle              = deps.gameStyle
     SilentAim.init(deps)
     -- Build closures once here so install() just wires them in without re-allocating.

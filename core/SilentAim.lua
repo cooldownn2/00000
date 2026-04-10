@@ -17,14 +17,9 @@ local function clearFakeState()
     State.FakePos  = nil
 end
 
-local function prepareShootData(data)
-    if type(data) ~= "table" then
-        return data
-    end
-
+local function resolveAimTarget()
     if not isTargetFeatureAllowed() then
-        clearFakeState()
-        return data
+        return nil, nil
     end
 
     local hitPart, aimPos
@@ -37,6 +32,25 @@ local function prepareShootData(data)
         hitPart = aimPart or State.CurrentPart
         aimPos  = computedPos
     end
+
+    if not hitPart or not aimPos then
+        return nil, nil
+    end
+
+    return hitPart, aimPos
+end
+
+local function prepareShootData(data)
+    if type(data) ~= "table" then
+        return data
+    end
+
+    if not isTargetFeatureAllowed() then
+        clearFakeState()
+        return data
+    end
+
+    local hitPart, aimPos = resolveAimTarget()
 
     if not hitPart or not aimPos then
         clearFakeState()
@@ -100,16 +114,7 @@ local function redirectZeehoodPayload(payload)
     if not isTargetFeatureAllowed() then return end
     if not payload or type(payload) ~= "table" then return end
 
-    local hitPart, aimPos
-
-    if State.FakePart then
-        hitPart = State.FakePart
-        aimPos  = State.FakePos or hitPart.Position
-    elseif State.Enabled and State.CurrentPart then
-        local computedPos, aimPart = getSpreadAimPosition(State.CurrentPart)
-        hitPart = aimPart or State.CurrentPart
-        aimPos  = computedPos
-    end
+    local hitPart, aimPos = resolveAimTarget()
 
     if not hitPart or not aimPos then return end
 
@@ -131,8 +136,14 @@ local function redirectZeehoodPayload(payload)
     end
 end
 
+local function getCurrentAimPosition()
+    local _, aimPos = resolveAimTarget()
+    return aimPos
+end
+
 SilentAim.init                   = init
 SilentAim.redirectZeehoodPayload = redirectZeehoodPayload
+SilentAim.getCurrentAimPosition  = getCurrentAimPosition
 SilentAim.prepareShootData = prepareShootData
 SilentAim.recordShootArgs = recordShootArgs
 SilentAim.shouldRedirectFireServer = shouldRedirectFireServer
