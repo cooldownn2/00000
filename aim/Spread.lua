@@ -15,13 +15,6 @@ end
 local function resolveLockPartForCharacter(char)
     if not char then return nil end
     if isClosestPointMode() then
-        if gameStyle == "zeehood" then
-            return char:FindFirstChild("Head")
-                or char:FindFirstChild("UpperTorso")
-                or char:FindFirstChild("Torso")
-                or char:FindFirstChild("HumanoidRootPart")
-                or char:FindFirstChildWhichIsA("BasePart")
-        end
         return char:FindFirstChild("HumanoidRootPart")
             or char:FindFirstChild("UpperTorso")
             or char:FindFirstChild("Torso")
@@ -33,10 +26,10 @@ end
 
 local function getSpreadAimPosition(part)
     if not part then return nil end
+    if typeof(part) ~= "Instance" or not part:IsA("BasePart") then
+        return nil
+    end
     if isClosestPointMode() then
-        if gameStyle == "zeehood" then
-            return part.Position, part
-        end
         local closestPos, closestPart = ClosestPoint.getAimPosition(part)
         if closestPos then return closestPos, (closestPart or part) end
     end
@@ -45,10 +38,10 @@ end
 
 local function getCamlockAimPosition(part)
     if not part then return nil end
+    if typeof(part) ~= "Instance" or not part:IsA("BasePart") then
+        return nil
+    end
     if isClosestPointMode() then
-        if gameStyle == "zeehood" then
-            return part.Position, part
-        end
         local closestPos, closestPart = ClosestPoint.getAimPosition(part)
         if closestPos then return closestPos, (closestPart or part) end
     end
