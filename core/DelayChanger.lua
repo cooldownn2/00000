@@ -1,5 +1,11 @@
 
 local LP = game:GetService("Players").LocalPlayer
+local clock = os.clock
+local VirtualInputManager
+
+pcall(function()
+	VirtualInputManager = game:GetService("VirtualInputManager")
+end)
 
 local Settings, isUnloaded
 local gameStyle
@@ -10,6 +16,17 @@ local patchedAmmo = {}
 local ammoConnections = {}
 
 local INFINITE_AMMO_VALUE = 9999
+local AUTO_RELOAD_MIN_INTERVAL = 0.85
+local DEFAULT_FALLBACK_CLIP = 12
+local FALLBACK_CLIPS = {
+	["[Revolver]"] = 6,
+	["[Double-Barrel SG]"] = 2,
+	["[TacticalShotgun]"] = 5,
+	["[Shotgun]"] = 5,
+	["[Drum-Shotgun]"] = 8,
+	["[SMG]"] = 25,
+	["[AR]"] = 30,
+}
 
 local function getDelay(toolName)
 	local delays = Settings.CustomDelays
@@ -31,6 +48,40 @@ local function getDesiredAmmo()
 		return INFINITE_AMMO_VALUE
 	end
 	return nil
+end
+
+local function getReloadFlag()
+	local char = LP.Character
+	local be = char and char:FindFirstChild("BodyEffects")
+	if not be then return nil end
+	return be:FindFirstChild("Reload") or be:FindFirstChild("Reloading")
+end
+
+local function estimateClipSize(toolName, observed)
+	local n = tonumber(observed)
+	if n and n >= 1 and n <= 200 then
+		return math.floor(n + 0.5)
+	end
+	return FALLBACK_CLIPS[toolName] or DEFAULT_FALLBACK_CLIP
+end
+
+local function tryTriggerZeehoodReload(entry)
+	if gameStyle ~= "zeehood" then return end
+	if not Settings.InfiniteAmmo then return end
+
+	local now = clock()
+	if now - (entry.lastReloadAt or 0) < AUTO_RELOAD_MIN_INTERVAL then return end
+
+	local reloadFlag = getReloadFlag()
+	if reloadFlag and reloadFlag.Value == true then return end
+
+	entry.lastReloadAt = now
+	if not VirtualInputManager or not VirtualInputManager.SendKeyEvent then return end
+
+	pcall(VirtualInputManager.SendKeyEvent, VirtualInputManager, true, Enum.KeyCode.R, false, game)
+	task.delay(0.03, function()
+		pcall(VirtualInputManager.SendKeyEvent, VirtualInputManager, false, Enum.KeyCode.R, false, game)
+	end)
 end
 
 local function readUpvalue(fn, i)
@@ -218,6 +269,9 @@ local function applyAmmo(tool)
 		patchedAmmo[tool] = {
 			obj = ammoObj,
 			original = ammoObj.Value,
+			clipSize = estimateClipSize(tool.Name, ammoObj.Value),
+			consumed = 0,
+			lastReloadAt = 0,
 		}
 	end
 
@@ -231,6 +285,19 @@ local function applyAmmo(tool)
 		ammoConnections[tool] = ammoObj:GetPropertyChangedSignal("Value"):Connect(function()
 			if isUnloaded() then return end
 			if gameStyle ~= "zeehood" or not Settings.InfiniteAmmo then return end
+
+			local entry = patchedAmmo[tool]
+			if not entry then return end
+
+			local current = tonumber(ammoObj.Value) or 0
+			if current < desired then
+				entry.consumed = entry.consumed + (desired - current)
+				if entry.consumed >= math.max(1, entry.clipSize - 1) then
+					entry.consumed = 0
+					tryTriggerZeehoodReload(entry)
+				end
+			end
+
 			pcall(function()
 				if ammoObj.Parent and ammoObj.Value < desired then
 					ammoObj.Value = desired
