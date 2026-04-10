@@ -120,6 +120,13 @@ local function hasAnyPlayingTrack(humanoid)
     return #tracks > 0
 end
 
+local function isActionPriority(priority)
+    return priority == Enum.AnimationPriority.Action
+        or priority == Enum.AnimationPriority.Action2
+        or priority == Enum.AnimationPriority.Action3
+        or priority == Enum.AnimationPriority.Action4
+end
+
 function AnimationMimic.new(deps)
     local self = setmetatable({}, AnimationMimic)
 
@@ -132,6 +139,7 @@ function AnimationMimic.new(deps)
     self.originalByCharacter = {}
     self.directControllerByChar = {}
     self.posePrimerByChar = {}
+    self.recoveryWatcherByChar = {}
 
     self.lastTargetInput = nil
     self.pinnedTargetUserId = nil
@@ -150,6 +158,8 @@ function AnimationMimic.new(deps)
         assistGraceSeconds = 0.18,
         directControllerStep = 0.03,
         assistControllerStep = 0.05,
+        recoveryWatcherStep = 0.12,
+        recoveryNoTrackGrace = 0.22,
     }
 
     self.fallbackNumericIds = {
@@ -212,6 +222,106 @@ function AnimationMimic:hasNativePlayingTrack(character)
     end
 
     return false
+end
+
+function AnimationMimic:hasNativeLocomotionTrack(character)
+    if not character then return false end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
+
+    local ignored = {}
+    local controller = self.directControllerByChar[character]
+    if controller and controller.tracks then
+        for _, t in pairs(controller.tracks) do
+            ignored[t] = true
+        end
+    end
+
+    local primer = self.posePrimerByChar[character]
+    if primer and primer.track then
+        ignored[primer.track] = true
+    end
+
+    for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
+        if track.IsPlaying and not ignored[track] and not isActionPriority(track.Priority) then
+            return true
+        end
+    end
+
+    return false
+end
+
+function AnimationMimic:stopRecoveryWatcher(character)
+    if not character then return end
+    local watcher = self.recoveryWatcherByChar[character]
+    if not watcher then return end
+    if watcher.connection and watcher.connection.Connected then
+        watcher.connection:Disconnect()
+    end
+    self.recoveryWatcherByChar[character] = nil
+end
+
+function AnimationMimic:stopAllRecoveryWatchers()
+    local chars = {}
+    for c in pairs(self.recoveryWatcherByChar) do chars[#chars + 1] = c end
+    for _, c in ipairs(chars) do self:stopRecoveryWatcher(c) end
+end
+
+function AnimationMimic:startRecoveryWatcher(character, animationSet)
+    if not character then return end
+    if not self.settings.useDirectTrackFallback then return end
+
+    self:stopRecoveryWatcher(character)
+
+    local watcher = {
+        connection = nil,
+        nextCheckAt = 0,
+        noTrackSince = nil,
+        set = animationSet,
+    }
+
+    self.recoveryWatcherByChar[character] = watcher
+
+    watcher.connection = RunService.Heartbeat:Connect(function()
+        if not self.active or not character.Parent then
+            self:stopRecoveryWatcher(character)
+            return
+        end
+
+        local now = os.clock()
+        if now < watcher.nextCheckAt then return end
+        watcher.nextCheckAt = now + (self.settings.recoveryWatcherStep or 0.12)
+
+        if self.directControllerByChar[character] then
+            watcher.noTrackSince = nil
+            return
+        end
+
+        if self:hasNativeLocomotionTrack(character) then
+            watcher.noTrackSince = nil
+            self:stopPosePrimer(character)
+            return
+        end
+
+        if not watcher.noTrackSince then
+            watcher.noTrackSince = now
+            return
+        end
+
+        if now - watcher.noTrackSince < (self.settings.recoveryNoTrackGrace or 0.22) then
+            return
+        end
+
+        watcher.noTrackSince = nil
+
+        local sourceSet = watcher.set or self:getGuaranteedFallbackSet()
+        self:ensureIdlePrimer(character, sourceSet)
+
+        local started = self:ensureAssistController(character, sourceSet)
+        if not started then
+            self:ensureAssistController(character, self:getGuaranteedFallbackSet())
+        end
+    end)
 end
 
 function AnimationMimic:ensureAssistController(character, animationSet)
@@ -717,6 +827,12 @@ function AnimationMimic:pruneStaleCharacterAnimationState(currentCharacter)
             self:stopPosePrimer(character)
         end
     end
+
+    for character in pairs(self.recoveryWatcherByChar) do
+        if character ~= currentCharacter and (not character.Parent or character ~= self.localPlayer.Character) then
+            self:stopRecoveryWatcher(character)
+        end
+    end
 end
 
 function AnimationMimic:startDirectController(character, animationSet, opts)
@@ -814,15 +930,11 @@ function AnimationMimic:startDirectController(character, animationSet, opts)
         end
 
         if controller.assistMode then
-            local hasNativeTrack = false
-            for _, t in ipairs(humanoid:GetPlayingAnimationTracks()) do
-                if t.IsPlaying and not controller.trackSet[t] then
-                    hasNativeTrack = true
-                    break
+            if self:hasNativeLocomotionTrack(character) then
+                controller.active = nil
+                for _, track in pairs(controller.tracks) do
+                    pcall(function() if track.IsPlaying then track:Stop(0.08) end end)
                 end
-            end
-            if hasNativeTrack then
-                self:stopDirectController(character)
                 return
             end
         end
@@ -965,6 +1077,7 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
 
     self:unstickPoseAfterApply(character, animationSet)
     self:replicateAnimationStateForOthers(character, animationSet)
+    self:startRecoveryWatcher(character, animationSet)
 
     if type(self.onAfterApply) == "function" then
         task.defer(function()
@@ -1024,6 +1137,7 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
 
     self:unstickPoseAfterApply(character, ownSet)
     self:replicateAnimationStateForOthers(character, ownSet)
+    self:startRecoveryWatcher(character, ownSet)
 
     return true
 end
@@ -1166,6 +1280,7 @@ function AnimationMimic:setEnabled(enabled)
         local character = self.localPlayer.Character
         self:stopAllDirectControllers()
         self:stopAllPosePrimers()
+        self:stopAllRecoveryWatchers()
         self:resetCharacterAnimations(character)
         self.originalByCharacter = {}
         flushAnimationState(character)
@@ -1191,6 +1306,7 @@ function AnimationMimic:cleanup()
     local character = self.localPlayer.Character
     self:stopAllDirectControllers()
     self:stopAllPosePrimers()
+    self:stopAllRecoveryWatchers()
     self:resetCharacterAnimations(character)
     self.originalByCharacter = {}
 
