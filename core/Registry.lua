@@ -16,6 +16,7 @@ local SettingPaths = {
     CustomDelays                = {"Weapon Modifications", "Custom Delays"},
     Taps                        = {"Weapon Modifications", "Taps"},
     InfiniteRange               = {"Weapon Modifications", "Infinite Range"},
+    InfiniteAmmo                = {"Weapon Modifications", "Infinite Ammo"},
 
     PersistLockOnDeath          = {"Main", "Checks", "Target", "Persist Lock On Death"},
     RetargetInterval            = {"Main", "Retarget Interval"},

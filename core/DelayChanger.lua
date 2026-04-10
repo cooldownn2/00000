@@ -2,9 +2,14 @@
 local LP = game:GetService("Players").LocalPlayer
 
 local Settings, isUnloaded
+local gameStyle
 local connections = {}
 local patchedDelay = {}
 local patchedRange = {}
+local patchedAmmo = {}
+local ammoConnections = {}
+
+local INFINITE_AMMO_VALUE = 9999
 
 local function getDelay(toolName)
 	local delays = Settings.CustomDelays
@@ -16,6 +21,14 @@ end
 local function getDesiredRange()
 	if Settings.InfiniteRange then
 		return 1e9
+	end
+	return nil
+end
+
+local function getDesiredAmmo()
+	if gameStyle ~= "zeehood" then return nil end
+	if Settings.InfiniteAmmo then
+		return INFINITE_AMMO_VALUE
 	end
 	return nil
 end
@@ -166,6 +179,67 @@ local function restoreRange(tool)
 	patchedRange[tool] = nil
 end
 
+local function disconnectAmmoWatcher(tool)
+	local conn = ammoConnections[tool]
+	if conn then
+		pcall(conn.Disconnect, conn)
+		ammoConnections[tool] = nil
+	end
+end
+
+local function restoreAmmo(tool)
+	disconnectAmmoWatcher(tool)
+	local saved = patchedAmmo[tool]
+	if not saved then return end
+	pcall(function()
+		if saved.obj and saved.obj.Parent then
+			saved.obj.Value = saved.original
+		end
+	end)
+	patchedAmmo[tool] = nil
+end
+
+local function applyAmmo(tool)
+	local desired = getDesiredAmmo()
+	if desired == nil then
+		restoreAmmo(tool)
+		return
+	end
+
+	local ammoObj = tool:FindFirstChild("Ammo")
+	if not ammoObj then
+		restoreAmmo(tool)
+		return
+	end
+
+	local saved = patchedAmmo[tool]
+	if not saved or saved.obj ~= ammoObj then
+		restoreAmmo(tool)
+		patchedAmmo[tool] = {
+			obj = ammoObj,
+			original = ammoObj.Value,
+		}
+	end
+
+	pcall(function()
+		if ammoObj.Value < desired then
+			ammoObj.Value = desired
+		end
+	end)
+
+	if not ammoConnections[tool] then
+		ammoConnections[tool] = ammoObj:GetPropertyChangedSignal("Value"):Connect(function()
+			if isUnloaded() then return end
+			if gameStyle ~= "zeehood" or not Settings.InfiniteAmmo then return end
+			pcall(function()
+				if ammoObj.Parent and ammoObj.Value < desired then
+					ammoObj.Value = desired
+				end
+			end)
+		end)
+	end
+end
+
 local function apply(tool)
 	if not tool then return end
 
@@ -194,6 +268,8 @@ local function apply(tool)
 	end
 
 	-- Infinite range patching
+	applyAmmo(tool)
+
 	local desiredRange = getDesiredRange()
 	if desiredRange == nil then
 		restoreRange(tool)
@@ -267,13 +343,18 @@ local function cleanup()
 	for tool in pairs(patchedRange) do
 		restoreRange(tool)
 	end
+	for tool in pairs(patchedAmmo) do
+		restoreAmmo(tool)
+	end
 	patchedDelay = {}
 	patchedRange = {}
+	patchedAmmo = {}
 end
 
 local function init(deps)
 	Settings   = deps.Settings
 	isUnloaded = deps.isUnloaded
+	gameStyle  = deps.gameStyle
 
 	local char = LP.Character
 	if char then onCharacterAdded(char) end
