@@ -127,6 +127,41 @@ local function isActionPriority(priority)
         or priority == Enum.AnimationPriority.Action4
 end
 
+local function hashAnimationSet(animationSet)
+    if not animationSet then return "none" end
+
+    local parts = {}
+    for _, key in ipairs(ANIM_KEYS) do
+        local folderData = animationSet[key]
+        if folderData then
+            parts[#parts + 1] = key
+            parts[#parts + 1] = ":"
+            if folderData.byName then
+                local names = {}
+                for n in pairs(folderData.byName) do names[#names + 1] = tostring(n) end
+                table.sort(names)
+                for i = 1, #names do
+                    local name = names[i]
+                    parts[#parts + 1] = name
+                    parts[#parts + 1] = "="
+                    parts[#parts + 1] = tostring(folderData.byName[name] or "")
+                    parts[#parts + 1] = ";"
+                end
+            end
+            if folderData.ordered then
+                parts[#parts + 1] = "|o="
+                for i = 1, #folderData.ordered do
+                    parts[#parts + 1] = tostring(folderData.ordered[i] or "")
+                    parts[#parts + 1] = ","
+                end
+            end
+            parts[#parts + 1] = "#"
+        end
+    end
+
+    return table.concat(parts, "")
+end
+
 function AnimationMimic.new(deps)
     local self = setmetatable({}, AnimationMimic)
 
@@ -140,6 +175,7 @@ function AnimationMimic.new(deps)
     self.directControllerByChar = {}
     self.posePrimerByChar = {}
     self.recoveryWatcherByChar = {}
+    self.replicateStateByChar = {}
 
     self.lastTargetInput = nil
     self.pinnedTargetUserId = nil
@@ -151,7 +187,7 @@ function AnimationMimic.new(deps)
         useDirectTrackFallback = true,
         cacheTtlSeconds = 22,
         minLiveCoverage = 1,
-        replicateDescriptionToOthers = false,
+        replicateDescriptionToOthers = true,
         invalidateAnimationCacheOnTargetSwitch = false,
         alwaysAssistAfterApply = false,
         adaptiveAssistAfterApply = true,
@@ -160,6 +196,9 @@ function AnimationMimic.new(deps)
         assistControllerStep = 0.05,
         recoveryWatcherStep = 0.12,
         recoveryNoTrackGrace = 0.22,
+        replicateMinIntervalSeconds = 0.45,
+        forceReplicateOnTargetSwitch = true,
+        forceReplicateOnRestore = true,
     }
 
     self.fallbackNumericIds = {
@@ -725,6 +764,17 @@ function AnimationMimic:replicateAnimationStateForOthers(character, animationSet
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
 
+    local force = self._forceReplicateThisApply == true
+    local signature = hashAnimationSet(animationSet)
+    local now = os.clock()
+    local replicateState = self.replicateStateByChar[character]
+    if not force and replicateState and replicateState.signature == signature then
+        local dt = now - (replicateState.timestamp or 0)
+        if dt < (self.settings.replicateMinIntervalSeconds or 0.45) then
+            return true
+        end
+    end
+
     local liveColorSnapshot = self.shared:snapshotCharacterColors(character)
     local scales = self.shared:getCurrentScaleValues(humanoid)
 
@@ -746,6 +796,10 @@ function AnimationMimic:replicateAnimationStateForOthers(character, animationSet
     if humanoid.ApplyDescriptionClientServer then
         local okCS = pcall(function() humanoid:ApplyDescriptionClientServer(currentDesc) end)
         if okCS then
+            self.replicateStateByChar[character] = {
+                signature = signature,
+                timestamp = now,
+            }
             self.shared:restoreCharacterColors(character, liveColorSnapshot)
             task.defer(function()
                 task.wait(0.08)
@@ -770,10 +824,10 @@ function AnimationMimic:applyAnimationSetViaDescription(humanoid, animationSet)
 
     if humanoid.ApplyDescriptionClientServer then
         local okCS = pcall(function() humanoid:ApplyDescriptionClientServer(currentDesc) end)
-        if okCS then return true end
+        if okCS then return true, true end
     end
 
-    return pcall(function() humanoid:ApplyDescription(currentDesc) end)
+    return pcall(function() humanoid:ApplyDescription(currentDesc) end), false
 end
 
 function AnimationMimic:stopDirectController(character)
@@ -1041,6 +1095,8 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     hardResetAnimator(humanoid)
 
     local applied = 0
+    local usedDescriptionPath = false
+    local descReplicatedNetwork = false
     if animate then
         for _, spec in ipairs(SLOT_SPECS) do
             if self:applySlotFromSet(character, animate, animationSet, spec.folder, spec.fallback, true) then
@@ -1057,7 +1113,9 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
         self:stopPosePrimer(character)
         refreshAnimate(character)
     else
-        local descApplied = self:applyAnimationSetViaDescription(humanoid, animationSet)
+        local descApplied, replicatedNetwork = self:applyAnimationSetViaDescription(humanoid, animationSet)
+        usedDescriptionPath = true
+        descReplicatedNetwork = replicatedNetwork == true
         if descApplied then
             self:stopDirectController(character)
             self:stopPosePrimer(character)
@@ -1076,7 +1134,14 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     end
 
     self:unstickPoseAfterApply(character, animationSet)
-    self:replicateAnimationStateForOthers(character, animationSet)
+    if usedDescriptionPath and descReplicatedNetwork then
+        self.replicateStateByChar[character] = {
+            signature = hashAnimationSet(animationSet),
+            timestamp = os.clock(),
+        }
+    else
+        self:replicateAnimationStateForOthers(character, animationSet)
+    end
     self:startRecoveryWatcher(character, animationSet)
 
     if type(self.onAfterApply) == "function" then
@@ -1101,6 +1166,8 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
     hardResetAnimator(humanoid)
 
     local applied = 0
+    local usedDescriptionPath = false
+    local descReplicatedNetwork = false
     if animate then
         for _, spec in ipairs(SLOT_SPECS) do
             if self:applySlotFromSet(character, animate, ownSet, spec.folder, spec.fallback, false) then
@@ -1117,7 +1184,10 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
         self:stopPosePrimer(character)
         refreshAnimate(character)
     else
-        if self:applyAnimationSetViaDescription(humanoid, ownSet) then
+        local descApplied, replicatedNetwork = self:applyAnimationSetViaDescription(humanoid, ownSet)
+        usedDescriptionPath = true
+        descReplicatedNetwork = replicatedNetwork == true
+        if descApplied then
             self:stopDirectController(character)
             self:stopPosePrimer(character)
         else
@@ -1136,7 +1206,16 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
     end
 
     self:unstickPoseAfterApply(character, ownSet)
-    self:replicateAnimationStateForOthers(character, ownSet)
+    self._forceReplicateThisApply = self.settings.forceReplicateOnRestore == true
+    if usedDescriptionPath and descReplicatedNetwork then
+        self.replicateStateByChar[character] = {
+            signature = hashAnimationSet(ownSet),
+            timestamp = os.clock(),
+        }
+    else
+        self:replicateAnimationStateForOthers(character, ownSet)
+    end
+    self._forceReplicateThisApply = false
     self:startRecoveryWatcher(character, ownSet)
 
     return true
@@ -1190,7 +1269,9 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
     self.lastSourceUserId = numericUserId
     self.pinnedTargetUserId = numericUserId
 
+    self._forceReplicateThisApply = switchedTarget and self.settings.forceReplicateOnTargetSwitch == true
     local ok = self:applyAnimationSetToCharacter(character, animationSet)
+    self._forceReplicateThisApply = false
     if not ok then return false end
 
     task.defer(function()
@@ -1277,6 +1358,8 @@ function AnimationMimic:setEnabled(enabled)
     if not enabled then
         self.lastSourceUserId = nil
         self.pinnedTargetUserId = nil
+        self._forceReplicateThisApply = false
+        self.replicateStateByChar = {}
         local character = self.localPlayer.Character
         self:stopAllDirectControllers()
         self:stopAllPosePrimers()
@@ -1302,6 +1385,8 @@ function AnimationMimic:cleanup()
     self.pinnedTargetUserId = nil
     self.lastTargetInput = nil
     self.applyToken = self.applyToken + 1
+    self._forceReplicateThisApply = false
+    self.replicateStateByChar = {}
 
     local character = self.localPlayer.Character
     self:stopAllDirectControllers()
