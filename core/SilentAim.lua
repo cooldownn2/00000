@@ -319,6 +319,15 @@ local function buildZeehoodAssistPayload(basePayload, burstIndex)
     return payload
 end
 
+local function canUseZeehoodAssistShot()
+    if gameStyle ~= "zeehood" then return false end
+    if not isTargetFeatureAllowed() then return false end
+
+    local hitPart, aimPos = resolveAimTarget()
+    if not hitPart or not aimPos then return false end
+    return isPartOwnerAlive(hitPart)
+end
+
 local function getCurrentAimPosition()
     local ok, _, aimPos = pcall(resolveAimTarget)
     if not ok then
@@ -368,6 +377,7 @@ end
 SilentAim.init                   = init
 SilentAim.redirectZeehoodPayload = redirectZeehoodPayload
 SilentAim.buildZeehoodAssistPayload = buildZeehoodAssistPayload
+SilentAim.canUseZeehoodAssistShot = canUseZeehoodAssistShot
 SilentAim.getCurrentAimPosition  = getCurrentAimPosition
 SilentAim.getCurrentMouseHitPosition = getCurrentMouseHitPosition
 SilentAim.prepareShootData = prepareShootData

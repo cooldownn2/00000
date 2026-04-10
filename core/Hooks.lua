@@ -100,11 +100,18 @@ local function buildHooks()
                 end)
 
                 if prepOk then
+                    local canAssist = false
+                    pcall(function()
+                        if SilentAim.canUseZeehoodAssistShot then
+                            canAssist = SilentAim.canUseZeehoodAssistShot()
+                        end
+                    end)
+
                     -- In Zeehood, sending the original shot first can consume
                     -- server cooldown/debounce and cause the wallbang assist
                     -- packet to be ignored. Prefer assist as primary packet
                     -- when wallbang mode is active (VisCheck disabled).
-                    local useAssistPrimary = Settings and (Settings.VisCheck == false)
+                    local useAssistPrimary = canAssist and Settings and (Settings.VisCheck == false)
                     if useAssistPrimary then
                         local sentPrimary = sendZeehoodAssistShot(self, args, 1)
                         if sentPrimary then
@@ -116,10 +123,14 @@ local function buildHooks()
                     end
 
                     local result = oldNamecall(self, ...)
-                    sendZeehoodAssistShot(self, args, 1)
+                    if canAssist then
+                        sendZeehoodAssistShot(self, args, 1)
+                    end
                     for _ = 2, tapCount do
                         pcall(oldNamecall, self, ...)
-                        sendZeehoodAssistShot(self, args, _)
+                        if canAssist then
+                            sendZeehoodAssistShot(self, args, _)
+                        end
                     end
                     return result
                 end
