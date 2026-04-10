@@ -1067,6 +1067,8 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
 
     local switchedTarget = self.lastSourceUserId and self.lastSourceUserId ~= numericUserId
     if switchedTarget then
+        self:stopDirectController(character)
+        self:stopPosePrimer(character)
         self:restoreOwnAnimationsHard(character)
         flushAnimationState(character)
         scrubTracksForDuration(character, 0.18)

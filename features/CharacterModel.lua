@@ -56,6 +56,14 @@ local function ensureModules()
     outfit = CharOutfit.new({
         shared = shared,
         localPlayer = LP,
+        onAfterApply = function(appliedUserId)
+            if not enabledState or not animation then return end
+            if not appliedUserId then
+                animation:reapply()
+                return
+            end
+            animation:mimicFromUserId(appliedUserId, true)
+        end,
     })
 
     return true
