@@ -113,12 +113,8 @@ local function redirectZeehoodPayload(payload)
 
     if not hitPart or not aimPos then return end
 
-    -- Zeehood payloads do not have a Range field. To support Infinite Range,
-    -- spoof the server-visible StartPoint to the aimed position the same way
-    -- ForceHit does for this profile.
-    if Settings and Settings.InfiniteRange and payload.StartPoint then
-        payload.StartPoint = aimPos
-    end
+    -- Keep StartPoint untouched so Zeehood can replicate server-side bullet
+    -- tracers from the real muzzle origin for all players.
 
     if type(payload.Pellets) == "table" then
         for _, p in ipairs(payload.Pellets) do
