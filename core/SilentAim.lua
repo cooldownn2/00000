@@ -17,6 +17,29 @@ local function clearFakeState()
     State.FakePos  = nil
 end
 
+local function isClosestPointMode()
+    local mode = string.lower(tostring(Settings.TargetPart or ""))
+    return mode == "closest point" or mode == "closestpoint"
+end
+
+local function resolveZeehoodSafePart(part)
+    if typeof(part) ~= "Instance" or not part:IsA("BasePart") then
+        return nil
+    end
+
+    local char = part.Parent
+    if typeof(char) ~= "Instance" then
+        return part
+    end
+
+    return char:FindFirstChild("Head")
+        or char:FindFirstChild("UpperTorso")
+        or char:FindFirstChild("Torso")
+        or char:FindFirstChild("LowerTorso")
+        or char:FindFirstChild("HumanoidRootPart")
+        or part
+end
+
 local function resolveAimTarget()
     if not isTargetFeatureAllowed() then
         return nil, nil
@@ -45,6 +68,19 @@ local function resolveAimTarget()
                 hitPart = candidatePart
                 aimPos  = computedPos
             end
+        end
+    end
+
+    if gameStyle == "zeehood" and isValidPart(hitPart) then
+        -- Zeehood shot validation is stricter than Dashood. Keep Closest Point
+        -- part selection, but anchor aim position to a stable body-part center.
+        local safePart = resolveZeehoodSafePart(hitPart)
+        if not isValidPart(safePart) then
+            return nil, nil
+        end
+        hitPart = safePart
+        if isClosestPointMode() or not isValidVec3(aimPos) then
+            aimPos = safePart.Position
         end
     end
 

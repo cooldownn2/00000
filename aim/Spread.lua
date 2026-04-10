@@ -15,6 +15,14 @@ end
 local function resolveLockPartForCharacter(char)
     if not char then return nil end
     if isClosestPointMode() then
+        if gameStyle == "zeehood" then
+            return char:FindFirstChild("Head")
+                or char:FindFirstChild("UpperTorso")
+                or char:FindFirstChild("Torso")
+                or char:FindFirstChild("LowerTorso")
+                or char:FindFirstChild("HumanoidRootPart")
+                or char:FindFirstChildWhichIsA("BasePart")
+        end
         return char:FindFirstChild("HumanoidRootPart")
             or char:FindFirstChild("UpperTorso")
             or char:FindFirstChild("Torso")
