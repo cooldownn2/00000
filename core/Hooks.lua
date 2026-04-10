@@ -3,7 +3,6 @@ local GH, MainEvent, oldShoot, mt, oldNamecall, oldIndex
 local isStoredShootArgsValid
 local Taps
 local SilentAim
-local ForceHit
 local Settings
 local LP, UIS, Mouse
 local hookedShoot, hookedNamecall, hookedIndex
@@ -56,13 +55,6 @@ local function sendZeehoodAssistShot(self, baseArgs, burstIndex)
         return false
     end
 
-    if ForceHit and ForceHit.sendAssistShot then
-        local ok, sent = pcall(ForceHit.sendAssistShot)
-        if ok and sent then
-            return true
-        end
-    end
-
     local payload
 
     local ok = pcall(function()
@@ -77,6 +69,13 @@ local function sendZeehoodAssistShot(self, baseArgs, burstIndex)
 
     pcall(oldNamecall, self, "GunFired", payload)
     return true
+end
+
+local function queueZeehoodAssistShot(self, baseArgs, burstIndex)
+    task.defer(function()
+        if State.Unloaded then return end
+        pcall(sendZeehoodAssistShot, self, baseArgs, burstIndex)
+    end)
 end
 
 local function buildHooks()
@@ -145,12 +144,12 @@ local function buildHooks()
 
                     local result = oldNamecall(self, ...)
                     if canAssist then
-                        sendZeehoodAssistShot(self, args, 1)
+                        queueZeehoodAssistShot(self, args, 1)
                     end
                     for _ = 2, tapCount do
                         pcall(oldNamecall, self, ...)
                         if canAssist then
-                            sendZeehoodAssistShot(self, args, _)
+                            queueZeehoodAssistShot(self, args, _)
                         end
                     end
                     return result
@@ -217,7 +216,6 @@ local function init(deps)
     isStoredShootArgsValid = deps.isStoredShootArgsValid
     Taps                   = deps.Taps
     SilentAim              = deps.SilentAim
-    ForceHit               = deps.ForceHit
     Settings               = deps.Settings
     LP                     = deps.LP
     UIS                    = deps.UIS

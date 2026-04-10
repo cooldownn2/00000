@@ -267,7 +267,6 @@ Hooks.init(mergeDeps({
     oldNamecall    = oldNamecall,
     SilentAim      = SilentAim,
     Taps           = Taps,
-    ForceHit       = ForceHit,
 }))
 
 Hooks.install()
