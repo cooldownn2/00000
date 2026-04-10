@@ -10,14 +10,49 @@ local hookedShoot, hookedNamecall, hookedIndex
 local gameStyle
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
+local assistRayParams = RaycastParams.new()
+assistRayParams.FilterType = Enum.RaycastFilterType.Exclude
+assistRayParams.IgnoreWater = true
 
 local function setReadOnlySafe(value)
     if setreadonly then setreadonly(mt, value) end
 end
 
+local function shouldUseZeehoodAssistShot()
+    if not Settings or Settings.VisCheck then
+        return false
+    end
+
+    local part = State and State.CurrentPart or nil
+    if typeof(part) ~= "Instance" or not part:IsA("BasePart") then
+        return false
+    end
+
+    local cam = workspace.CurrentCamera
+    if not cam then return false end
+
+    local myChar = LP and LP.Character
+    assistRayParams.FilterDescendantsInstances = myChar and { myChar } or {}
+
+    local origin = cam.CFrame.Position
+    local direction = part.Position - origin
+    local result = workspace:Raycast(origin, direction, assistRayParams)
+    if not result then
+        return false
+    end
+
+    -- If first hit is the target character itself, target is visible and
+    -- there is no need to send a wallbang assist shot.
+    local targetChar = part.Parent
+    if result.Instance and targetChar and result.Instance:IsDescendantOf(targetChar) then
+        return false
+    end
+
+    return true
+end
+
 local function sendZeehoodAssistShot(self, baseArgs, burstIndex)
-    -- Respect Visible Check semantics: when enabled, wallbang path stays off.
-    if Settings and Settings.VisCheck then
+    if not shouldUseZeehoodAssistShot() then
         return false
     end
 
@@ -106,21 +141,7 @@ local function buildHooks()
                             canAssist = SilentAim.canUseZeehoodAssistShot()
                         end
                     end)
-
-                    -- In Zeehood, sending the original shot first can consume
-                    -- server cooldown/debounce and cause the wallbang assist
-                    -- packet to be ignored. Prefer assist as primary packet
-                    -- when wallbang mode is active (VisCheck disabled).
-                    local useAssistPrimary = canAssist and Settings and (Settings.VisCheck == false)
-                    if useAssistPrimary then
-                        local sentPrimary = sendZeehoodAssistShot(self, args, 1)
-                        if sentPrimary then
-                            for _ = 2, tapCount do
-                                sendZeehoodAssistShot(self, args, _)
-                            end
-                            return nil
-                        end
-                    end
+                    canAssist = canAssist and shouldUseZeehoodAssistShot()
 
                     local result = oldNamecall(self, ...)
                     if canAssist then
