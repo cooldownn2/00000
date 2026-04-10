@@ -81,6 +81,8 @@ local function applyUserConfig(settings, userConfig)
 
         -- Weapon Modifications
         { {"Weapon Modifications","Infinite Range"},         {"Weapon Modifications","Infinite Range"} },
+        { {"Weapon Modifications","WallBang"},               {"Weapon Modifications","WallBang"} },
+        { {"Weapon Modifications","Wallbang"},               {"Weapon Modifications","WallBang"} },
         { {"Weapon Modifications","Spread Modifications"},   {"Weapon Modifications","Spread Modifications"} },
         { {"Weapon Modifications","Custom Delays"},          {"Weapon Modifications","Custom Delays"} },
         { {"Weapon Modifications","Taps"},                   {"Weapon Modifications","Taps"} },
