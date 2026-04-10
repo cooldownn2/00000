@@ -82,6 +82,7 @@ end
 
 local function shouldBypassReduceWalk()
     if gameStyle ~= "zeehood" then return false end
+    local shootingGun = UIS:IsMouseButtonPressed(MOUSE1) and getEquippedTool() ~= nil
     return State.Enabled
         or State.LockedTarget ~= nil
         or State.TriggerbotHoldActive
@@ -89,6 +90,7 @@ local function shouldBypassReduceWalk()
         or State.CamlockHoldActive
         or State.CamlockToggleActive
         or State.ForceHitActive
+        or shootingGun
 end
 
 local function clearReduceWalkFlags()
