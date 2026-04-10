@@ -228,7 +228,6 @@ local sharedDeps = {
     oldIndex               = oldIndex,
     cloneArgs              = cloneArgs,
     applyRangePolicy       = applyRangePolicy,
-    isClosestPointMode     = isClosestPointMode,
     getSpreadAimPosition   = getSpreadAimPosition,
     getCamlockAimPosition  = getCamlockAimPosition,
     isTargetFeatureAllowed = isTargetFeatureAllowed,

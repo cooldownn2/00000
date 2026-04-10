@@ -221,9 +221,41 @@ local function getCurrentAimPosition()
     return typeof(aimPos) == "Vector3" and aimPos or nil
 end
 
+local function getCurrentMouseHitPosition()
+    local function isValidPart(part)
+        return typeof(part) == "Instance" and part:IsA("BasePart") and part.Parent ~= nil
+    end
+
+    if not isTargetFeatureAllowed() then
+        return nil
+    end
+
+    if isValidPart(State.FakePart) then
+        if typeof(State.FakePos) == "Vector3" then
+            return State.FakePos
+        end
+        return State.FakePart.Position
+    end
+
+    local current = State.CurrentPart
+    if not isValidPart(current) then
+        return nil
+    end
+
+    if gameStyle == "zeehood" then
+        local safePart = resolveZeehoodSafePart(current)
+        if isValidPart(safePart) then
+            return safePart.Position
+        end
+    end
+
+    return current.Position
+end
+
 SilentAim.init                   = init
 SilentAim.redirectZeehoodPayload = redirectZeehoodPayload
 SilentAim.getCurrentAimPosition  = getCurrentAimPosition
+SilentAim.getCurrentMouseHitPosition = getCurrentMouseHitPosition
 SilentAim.prepareShootData = prepareShootData
 SilentAim.recordShootArgs = recordShootArgs
 SilentAim.shouldRedirectFireServer = shouldRedirectFireServer
