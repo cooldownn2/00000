@@ -121,6 +121,10 @@ local function redirectZeehoodPayload(payload)
             p.HitPosition = aimPos
             p.HitInstance = hitPart
         end
+        -- Some Zeehood handlers use top-level fields for visuals even when
+        -- pellet data exists; mirror them here for tracer compatibility.
+        payload.HitPosition = aimPos
+        payload.HitInstance = hitPart
     else
         payload.HitPosition = aimPos
         payload.HitInstance = hitPart
