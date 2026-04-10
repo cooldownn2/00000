@@ -114,6 +114,60 @@ local function applyFaceTexture(char, texture)
     decal.Parent = head
 end
 
+local function clearHeadFaceDecals(head)
+    if not head then return end
+    for _, child in ipairs(head:GetChildren()) do
+        if child:IsA("Decal") and (child.Name == "face" or child.Face == Enum.NormalId.Front) then
+            pcall(function() child:Destroy() end)
+        end
+    end
+end
+
+local function applyHeadVisualFromSource(char, sourceHead, desiredFaceTexture)
+    local destHead = char and char:FindFirstChild("Head")
+    if not destHead or not sourceHead then
+        applyFaceTexture(char, desiredFaceTexture)
+        return
+    end
+
+    pcall(function()
+        if sourceHead:IsA("BasePart") and destHead:IsA("BasePart") then
+            destHead.Transparency = sourceHead.Transparency
+        end
+    end)
+
+    pcall(function()
+        if sourceHead:IsA("MeshPart") and destHead:IsA("MeshPart") then
+            destHead.MeshId = sourceHead.MeshId
+            destHead.TextureID = sourceHead.TextureID
+        end
+    end)
+
+    local srcMesh = sourceHead:FindFirstChildOfClass("SpecialMesh")
+    local dstMesh = destHead:FindFirstChildOfClass("SpecialMesh")
+    if srcMesh then
+        if not dstMesh then
+            dstMesh = srcMesh:Clone()
+            dstMesh.Parent = destHead
+        else
+            dstMesh.MeshId = srcMesh.MeshId
+            dstMesh.TextureId = srcMesh.TextureId
+            dstMesh.Scale = srcMesh.Scale
+            dstMesh.Offset = srcMesh.Offset
+        end
+    elseif dstMesh then
+        pcall(function() dstMesh:Destroy() end)
+    end
+
+    -- If the source head is effectively hidden (headless-style), never add face decals.
+    if sourceHead.Transparency >= 0.98 then
+        clearHeadFaceDecals(destHead)
+        return
+    end
+
+    applyFaceTexture(char, desiredFaceTexture)
+end
+
 local function toColor3(value)
     local kind = typeof(value)
     if kind == "Color3" then return value end
@@ -440,16 +494,18 @@ function OutfitMimic:applyAppearance(userId, char, applyToken)
     end
 
     local bodySourceModel = bodyModel or sourceModel
+    local sourceHead = bodySourceModel:FindFirstChild("Head") or sourceModel:FindFirstChild("Head")
     local desiredFaceTexture = self.shared:resolveFaceTexture(userId, bodySourceModel, targetDesc)
     local sourcePartSizeMap = buildSourcePartSizeMap(bodySourceModel)
     local charPartMap = buildBasePartMap(char)
     local attachmentCarrierMap = buildAttachmentCarrierMap(charPartMap)
 
+    local function enforceHeadVisualNow()
+        applyHeadVisualFromSource(char, sourceHead, desiredFaceTexture)
+    end
+
     for _, partName in ipairs(BODY_PART_NAMES) do
         if bodyApplied then
-            if partName == "Head" then
-                applyFaceTexture(char, desiredFaceTexture)
-            end
         else
             local src = bodySourceModel:FindFirstChild(partName) or sourceModel:FindFirstChild(partName)
             local dest = char:FindFirstChild(partName)
@@ -491,12 +547,11 @@ function OutfitMimic:applyAppearance(userId, char, applyToken)
                     end
                 end
 
-                if partName == "Head" then
-                    applyFaceTexture(char, desiredFaceTexture)
-                end
             end
         end
     end
+
+    enforceHeadVisualNow()
 
     if not self:isApplyStillCurrent(applyToken) then
         self.shared:destroyColorSnapshot(postDescriptionColorSnapshot)
@@ -529,7 +584,7 @@ function OutfitMimic:applyAppearance(userId, char, applyToken)
             if not char.Parent then return end
             local h = char:FindFirstChildOfClass("Humanoid")
             if h then pcall(function() h:BuildRigFromAttachments() end) end
-            applyFaceTexture(char, desiredFaceTexture)
+            enforceHeadVisualNow()
         end)
     end
 
@@ -547,7 +602,7 @@ function OutfitMimic:applyAppearance(userId, char, applyToken)
 
     self:enforceSkinColorFromDescription(targetDesc, char, bodySourceModel, postDescriptionColorSnapshot)
     self.shared:destroyColorSnapshot(postDescriptionColorSnapshot)
-    applyFaceTexture(char, desiredFaceTexture)
+    enforceHeadVisualNow()
 
     task.defer(function()
         local retryDelays = { 0.1, 0.28, 0.55 }
@@ -583,6 +638,7 @@ function OutfitMimic:applyAppearance(userId, char, applyToken)
             else
                 self:enforceSkinColorFromDescription(targetDesc, char, nil, nil)
             end
+            enforceHeadVisualNow()
         end
 
         self.shared:destroyColorSnapshot(delayedSkinSnapshot)
