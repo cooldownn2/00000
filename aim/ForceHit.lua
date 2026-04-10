@@ -213,7 +213,7 @@ local _shootArgs = {
     Range        = 1e9,
 }
 
-local function fireBurst(tool, targetChar)
+local function fireBurst(tool, targetChar, forcedShots)
     local p = buildShotParams(tool, targetChar)
     if not p then return end
 
@@ -250,7 +250,9 @@ local function fireBurst(tool, targetChar)
     -- Hoist method ref — avoids repeated __index on MainEvent for every shot
     local fireServer = MainEvent.FireServer
     local step       = TIMESTAMP_STEP
-    for i = 1, p.shots do
+    local totalShots = tonumber(forcedShots) or p.shots
+    if totalShots < 1 then totalShots = 1 end
+    for i = 1, totalShots do
         if p.hum.Health <= 0 then break end
         if p.ammo and p.ammo.Value <= 0 then break end
         if isShotgun then
@@ -316,6 +318,39 @@ local function fireBurst(tool, targetChar)
     if p.remote then
         pcall(p.remote.FireServer, p.remote)
     end
+end
+
+local function sendAssistShot()
+    if not Settings or not State then return false end
+    if isUnloaded() then return false end
+    if Settings.ForceHitEnabled then return false end
+
+    local myChar = LP.Character
+    if not myChar then return false end
+    local myHum = myChar:FindFirstChild("Humanoid")
+    if not myHum or myHum.Health <= 0 then return false end
+    if not myChar:FindFirstChild("FULLY_LOADED_CHAR") then return false end
+
+    local myBe = myChar:FindFirstChild("BodyEffects")
+    if myBe then
+        if myBe:FindFirstChild("K.O") and myBe["K.O"].Value then return false end
+        if myBe:FindFirstChild("Dead") and myBe.Dead.Value then return false end
+        if myBe:FindFirstChild("Cuff") and myBe.Cuff.Value then return false end
+        if myBe:FindFirstChild("Grabbed") and myBe.Grabbed.Value then return false end
+    end
+    if myChar:FindFirstChild("GRABBING_CONSTRAINT") then return false end
+    if myChar:FindFirstChild("FORCEFIELD") then return false end
+
+    local tool = getEquippedGun()
+    if not tool then return false end
+
+    local target = State.LockedTarget
+    local char   = target and target.Character
+    if not char or not isTargetValid(char) then return false end
+    if not isInRange(tool, char) then return false end
+
+    local ok = pcall(fireBurst, tool, char, 1)
+    return ok
 end
 
 local function startLoop()
@@ -412,6 +447,7 @@ return {
     init            = init,
     startLoop       = startLoop,
     stopLoop        = stopLoop,
+    sendAssistShot  = sendAssistShot,
     onTargetChanged = onTargetChanged,
     isActive        = isActive,
     getDistanceInfo = getDistanceInfo,

@@ -3,6 +3,8 @@ local GH, MainEvent, oldShoot, mt, oldNamecall, oldIndex
 local isStoredShootArgsValid
 local Taps
 local SilentAim
+local ForceHit
+local Settings
 local LP, UIS, Mouse
 local hookedShoot, hookedNamecall, hookedIndex
 local gameStyle
@@ -14,6 +16,18 @@ local function setReadOnlySafe(value)
 end
 
 local function sendZeehoodAssistShot(self, baseArgs, burstIndex)
+    -- Respect Visible Check semantics: when enabled, wallbang path stays off.
+    if Settings and Settings.VisCheck then
+        return false
+    end
+
+    if ForceHit and ForceHit.sendAssistShot then
+        local ok, sent = pcall(ForceHit.sendAssistShot)
+        if ok and sent then
+            return true
+        end
+    end
+
     local payload
 
     local ok = pcall(function()
@@ -156,6 +170,8 @@ local function init(deps)
     isStoredShootArgsValid = deps.isStoredShootArgsValid
     Taps                   = deps.Taps
     SilentAim              = deps.SilentAim
+    ForceHit               = deps.ForceHit
+    Settings               = deps.Settings
     LP                     = deps.LP
     UIS                    = deps.UIS
     Mouse                  = LP and LP:GetMouse() or nil
