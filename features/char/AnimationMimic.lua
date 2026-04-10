@@ -336,7 +336,7 @@ function AnimationMimic:startRecoveryWatcher(character, animationSet)
             return
         end
 
-        if self:hasNativeLocomotionTrack(character) then
+        if self:hasNativePlayingTrack(character) then
             watcher.noTrackSince = nil
             self:stopPosePrimer(character)
             return
@@ -692,40 +692,47 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
     if cached then return cached end
 
     local fromLive = self:getAnimationSetFromLivePlayer(userId)
-    local liveCoverage = countAnimationSetCoverage(fromLive)
-    if liveCoverage >= (self.settings.minLiveCoverage or 1) and liveCoverage > 0 then
-        self:setCachedAnimationSet(userId, fromLive)
-        return fromLive
-    end
-
     local fromDesc = self:getAnimationSetFromDescription(userId)
     local fromRig = self:getAnimationSetFromTempRig(userId)
 
-    local function pickBetter(currentBest, candidate)
-        if not candidate then return currentBest end
-        local coverage = countAnimationSetCoverage(candidate.set)
-        if coverage <= 0 then return currentBest end
-        if not currentBest then
-            return { set = candidate.set, coverage = coverage, priority = candidate.priority }
+    local merged = {}
+    for _, key in ipairs(ANIM_KEYS) do
+        local fdLive = fromLive and fromLive[key] or nil
+        local fdRig = fromRig and fromRig[key] or nil
+        local fdDesc = fromDesc and fromDesc[key] or nil
+
+        local chosen = nil
+        if hasAnimationFolderData(fdLive) then
+            chosen = fdLive
+        elseif hasAnimationFolderData(fdRig) then
+            chosen = fdRig
+        elseif hasAnimationFolderData(fdDesc) then
+            chosen = fdDesc
         end
-        if coverage > currentBest.coverage then
-            return { set = candidate.set, coverage = coverage, priority = candidate.priority }
+
+        if chosen then
+            merged[key] = {
+                byName = {},
+                ordered = {},
+                first = chosen.first,
+            }
+
+            for name, id in pairs(chosen.byName or {}) do
+                merged[key].byName[name] = id
+            end
+
+            for i = 1, #(chosen.ordered or {}) do
+                merged[key].ordered[i] = chosen.ordered[i]
+            end
         end
-        if coverage == currentBest.coverage and candidate.priority > currentBest.priority then
-            return { set = candidate.set, coverage = coverage, priority = candidate.priority }
-        end
-        return currentBest
     end
 
-    local best = nil
-    best = pickBetter(best, { set = fromLive, priority = 3 })
-    best = pickBetter(best, { set = fromRig, priority = 2 })
-    best = pickBetter(best, { set = fromDesc, priority = 1 })
+    if countAnimationSetCoverage(merged) <= 0 then
+        return nil
+    end
 
-    if not best or not best.set then return nil end
-
-    self:setCachedAnimationSet(userId, best.set)
-    return best.set
+    self:setCachedAnimationSet(userId, merged)
+    return merged
 end
 
 function AnimationMimic:getAnimationSetFromUserIdWithRetry(userId, attempts)
@@ -984,7 +991,7 @@ function AnimationMimic:startDirectController(character, animationSet, opts)
         end
 
         if controller.assistMode then
-            if self:hasNativeLocomotionTrack(character) then
+            if self:hasNativePlayingTrack(character) then
                 controller.active = nil
                 for _, track in pairs(controller.tracks) do
                     pcall(function() if track.IsPlaying then track:Stop(0.08) end end)
