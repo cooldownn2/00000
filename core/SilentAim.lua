@@ -243,6 +243,13 @@ local function getCurrentMouseHitPosition()
     end
 
     if gameStyle == "zeehood" then
+        if isClosestPointMode() then
+            local ok, closestPos = pcall(getSpreadAimPosition, current)
+            if ok and typeof(closestPos) == "Vector3" then
+                return closestPos
+            end
+        end
+
         local safePart = resolveZeehoodSafePart(current)
         if isValidPart(safePart) then
             return safePart.Position

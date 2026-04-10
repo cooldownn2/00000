@@ -3,13 +3,21 @@ local LP = game:GetService("Players").LocalPlayer
 
 local Settings, isUnloaded
 local connections = {}
-local patched = {}
+local patchedDelay = {}
+local patchedRange = {}
 
 local function getDelay(toolName)
 	local delays = Settings.CustomDelays
 	if type(delays) ~= "table" or delays["Enabled"] == false then return nil end
 	local v = delays[toolName]
 	return (type(v) == "number" and v >= 0) and v or nil
+end
+
+local function getDesiredRange()
+	if Settings.InfiniteRange then
+		return 1e9
+	end
+	return nil
 end
 
 local function readUpvalue(fn, i)
@@ -81,6 +89,25 @@ local function findViaConfigTable(tool)
 	return nil
 end
 
+local function findViaRangeConfigTable(tool)
+	local ok, conns = pcall(getconnections, tool.Activated)
+	if not ok or not conns then return nil end
+	for _, conn in ipairs(conns) do
+		local fn = conn.Function
+		if not fn then continue end
+		for i = 1, 64 do
+			local val, valid = readUpvalue(fn, i)
+			if not valid then break end
+			if type(val) == "table"
+				and type(val["Range"]) == "number"
+				and val["Range"] > 0 then
+				return val
+			end
+		end
+	end
+	return nil
+end
+
 -- Returns a mode-tagged handle describing how to get/set the cooldown for a tool.
 local function findCooldownAny(tool)
 	-- Try ShootingCooldown-value based approach first (Dashood style).
@@ -101,36 +128,94 @@ local function findCooldownAny(tool)
 	return nil
 end
 
-local function restore(tool)
-	local saved = patched[tool]
+local function findRangeAny(tool)
+	local rangeObj = tool:FindFirstChild("Range")
+	if rangeObj and type(rangeObj.Value) == "number" then
+		return { mode = "instance", obj = rangeObj, original = rangeObj.Value }
+	end
+
+	local configTable = findViaRangeConfigTable(tool)
+	if configTable then
+		return { mode = "config", tbl = configTable, original = configTable["Range"] }
+	end
+
+	return nil
+end
+
+local function restoreDelay(tool)
+	local saved = patchedDelay[tool]
 	if not saved then return end
 	if saved.mode == "config" then
 		pcall(function() saved.tbl["Cooldown"] = saved.original end)
 	else
 		pcall(debug.setupvalue, saved.fn, saved.idx, saved.original)
 	end
-	patched[tool] = nil
+	patchedDelay[tool] = nil
+end
+
+local function restoreRange(tool)
+	local saved = patchedRange[tool]
+	if not saved then return end
+
+	if saved.mode == "config" then
+		pcall(function() saved.tbl["Range"] = saved.original end)
+	else
+		pcall(function() saved.obj.Value = saved.original end)
+	end
+
+	patchedRange[tool] = nil
 end
 
 local function apply(tool)
 	if not tool then return end
+
+	-- Delay patching
 	local delay = getDelay(tool.Name)
-	if delay == nil then restore(tool); return end
-	if patched[tool] then
-		if patched[tool].mode == "config" then
-			pcall(function() patched[tool].tbl["Cooldown"] = delay end)
+	if delay == nil then
+		restoreDelay(tool)
+	else
+		if patchedDelay[tool] then
+			if patchedDelay[tool].mode == "config" then
+				pcall(function() patchedDelay[tool].tbl["Cooldown"] = delay end)
+			else
+				pcall(debug.setupvalue, patchedDelay[tool].fn, patchedDelay[tool].idx, delay)
+			end
 		else
-			pcall(debug.setupvalue, patched[tool].fn, patched[tool].idx, delay)
+			local handle = findCooldownAny(tool)
+			if handle then
+				patchedDelay[tool] = handle
+				if handle.mode == "config" then
+					handle.tbl["Cooldown"] = delay
+				else
+					debug.setupvalue(handle.fn, handle.idx, delay)
+				end
+			end
+		end
+	end
+
+	-- Infinite range patching
+	local desiredRange = getDesiredRange()
+	if desiredRange == nil then
+		restoreRange(tool)
+		return
+	end
+
+	if patchedRange[tool] then
+		if patchedRange[tool].mode == "config" then
+			pcall(function() patchedRange[tool].tbl["Range"] = desiredRange end)
+		else
+			pcall(function() patchedRange[tool].obj.Value = desiredRange end)
 		end
 		return
 	end
-	local handle = findCooldownAny(tool)
-	if not handle then return end
-	patched[tool] = handle
-	if handle.mode == "config" then
-		handle.tbl["Cooldown"] = delay
+
+	local rangeHandle = findRangeAny(tool)
+	if not rangeHandle then return end
+	patchedRange[tool] = rangeHandle
+	if rangeHandle.mode == "config" then
+		rangeHandle.tbl["Range"] = desiredRange
 	else
-		debug.setupvalue(handle.fn, handle.idx, delay)
+		rangeHandle.obj.Value = desiredRange
 	end
 end
 
@@ -176,10 +261,14 @@ end
 
 local function cleanup()
 	disconnectAll()
-	for tool in pairs(patched) do
-		restore(tool)
+	for tool in pairs(patchedDelay) do
+		restoreDelay(tool)
 	end
-	patched = {}
+	for tool in pairs(patchedRange) do
+		restoreRange(tool)
+	end
+	patchedDelay = {}
+	patchedRange = {}
 end
 
 local function init(deps)
