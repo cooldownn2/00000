@@ -13,8 +13,8 @@ local gameStyle
 local MOUSE1 = Enum.UserInputType.MouseButton1
 local ASSIST_MIN_INTERVAL = 0.05
 local _lastAssistSendAt = 0
-local INF_AMMO_ASSIST_MIN_INTERVAL = 0.02
-local _lastInfAmmoAssistAt = 0
+local INF_AMMO_RELOAD_INTERVAL = 0.2
+local _lastInfAmmoReloadAt = 0
 local _infAmmoShotsByTool = {}
 
 local INF_AMMO_CLIPS = {
@@ -58,10 +58,9 @@ local function trySendZeehoodWallbangAssist()
     end)
 end
 
-local function trySendZeehoodInfAmmoAssist(toolName, shotCount)
+local function trySendZeehoodInfAmmoReload(toolName, shotCount)
     if gameStyle ~= "zeehood" then return end
     if not Settings or Settings.InfiniteAmmo ~= true then return end
-    if not ForceHit or not ForceHit.sendAssistShot then return end
     if type(toolName) ~= "string" then return end
 
     local count = tonumber(shotCount) or 1
@@ -73,12 +72,18 @@ local function trySendZeehoodInfAmmoAssist(toolName, shotCount)
     local clip = getInfAmmoClip(toolName)
     if nextCount <= clip then return end
 
+    local char = LP and LP.Character
+    local be = char and char:FindFirstChild("BodyEffects")
+    local reloadFlag = be and (be:FindFirstChild("Reload") or be:FindFirstChild("Reloading"))
+    if reloadFlag and reloadFlag.Value == true then return end
+
     local now = os.clock()
-    if now - _lastInfAmmoAssistAt < INF_AMMO_ASSIST_MIN_INTERVAL then return end
-    _lastInfAmmoAssistAt = now
+    if now - _lastInfAmmoReloadAt < INF_AMMO_RELOAD_INTERVAL then return end
+    _lastInfAmmoReloadAt = now
+    _infAmmoShotsByTool[toolName] = 0
 
     task.defer(function()
-        pcall(ForceHit.sendAssistShot)
+        pcall(oldNamecall, MainEvent, "Reload")
     end)
 end
 
@@ -153,7 +158,7 @@ local function buildHooks()
                     oldNamecall(self, ...)
                 end
 
-                trySendZeehoodInfAmmoAssist(toolName, tapCount)
+                trySendZeehoodInfAmmoReload(toolName, tapCount)
                 trySendZeehoodWallbangAssist()
                 return result
             end
