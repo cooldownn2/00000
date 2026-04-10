@@ -93,29 +93,20 @@ local function buildHooks()
         local args = {...}
 
         if gameStyle == "zeehood" then
-            -- Zeehood style: the payload is a table at args[2]. Redirect hits
-            -- directly here; there is no GH.shoot hook to set FakePart for us.
+            -- Zeehood style: keep the original payload and drive aim through
+            -- Mouse.Hit sync only. Rewriting GunFired payloads here can cause
+            -- server-side desync (fake bullets/reload lock) in this game.
             if isStoredShootArgsValid(args) then
                 local tapCount = 1
-                local sendArgs = cloneZeehoodArgs(args)
-                local redirectOk = pcall(function()
+                local prepOk = pcall(function()
                     SilentAim.recordShootArgs(args)
-                    SilentAim.redirectZeehoodPayload(sendArgs[2])
                     tapCount = Taps.getTapCount(args)
                 end)
 
-                -- If the redirect path fails for any reason, immediately fall
-                -- back to the original payload so the gun local can finish its
-                -- cooldown/reset logic instead of getting stuck after one shot.
-                local result
-                if redirectOk then
-                    local sendOk, sendResult = pcall(oldNamecall, self, table.unpack(sendArgs))
-                    if not sendOk then
-                        return oldNamecall(self, ...)
-                    end
-                    result = sendResult
+                if prepOk then
+                    local result = oldNamecall(self, ...)
                     for _ = 2, tapCount do
-                        pcall(oldNamecall, self, table.unpack(sendArgs))
+                        pcall(oldNamecall, self, ...)
                     end
                     return result
                 end
