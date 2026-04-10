@@ -107,7 +107,10 @@ local function buildHooks()
                         end
                     end)
 
-                    local result = oldNamecall(self, ...)
+                    local sendOk, result = pcall(oldNamecall, self, ...)
+                    if not sendOk then
+                        return nil
+                    end
                     if canAssist then
                         sendZeehoodAssistShot(self, args, 1)
                     end
