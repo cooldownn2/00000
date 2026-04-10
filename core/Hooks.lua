@@ -100,6 +100,21 @@ local function buildHooks()
                 end)
 
                 if prepOk then
+                    -- In Zeehood, sending the original shot first can consume
+                    -- server cooldown/debounce and cause the wallbang assist
+                    -- packet to be ignored. Prefer assist as primary packet
+                    -- when wallbang mode is active (VisCheck disabled).
+                    local useAssistPrimary = Settings and (Settings.VisCheck == false)
+                    if useAssistPrimary then
+                        local sentPrimary = sendZeehoodAssistShot(self, args, 1)
+                        if sentPrimary then
+                            for _ = 2, tapCount do
+                                sendZeehoodAssistShot(self, args, _)
+                            end
+                            return nil
+                        end
+                    end
+
                     local result = oldNamecall(self, ...)
                     sendZeehoodAssistShot(self, args, 1)
                     for _ = 2, tapCount do
