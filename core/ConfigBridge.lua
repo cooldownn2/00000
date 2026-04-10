@@ -123,6 +123,12 @@ local function applyUserConfig(settings, userConfig)
 
         -- Visuals
         { {"Visuals","Target Card"},                         {"Main","Target Card"} },
+
+        -- Debug / Probe
+        { {"Debug","Remote Probe","Enabled"},              {"Debug","Remote Probe","Enabled"} },
+        { {"Debug","Remote Probe","Verbose"},              {"Debug","Remote Probe","Verbose"} },
+        { {"Debug","Remote Probe","Capture All FireServer"}, {"Debug","Remote Probe","Capture All FireServer"} },
+        { {"Debug","Remote Probe","Auto Dump Seconds"},    {"Debug","Remote Probe","Auto Dump Seconds"} },
     }
 
     for _, entry in ipairs(configMap) do
@@ -205,6 +211,10 @@ local function validateSettings(Settings)
     expectEnum("Hotkeys.ToggleStyle", S.HotkeysToggleStyle, {"pill","dot","none"})
     expectEnum("Triggerbot.FOV.Type", S.TriggerbotFOVType, {"Box","Direct"})
     expectEnum("Camlock.FOV.Type", S.CamlockFOVType, {"Box","Direct"})
+    expectType("Debug.Remote Probe.Enabled", S.RemoteProbeEnabled, "boolean")
+    expectType("Debug.Remote Probe.Verbose", S.RemoteProbeVerbose, "boolean")
+    expectType("Debug.Remote Probe.Capture All FireServer", S.RemoteProbeCaptureAll, "boolean")
+    expectRange("Debug.Remote Probe.Auto Dump Seconds", S.RemoteProbeAutoDumpSeconds, 0, 300)
 
     if type(S.Taps) == "table" then
         for weaponName, entry in pairs(S.Taps) do

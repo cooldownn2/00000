@@ -39,6 +39,7 @@ local DelayChanger  = load("core/DelayChanger")
 local Spread        = load("aim/Spread")
 local Taps          = load("aim/Taps")
 local Targeting     = load("core/Targeting")
+local RemoteProbe   = load("core/RemoteProbe")
 
 local settings   = Config.settings
 local Settings   = Config.Settings
@@ -261,6 +262,7 @@ Features.init(mergeDeps({
 }))
 
 Taps.init(mergeDeps({}))
+RemoteProbe.init(mergeDeps({}))
 Hooks.init(mergeDeps({
     oldShoot       = oldShoot,
     mt             = mt,
@@ -268,6 +270,7 @@ Hooks.init(mergeDeps({
     SilentAim      = SilentAim,
     Taps           = Taps,
     ForceHit       = ForceHit,
+    RemoteProbe    = RemoteProbe,
 }))
 
 Hooks.install()
@@ -305,6 +308,7 @@ local function cleanup()
     TargetCard.bumpToggleId()
     ForceHit.cleanup()
     DelayChanger.cleanup()
+    RemoteProbe.cleanup()
     Spread.cleanup()
     State.FakePart, State.FakePos = nil, nil
     State.CurrentPart = nil; State.LockedTarget = nil; State.LastShootData = nil

@@ -4,6 +4,7 @@ local isStoredShootArgsValid
 local Taps
 local SilentAim
 local ForceHit
+local RemoteProbe
 local Settings
 local LP, UIS, Mouse
 local hookedShoot, hookedNamecall, hookedIndex
@@ -120,7 +121,14 @@ local function buildHooks()
 
     hookedNamecall = function(self, ...)
         if State.Unloaded then return oldNamecall(self, ...) end
-        if getnamecallmethod() ~= "FireServer" or not rawequal(self, MainEvent) then
+
+        local method = getnamecallmethod()
+        if method == "FireServer" and RemoteProbe and RemoteProbe.observeNamecall then
+            local probeArgs = {...}
+            pcall(RemoteProbe.observeNamecall, self, method, probeArgs)
+        end
+
+        if method ~= "FireServer" or not rawequal(self, MainEvent) then
             return oldNamecall(self, ...)
         end
 
@@ -208,6 +216,7 @@ local function init(deps)
     Taps                   = deps.Taps
     SilentAim              = deps.SilentAim
     ForceHit               = deps.ForceHit
+    RemoteProbe            = deps.RemoteProbe
     Settings               = deps.Settings
     LP                     = deps.LP
     UIS                    = deps.UIS
