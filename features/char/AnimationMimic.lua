@@ -150,6 +150,7 @@ function AnimationMimic.new(deps)
     self.originalByCharacter = {}
     self.directControllerByChar = {}
     self.posePrimerByChar = {}
+    self.lastHardRuntimeRecoveryByCharacter = {}
 
     self.lastTargetInput = nil
     self.pinnedTargetUserId = nil
@@ -168,6 +169,8 @@ function AnimationMimic.new(deps)
         assistGraceSeconds = 0.18,
         directControllerStep = 0.03,
         assistControllerStep = 0.05,
+        hardRebuildAnimatorOnApply = false,
+        hardRebuildCooldownSeconds = 1.25,
     }
 
     self.fallbackNumericIds = {
@@ -183,7 +186,9 @@ function AnimationMimic.new(deps)
     return self
 end
 
-function AnimationMimic:prepareRuntimeForApply(character)
+function AnimationMimic:prepareRuntimeForApply(character, opts)
+    opts = opts or {}
+
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not humanoid then
         return { humanoid = nil, animate = nil, reenableAnimate = false }
@@ -194,19 +199,33 @@ function AnimationMimic:prepareRuntimeForApply(character)
 
     local animate = character:FindFirstChild("Animate")
     local reenableAnimate = false
-    if animate and animate:IsA("LocalScript") and not animate.Disabled then
+    local forceAnimatorRebuild = opts.forceAnimatorRebuild == true or self.settings.hardRebuildAnimatorOnApply == true
+    if forceAnimatorRebuild and animate and animate:IsA("LocalScript") and not animate.Disabled then
         animate.Disabled = true
         reenableAnimate = true
         task.wait()
     end
 
     hardResetAnimator(humanoid)
-    recreateAnimator(humanoid)
+
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if forceAnimatorRebuild then
+        animator = recreateAnimator(humanoid)
+    elseif not animator then
+        local okNew, newAnimator = pcall(function()
+            local a = Instance.new("Animator")
+            a.Parent = humanoid
+            return a
+        end)
+        animator = okNew and newAnimator or humanoid:FindFirstChildOfClass("Animator")
+    end
 
     return {
         humanoid = humanoid,
+        animator = animator,
         animate = animate,
         reenableAnimate = reenableAnimate,
+        forceAnimatorRebuild = forceAnimatorRebuild,
     }
 end
 
@@ -223,6 +242,27 @@ function AnimationMimic:finalizeRuntimeAfterApply(character, runtime)
         task.wait()
         humanoid:ChangeState(Enum.HumanoidStateType.Running)
     end
+end
+
+function AnimationMimic:attemptHardRuntimeRecovery(character, animationSet)
+    if not character or not character.Parent then return false end
+
+    local now = os.clock()
+    local last = self.lastHardRuntimeRecoveryByCharacter[character] or 0
+    if now - last < (self.settings.hardRebuildCooldownSeconds or 1.25) then
+        return false
+    end
+    self.lastHardRuntimeRecoveryByCharacter[character] = now
+
+    local runtime = self:prepareRuntimeForApply(character, { forceAnimatorRebuild = true })
+    if not runtime.humanoid then return false end
+
+    self:finalizeRuntimeAfterApply(character, runtime)
+    refreshAnimate(character)
+    forceAnimationKick(character)
+    self:ensureIdlePrimer(character, animationSet)
+
+    return true
 end
 
 function AnimationMimic:getGuaranteedFallbackSet()
@@ -411,6 +451,15 @@ function AnimationMimic:unstickPoseAfterApply(character, animationSet)
         end
 
         if self.directControllerByChar[character] then
+            return
+        end
+
+        self:attemptHardRuntimeRecovery(character, animationSet)
+
+        task.wait(0.12)
+        if not self.active or not character.Parent then return end
+        if self:hasNativePlayingTrack(character) then
+            self:stopPosePrimer(character)
             return
         end
 
@@ -775,6 +824,12 @@ function AnimationMimic:pruneStaleCharacterAnimationState(currentCharacter)
     for character in pairs(self.posePrimerByChar) do
         if character ~= currentCharacter and (not character.Parent or character ~= self.localPlayer.Character) then
             self:stopPosePrimer(character)
+        end
+    end
+
+    for character in pairs(self.lastHardRuntimeRecoveryByCharacter) do
+        if character ~= currentCharacter and (not character.Parent or character ~= self.localPlayer.Character) then
+            self.lastHardRuntimeRecoveryByCharacter[character] = nil
         end
     end
 end
@@ -1232,6 +1287,7 @@ function AnimationMimic:setEnabled(enabled)
     if not enabled then
         self.lastSourceUserId = nil
         self.pinnedTargetUserId = nil
+        self.lastHardRuntimeRecoveryByCharacter = {}
         local character = self.localPlayer.Character
         self:stopAllDirectControllers()
         self:stopAllPosePrimers()
@@ -1256,6 +1312,7 @@ function AnimationMimic:cleanup()
     self.pinnedTargetUserId = nil
     self.lastTargetInput = nil
     self.applyToken = self.applyToken + 1
+    self.lastHardRuntimeRecoveryByCharacter = {}
 
     local character = self.localPlayer.Character
     self:stopAllDirectControllers()
