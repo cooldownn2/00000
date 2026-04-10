@@ -40,22 +40,6 @@ local function resolveZeehoodSafePart(part)
         or part
 end
 
-local function isZeehoodAssistEnabled()
-    return gameStyle == "zeehood" and (Settings.InfiniteRange or Settings.Wallbang)
-end
-
-local function applyZeehoodRangeAndOrigin(payload, aimPos)
-    if Settings.InfiniteRange then
-        payload.Range = 1e9
-    end
-
-    if Settings.Wallbang then
-        -- ForceHit-style wallbang: spawn the redirected assist shot at the
-        -- target so world geometry between shooter and target is bypassed.
-        payload.StartPoint = aimPos
-    end
-end
-
 local function resolveAimTarget()
     if not isTargetFeatureAllowed() then
         return nil, nil
@@ -186,51 +170,60 @@ end
 local function redirectZeehoodPayload(payload)
     if not isTargetFeatureAllowed() then return false end
     if not payload or type(payload) ~= "table" then return false end
-    if not isZeehoodAssistEnabled() then return false end
 
     local hitPart, aimPos = resolveAimTarget()
 
     if not hitPart or not aimPos then return false end
 
-    applyZeehoodRangeAndOrigin(payload, aimPos)
+    -- Forcehit-style origin spoof for redirected assist shots: spawn the shot
+    -- near the target so map geometry between shooter/target doesn't block it.
+    do
+        local startPoint = payload.StartPoint
+        local dir = nil
+        if typeof(startPoint) == "Vector3" then
+            local delta = startPoint - aimPos
+            if delta.Magnitude > 0.01 then
+                dir = delta.Unit
+            end
+        end
+        if not dir then
+            dir = Vector3.new(0, 1, 0)
+        end
+        payload.StartPoint = aimPos + dir * 0.25
+    end
+
+    if Settings.InfiniteRange then
+        payload.Range = 1e9
+    end
 
     if type(payload.Pellets) == "table" then
-        if Settings.Wallbang then
+        -- Preserve the original pellet spread shape by translating the
+        -- existing pellet pattern so its center lands on the locked aim point.
+        local center = Vector3.new(0, 0, 0)
+        local count = 0
+
+        for _, p in ipairs(payload.Pellets) do
+            if type(p) == "table" and typeof(p.HitPosition) == "Vector3" then
+                center = center + p.HitPosition
+                count = count + 1
+            end
+        end
+
+        if count > 0 then
+            center = center / count
             for _, p in ipairs(payload.Pellets) do
                 if type(p) == "table" then
-                    p.HitPosition = aimPos
+                    local origPos = typeof(p.HitPosition) == "Vector3" and p.HitPosition or center
+                    local spreadOffset = origPos - center
+                    p.HitPosition = aimPos + spreadOffset
                     p.HitInstance = hitPart
                 end
             end
         else
-            -- Preserve the original pellet spread shape by translating the
-            -- existing pellet pattern so its center lands on the locked aim point.
-            local center = Vector3.new(0, 0, 0)
-            local count = 0
-
             for _, p in ipairs(payload.Pellets) do
-                if type(p) == "table" and typeof(p.HitPosition) == "Vector3" then
-                    center = center + p.HitPosition
-                    count = count + 1
-                end
-            end
-
-            if count > 0 then
-                center = center / count
-                for _, p in ipairs(payload.Pellets) do
-                    if type(p) == "table" then
-                        local origPos = typeof(p.HitPosition) == "Vector3" and p.HitPosition or center
-                        local spreadOffset = origPos - center
-                        p.HitPosition = aimPos + spreadOffset
-                        p.HitInstance = hitPart
-                    end
-                end
-            else
-                for _, p in ipairs(payload.Pellets) do
-                    if type(p) == "table" then
-                        p.HitPosition = aimPos
-                        p.HitInstance = hitPart
-                    end
+                if type(p) == "table" then
+                    p.HitPosition = aimPos
+                    p.HitInstance = hitPart
                 end
             end
         end
@@ -292,15 +285,10 @@ local function getCurrentMouseHitPosition()
     return current.Position
 end
 
-local function shouldSendZeehoodAssistShot()
-    return isTargetFeatureAllowed() and isZeehoodAssistEnabled()
-end
-
 SilentAim.init                   = init
 SilentAim.redirectZeehoodPayload = redirectZeehoodPayload
 SilentAim.getCurrentAimPosition  = getCurrentAimPosition
 SilentAim.getCurrentMouseHitPosition = getCurrentMouseHitPosition
-SilentAim.shouldSendZeehoodAssistShot = shouldSendZeehoodAssistShot
 SilentAim.prepareShootData = prepareShootData
 SilentAim.recordShootArgs = recordShootArgs
 SilentAim.shouldRedirectFireServer = shouldRedirectFireServer
