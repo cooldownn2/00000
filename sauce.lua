@@ -27,6 +27,10 @@ local TargetCard = load("ui/TargetCard")
 local Features   = load("Features")
 local Movement   = load("features/Movement")
 local CharacterModel = load("features/CharacterModel")
+local CharCommon = load("features/char/Common")
+local CharOutfit = load("features/char/OutfitMimic")
+local CharAnimation = load("features/char/AnimationMimic")
+local CharEmote = load("features/char/EmoteMimic")
 local AimAssist  = load("features/AimAssist")
 local Triggerbot = load("features/Triggerbot")
 local FOVBoxes   = load("features/FOVBoxes")
@@ -286,7 +290,12 @@ Targeting.init(mergeDeps({
     resolveLockPartForCharacter = resolveLockPartForCharacter,
 }))
 
-CharacterModel.init(mergeDeps({}))
+CharacterModel.init(mergeDeps({
+    CharCommon = CharCommon,
+    CharOutfit = CharOutfit,
+    CharAnimation = CharAnimation,
+    CharEmote = CharEmote,
+}))
 CharacterModel.update()
 
 local function watchCharacterTools(char)
