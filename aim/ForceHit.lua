@@ -213,9 +213,11 @@ local _shootArgs = {
     Range        = 1e9,
 }
 
-local function fireBurst(tool, targetChar, forcedShots)
+local function fireBurst(tool, targetChar, forcedShots, assistMode)
     local p = buildShotParams(tool, targetChar)
     if not p then return end
+
+    local isAssist = assistMode == true
 
     local isShotgun = SHOTGUN_NAMES[tool.Name]
 
@@ -226,17 +228,17 @@ local function fireBurst(tool, targetChar, forcedShots)
         pcall(LP.Character.SetAttribute, LP.Character, "LastGunShot", nil)
     end
 
-    if p.remote then
+    if p.remote and not isAssist then
         pcall(p.remote.FireServer, p.remote, "Shoot")
     end
 
-    if playerShotFn then
+    if playerShotFn and not isAssist then
         pcall(playerShotFn, p.handle)
     end
 
     -- Dashood: call GH.shoot to produce the visual tracer beam.
     -- Zeehood has no GunHandler so we skip this entirely.
-    if gameStyle ~= "zeehood" then
+    if gameStyle ~= "zeehood" and not isAssist then
         _shootArgs.Shooter      = LP.Character
         _shootArgs.Handle       = p.handle
         _shootArgs.ForcedOrigin = p.muzzlePos
@@ -315,7 +317,7 @@ local function fireBurst(tool, targetChar, forcedShots)
         end
     end
 
-    if p.remote then
+    if p.remote and not isAssist then
         pcall(p.remote.FireServer, p.remote)
     end
 end
@@ -349,7 +351,7 @@ local function sendAssistShot()
     if not char or not isTargetValid(char) then return false end
     if not isInRange(tool, char) then return false end
 
-    local ok = pcall(fireBurst, tool, char, 1)
+    local ok = pcall(fireBurst, tool, char, 1, true)
     return ok
 end
 
