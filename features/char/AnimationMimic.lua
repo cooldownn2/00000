@@ -1,6 +1,5 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local InsertService = game:GetService("InsertService")
 
 local AnimationMimic = {}
 AnimationMimic.__index = AnimationMimic
@@ -201,34 +200,15 @@ function AnimationMimic.new(deps)
         if id then self.safeDescriptionAnimationIds[id] = true end
     end
 
-    self.descriptionAnimationAssetValidation = {}
-
     return self
 end
 
 function AnimationMimic:isDescriptionAnimationAssetIdValid(numericId)
     if not numericId or numericId <= 0 then return false end
+    if BLOCKED_ANIMATION_NUMERIC_IDS[numericId] then return false end
     if self.safeDescriptionAnimationIds[numericId] then return true end
-
-    local cached = self.descriptionAnimationAssetValidation[numericId]
-    if cached ~= nil then
-        return cached == true
-    end
-
-    local ok, assetModel = pcall(function() return InsertService:LoadAsset(numericId) end)
-    if not ok or not assetModel then
-        self.descriptionAnimationAssetValidation[numericId] = false
-        return false
-    end
-
-    local hasR15AnimFolder = false
-    if assetModel:FindFirstChild("R15Anim", true) then
-        hasR15AnimFolder = true
-    end
-
-    pcall(function() assetModel:Destroy() end)
-    self.descriptionAnimationAssetValidation[numericId] = hasR15AnimFolder
-    return hasR15AnimFolder
+    -- Trust description-provided IDs unless explicitly blocked.
+    return true
 end
 
 function AnimationMimic:getGuaranteedFallbackSet()
@@ -768,8 +748,8 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
     end
 
     local best = nil
-    best = pickBetter(best, { set = fromLive, priority = 4 })
-    best = pickBetter(best, { set = fromLiveDesc, priority = 3 })
+    best = pickBetter(best, { set = fromLiveDesc, priority = 4 })
+    best = pickBetter(best, { set = fromLive, priority = 3 })
     best = pickBetter(best, { set = fromDesc, priority = 2 })
     best = pickBetter(best, { set = fromRig, priority = 1 })
 
@@ -1369,6 +1349,22 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
         if not hum then return end
 
         if #hum:GetPlayingAnimationTracks() == 0 then
+            local function trySet(candidate)
+                if not candidate then return false end
+                if countAnimationSetCoverage(candidate) <= 0 then return false end
+                local applied = self:applyAnimationSetToCharacter(character, candidate)
+                if applied then
+                    self:setCachedAnimationSet(numericUserId, candidate)
+                end
+                return applied
+            end
+
+            local liveDescSet = self:getAnimationSetFromLiveDescription(numericUserId)
+            if trySet(liveDescSet) then return end
+
+            local descSet = self:getAnimationSetFromDescription(numericUserId)
+            if trySet(descSet) then return end
+
             self:restoreOwnAnimationsHard(character)
             self:applyAnimationSetToCharacter(character, animationSet)
         end
