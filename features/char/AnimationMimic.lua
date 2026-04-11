@@ -76,7 +76,18 @@ local function refreshAnimate(character)
     if humanoid then
         local tracks = humanoid:GetPlayingAnimationTracks()
         for _, track in ipairs(tracks) do track:Stop(0) end
-        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+
+        local currentState = humanoid:GetState()
+        local desiredState = Enum.HumanoidStateType.Running
+        if currentState == Enum.HumanoidStateType.Swimming then
+            desiredState = Enum.HumanoidStateType.Swimming
+        elseif currentState == Enum.HumanoidStateType.Climbing then
+            desiredState = Enum.HumanoidStateType.Climbing
+        elseif currentState == Enum.HumanoidStateType.Jumping or currentState == Enum.HumanoidStateType.Freefall then
+            desiredState = Enum.HumanoidStateType.Freefall
+        end
+
+        humanoid:ChangeState(desiredState)
     end
 end
 
@@ -84,17 +95,27 @@ local function forceAnimationKick(character)
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
 
-    humanoid:Move(Vector3.new(0, 0, 0), true)
-    humanoid:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
-    task.wait()
-    humanoid:ChangeState(Enum.HumanoidStateType.Running)
+    local function hasTracksNow()
+        return #humanoid:GetPlayingAnimationTracks() > 0
+    end
+
+    for i = 1, 2 do
+        humanoid:Move(Vector3.new(0, 0, 0), true)
+        humanoid:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
+        task.wait(i == 1 and 0.03 or 0.06)
+
+        if not character.Parent then return end
+        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+        task.wait(0.03)
+
+        if hasTracksNow() then return end
+    end
 
     task.defer(function()
         if not character.Parent then return end
-        local playingTracks = humanoid:GetPlayingAnimationTracks()
-        if #playingTracks > 0 then return end
+        if hasTracksNow() then return end
         humanoid:ChangeState(Enum.HumanoidStateType.RunningNoPhysics)
-        task.wait()
+        task.wait(0.06)
         humanoid:ChangeState(Enum.HumanoidStateType.Running)
     end)
 end
@@ -103,13 +124,19 @@ local function scrubTracksForDuration(character, seconds)
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
 
-    local tracksStart = humanoid:GetPlayingAnimationTracks()
-    for _, track in ipairs(tracksStart) do track:Stop(0) end
+    local deadline = os.clock() + (seconds or 0.2)
 
-    task.wait(seconds or 0.2)
+    local function stopAllTracks()
+        local tracks = humanoid:GetPlayingAnimationTracks()
+        for _, track in ipairs(tracks) do track:Stop(0) end
+        return #tracks
+    end
 
-    local tracksEnd = humanoid:GetPlayingAnimationTracks()
-    for _, track in ipairs(tracksEnd) do track:Stop(0) end
+    local remaining = stopAllTracks()
+    while remaining > 0 and os.clock() < deadline do
+        task.wait(0.03)
+        remaining = stopAllTracks()
+    end
 end
 
 local function hasAnyPlayingTrack(humanoid)
@@ -227,6 +254,9 @@ function AnimationMimic:stopPosePrimer(character)
     local rec = self.posePrimerByChar[character]
     if not rec then return end
     rec.active = false
+    if rec.trackConn and rec.trackConn.Connected then
+        rec.trackConn:Disconnect()
+    end
     if rec.track then
         pcall(function() rec.track:Stop(0.08) end)
         pcall(function() rec.track:Destroy() end)
@@ -280,18 +310,25 @@ function AnimationMimic:ensureIdlePrimer(character, animationSet)
         return
     end
 
-    track.Priority = Enum.AnimationPriority.Idle
+    track.Priority = Enum.AnimationPriority.Core
     track.Looped = true
 
-    local primer = { active = true, anim = anim, track = track }
+    local primer = { active = true, anim = anim, track = track, trackConn = nil }
     self.posePrimerByChar[character] = primer
+
+    primer.trackConn = humanoid.AnimationPlayed:Connect(function(playedTrack)
+        if not primer.active then return end
+        if playedTrack ~= track and playedTrack.IsPlaying then
+            self:stopPosePrimer(character)
+        end
+    end)
 
     pcall(function() track:Play(0.08, 1, 1) end)
 
     task.defer(function()
         local deadline = os.clock() + 1.8
         while primer.active and self.active and character.Parent and os.clock() < deadline do
-            task.wait(0.06)
+            task.wait(0.03)
 
             local tracks = humanoid:GetPlayingAnimationTracks()
             local hasOtherTrack = false
@@ -1075,7 +1112,7 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
     if switchedTarget then
         self:restoreOwnAnimationsHard(character)
         flushAnimationState(character)
-        scrubTracksForDuration(character, 0.18)
+        scrubTracksForDuration(character, 0.06)
         if applyToken ~= self.applyToken then return false end
     end
 
