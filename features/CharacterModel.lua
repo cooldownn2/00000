@@ -22,7 +22,7 @@ local lastUpdate = 0
 local UPDATE_INTERVAL = 0.1
 local switchSerial = 0
 
-local STABILIZE_PASS_DELAYS = { 0.7, 1.6 }
+local STABILIZE_PASS_DELAYS = { 0.45, 1.1, 2.0 }
 
 local ENV_STATE_KEY = "__SauceCharacterModelState"
 local GETGENV_FN = rawget(_G, "getgenv")
@@ -59,6 +59,22 @@ local function ensureModules()
     outfit = CharOutfit.new({
         shared = shared,
         localPlayer = LP,
+        onAfterApply = function(appliedUserId)
+            if not enabledState then return end
+            if not animation or not emote then return end
+
+            task.defer(function()
+                if not enabledState then return end
+                if targetState == "" then return end
+
+                if appliedUserId then
+                    animation:mimicFromUserId(appliedUserId, true)
+                else
+                    animation:reapply()
+                end
+                emote:reapply()
+            end)
+        end,
     })
 
     return true
@@ -103,7 +119,6 @@ local function switchTargetSafe(target)
             if targetState ~= target then return end
             if not ensureModules() then return end
 
-            outfit:reapply()
             animation:reapply()
             emote:reapply()
         end)

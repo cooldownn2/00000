@@ -342,6 +342,7 @@ function OutfitMimic.new(deps)
 
     self.shared = deps.shared
     self.localPlayer = deps.localPlayer
+    self.onAfterApply = deps.onAfterApply
 
     self.active = true
     self.applySerial = 0
@@ -899,6 +900,15 @@ function OutfitMimic:applyAppearance(userId, char, applyToken)
     if bodyModel then bodyModel:Destroy() end
     if humModel then humModel:Destroy() end
     model:Destroy()
+
+    if type(self.onAfterApply) == "function" then
+        task.defer(function()
+            if not self.active then return end
+            if not self:isApplyStillCurrent(applyToken) then return end
+            if not char or not char.Parent then return end
+            pcall(self.onAfterApply, userId, char)
+        end)
+    end
 end
 
 function OutfitMimic:apply(userId)
