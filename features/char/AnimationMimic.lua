@@ -171,6 +171,7 @@ function AnimationMimic.new(deps)
         minLiveCoverage = 1,
         replicateDescriptionToOthers = false,
         invalidateAnimationCacheOnTargetSwitch = false,
+        shortCircuitRigFetchOnFullDescription = false,
         alwaysAssistAfterApply = false,
         adaptiveAssistAfterApply = true,
         assistGraceSeconds = 0.18,
@@ -316,12 +317,17 @@ function AnimationMimic:ensureIdlePrimer(character, animationSet)
     local primer = { active = true, anim = anim, track = track, trackConn = nil }
     self.posePrimerByChar[character] = primer
 
-    primer.trackConn = humanoid.AnimationPlayed:Connect(function(playedTrack)
-        if not primer.active then return end
-        if playedTrack ~= track and playedTrack.IsPlaying then
-            self:stopPosePrimer(character)
-        end
+    local okConn, conn = pcall(function()
+        return humanoid.AnimationPlayed:Connect(function(playedTrack)
+            if not primer.active then return end
+            if playedTrack ~= track and playedTrack.IsPlaying then
+                self:stopPosePrimer(character)
+            end
+        end)
     end)
+    if okConn and conn then
+        primer.trackConn = conn
+    end
 
     pcall(function() track:Play(0.08, 1, 1) end)
 
@@ -591,7 +597,9 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
 
     -- Description can already provide complete slot coverage; avoid creating
     -- a temp rig when we already have every animation bucket resolved.
-    if descCoverage < #ANIM_KEYS then
+    local shouldShortCircuit = self.settings.shortCircuitRigFetchOnFullDescription == true
+        and descCoverage >= #ANIM_KEYS
+    if not shouldShortCircuit then
         fromRig = self:getAnimationSetFromTempRig(userId)
     end
 
