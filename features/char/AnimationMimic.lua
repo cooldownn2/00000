@@ -169,6 +169,9 @@ function AnimationMimic.new(deps)
         useDirectTrackFallback = true,
         cacheTtlSeconds = 22,
         minLiveCoverage = 4,
+        minDescriptionCoverage = 4,
+        avoidCachingRigOnlySet = true,
+        sourceFetchRetryDelays = { 0.12, 0.28, 0.55, 0.85 },
         replicateDescriptionToOthers = true,
         replicationRetryDelays = { 0.12, 0.35 },
         invalidateAnimationCacheOnTargetSwitch = true,
@@ -600,7 +603,8 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
     -- a temp rig when we already have every animation bucket resolved.
     local shouldShortCircuit = self.settings.shortCircuitRigFetchOnFullDescription == true
         and descCoverage >= #ANIM_KEYS
-    if not shouldShortCircuit then
+    local strongDesc = descCoverage >= (self.settings.minDescriptionCoverage or 4)
+    if not shouldShortCircuit and not strongDesc then
         fromRig = self:getAnimationSetFromTempRig(userId)
     end
 
@@ -609,34 +613,45 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
         local coverage = countAnimationSetCoverage(candidate.set)
         if coverage <= 0 then return currentBest end
         if not currentBest then
-            return { set = candidate.set, coverage = coverage, priority = candidate.priority }
+            return { set = candidate.set, coverage = coverage, priority = candidate.priority, source = candidate.source }
         end
         if coverage > currentBest.coverage then
-            return { set = candidate.set, coverage = coverage, priority = candidate.priority }
+            return { set = candidate.set, coverage = coverage, priority = candidate.priority, source = candidate.source }
         end
         if coverage == currentBest.coverage and candidate.priority > currentBest.priority then
-            return { set = candidate.set, coverage = coverage, priority = candidate.priority }
+            return { set = candidate.set, coverage = coverage, priority = candidate.priority, source = candidate.source }
         end
         return currentBest
     end
 
     local best = nil
-    best = pickBetter(best, { set = fromDesc, priority = 3 })
-    best = pickBetter(best, { set = fromLive, priority = 2 })
-    best = pickBetter(best, { set = fromRig, priority = 1 })
+    best = pickBetter(best, { set = fromDesc, priority = 3, source = "desc" })
+    best = pickBetter(best, { set = fromLive, priority = 2, source = "live" })
+    best = pickBetter(best, { set = fromRig, priority = 1, source = "rig" })
 
     if not best or not best.set then return nil end
 
-    self:setCachedAnimationSet(userId, best.set)
+    local shouldCache = true
+    if self.settings.avoidCachingRigOnlySet == true and best.source == "rig" and descCoverage <= 0 and liveCoverage <= 0 then
+        shouldCache = false
+    end
+
+    if shouldCache then
+        self:setCachedAnimationSet(userId, best.set)
+    end
+
     return best.set
 end
 
 function AnimationMimic:getAnimationSetFromUserIdWithRetry(userId, attempts)
-    attempts = attempts or 2
+    local retryDelays = self.settings.sourceFetchRetryDelays or { 0.12, 0.28, 0.55, 0.85 }
+    attempts = attempts or #retryDelays
     for i = 1, attempts do
         local set = self:getAnimationSetFromUserId(userId)
         if set then return set end
-        if i < attempts then task.wait(0.12) end
+        if i < attempts then
+            task.wait(retryDelays[i] or retryDelays[#retryDelays] or 0.2)
+        end
     end
     return nil
 end
@@ -1153,9 +1168,19 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
         return false
     end
 
-    local animationSet = self:getAnimationSetFromUserIdWithRetry(numericUserId, 3)
+    local animationSet = self:getAnimationSetFromUserIdWithRetry(numericUserId, 4)
     if not animationSet then
         self.lastSourceUserId = nil
+        self.pinnedTargetUserId = nil
+        self.resumeUserId = nil
+
+        -- Never leave the local character in a no-animation state on fetch failure.
+        self:restoreOwnAnimationsHard(character)
+        refreshAnimate(character)
+        local hum0 = character:FindFirstChildOfClass("Humanoid")
+        if hum0 and #hum0:GetPlayingAnimationTracks() == 0 then
+            self:startDirectController(character, self:getGuaranteedFallbackSet(), { assistMode = true })
+        end
         return false
     end
 
@@ -1174,7 +1199,14 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
     self.resumeUserId = numericUserId
 
     local ok = self:applyAnimationSetToCharacter(character, animationSet)
-    if not ok then return false end
+    if not ok then
+        self:restoreOwnAnimationsHard(character)
+        local humFail = character:FindFirstChildOfClass("Humanoid")
+        if humFail and #humFail:GetPlayingAnimationTracks() == 0 then
+            self:startDirectController(character, self:getGuaranteedFallbackSet(), { assistMode = true })
+        end
+        return false
+    end
 
     task.defer(function()
         task.wait(0.2)
@@ -1186,7 +1218,10 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
 
         if #hum:GetPlayingAnimationTracks() == 0 then
             self:restoreOwnAnimationsHard(character)
-            self:applyAnimationSetToCharacter(character, animationSet)
+            local reapplied = self:applyAnimationSetToCharacter(character, animationSet)
+            if not reapplied or #hum:GetPlayingAnimationTracks() == 0 then
+                self:startDirectController(character, self:getGuaranteedFallbackSet(), { assistMode = true })
+            end
         end
     end)
 

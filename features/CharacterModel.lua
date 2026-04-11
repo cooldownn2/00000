@@ -21,9 +21,8 @@ local targetState = ""
 local lastUpdate = 0
 local UPDATE_INTERVAL = 0.1
 local switchSerial = 0
-local stabilizedTargetMap = {}
 
-local STABILIZE_PASS_DELAYS = { 0.7 }
+local STABILIZE_PASS_DELAYS = { 0.7, 1.6 }
 
 local ENV_STATE_KEY = "__SauceCharacterModelState"
 local GETGENV_FN = rawget(_G, "getgenv")
@@ -95,23 +94,19 @@ local function switchTargetSafe(target)
         end
     end)
 
-    if not stabilizedTargetMap[target] then
-        stabilizedTargetMap[target] = true
+    for _, delayTime in ipairs(STABILIZE_PASS_DELAYS) do
+        local dt = tonumber(delayTime) or 0
+        task.defer(function()
+            task.wait(math.max(dt, 0))
+            if thisSwitch ~= switchSerial then return end
+            if not enabledState then return end
+            if targetState ~= target then return end
+            if not ensureModules() then return end
 
-        for _, delayTime in ipairs(STABILIZE_PASS_DELAYS) do
-            local dt = tonumber(delayTime) or 0
-            task.defer(function()
-                task.wait(math.max(dt, 0))
-                if thisSwitch ~= switchSerial then return end
-                if not enabledState then return end
-                if targetState ~= target then return end
-                if not ensureModules() then return end
-
-                outfit:reapply()
-                animation:reapply()
-                emote:reapply()
-            end)
-        end
+            outfit:reapply()
+            animation:reapply()
+            emote:reapply()
+        end)
     end
 
     return outfitOk
@@ -259,7 +254,6 @@ local function cleanup()
     enabledState = false
     targetState = ""
     switchSerial = switchSerial + 1
-    stabilizedTargetMap = {}
 
     if outfit then outfit:cleanup() end
     if animation then animation:cleanup() end
