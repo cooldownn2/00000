@@ -763,6 +763,54 @@ function AnimationMimic:applyAnimationSetViaDescription(humanoid, animationSet)
     return pcall(function() humanoid:ApplyDescription(currentDesc) end)
 end
 
+function AnimationMimic:applyTargetDescriptionAnimations(userId, token)
+    local character = self.localPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
+
+    local targetDesc = self.shared:getTargetDescriptionCached(userId)
+    if not targetDesc then return false end
+
+    local okCurrent, currentDesc = pcall(function() return humanoid:GetAppliedDescription() end)
+    if not okCurrent or not currentDesc then return false end
+
+    currentDesc.RunAnimation = targetDesc.RunAnimation
+    currentDesc.WalkAnimation = targetDesc.WalkAnimation
+    currentDesc.IdleAnimation = targetDesc.IdleAnimation
+    currentDesc.JumpAnimation = targetDesc.JumpAnimation
+    currentDesc.FallAnimation = targetDesc.FallAnimation
+    currentDesc.ClimbAnimation = targetDesc.ClimbAnimation
+    currentDesc.SwimAnimation = targetDesc.SwimAnimation
+
+    local scales = self.shared:getCurrentScaleValues(humanoid)
+    if scales then
+        self.shared:applyScaleValuesToDescription(currentDesc, scales)
+    end
+
+    local function applyOnce()
+        if token and token ~= self.applyToken then return false end
+        if humanoid.ApplyDescriptionClientServer then
+            local okCS = pcall(function() humanoid:ApplyDescriptionClientServer(currentDesc) end)
+            if okCS then return true end
+        end
+        return pcall(function() humanoid:ApplyDescription(currentDesc) end)
+    end
+
+    if not applyOnce() then return false end
+
+    task.defer(function()
+        for _ = 1, 2 do
+            task.wait(0.1)
+            if not self.active then return end
+            if token and token ~= self.applyToken then return end
+            if not character.Parent then return end
+            applyOnce()
+        end
+    end)
+
+    return true
+end
+
 function AnimationMimic:stopDirectController(character)
     if not character then return end
 
@@ -1172,6 +1220,15 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
     local switchedTarget = self.lastSourceUserId and self.lastSourceUserId ~= numericUserId
     if switchedTarget then
         self.shared.animationSetCache[numericUserId] = nil
+    end
+
+    if self:applyTargetDescriptionAnimations(numericUserId, applyToken) then
+        self:stopDirectController(character)
+        self:stopPosePrimer(character)
+        self.lastSourceUserId = numericUserId
+        self.pinnedTargetUserId = numericUserId
+        self.resumeUserId = numericUserId
+        return true
     end
 
     local animationSet = self:getAnimationSetFromUserIdWithRetry(numericUserId, 3)
