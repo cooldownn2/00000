@@ -22,6 +22,7 @@ local _coreCallerScriptCache = setmetatable({}, { __mode = "k" })
 local GETGENV_FN = rawget(_G, "getgenv")
 local RUNTIME_ENV = (type(GETGENV_FN) == "function" and GETGENV_FN()) or _G
 local GETCALLINGSCRIPT_FN = rawget(RUNTIME_ENV, "getcallingscript") or rawget(_G, "getcallingscript")
+local CHECKCALLER_FN = rawget(RUNTIME_ENV, "checkcaller") or rawget(_G, "checkcaller")
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
 local ASSIST_MIN_INTERVAL = 0.05
@@ -168,6 +169,14 @@ local function isCoreGuiIdentityCaller()
     return isCore
 end
 
+local function isInternalCaller()
+    if type(CHECKCALLER_FN) ~= "function" then return false end
+
+    local ok, isCaller = pcall(CHECKCALLER_FN)
+    if not ok then return false end
+    return isCaller == true
+end
+
 local function remapUISpooferLocalPlayerIndex(self, key)
     if not LP or not key then return nil end
     if not rawequal(self, LP) then return nil end
@@ -180,11 +189,20 @@ local function remapUISpooferLocalPlayerIndex(self, key)
         return targetUserId
     end
 
-    if not isCoreGuiIdentityCaller() then return nil end
+    local isCoreCaller = isCoreGuiIdentityCaller()
 
     if key == "UserId" then
-        return targetUserId
+        -- If we can't identify callsite script on this executor, allow non-internal
+        -- callers so CoreGui inspect flows still get remapped.
+        if isCoreCaller or type(GETCALLINGSCRIPT_FN) ~= "function" then
+            if not isInternalCaller() then
+                return targetUserId
+            end
+        end
+        return nil
     end
+
+    if not isCoreCaller then return nil end
 
     if key == "Name" and targetName and targetName ~= "" then
         return targetName
