@@ -25,9 +25,49 @@ local STRING_VALUE_CLASS_SET = {
 }
 
 local NIL_SENTINEL = {}
+local IDENTITY_CONTEXT_KEYWORDS = {
+    "inspect",
+    "profile",
+    "hover",
+    "player",
+    "user",
+    "target",
+    "avatar",
+    "card",
+    "identity",
+}
 
 local function normalizeLower(raw)
     return string.lower(tostring(raw or ""))
+end
+
+local function isGenericIdentityKey(rawKey)
+    local key = normalizeLower(rawKey)
+    return key == "id"
+        or key == "name"
+        or key == "display"
+        or key == "displayname"
+end
+
+local function isLikelyIdentityContext(instance)
+    local cursor = instance
+    local depth = 0
+
+    while cursor and depth < 6 do
+        local nodeName = normalizeLower(cursor.Name)
+        if nodeName ~= "" then
+            for i = 1, #IDENTITY_CONTEXT_KEYWORDS do
+                if nodeName:find(IDENTITY_CONTEXT_KEYWORDS[i], 1, true) then
+                    return true
+                end
+            end
+        end
+
+        cursor = cursor.Parent
+        depth = depth + 1
+    end
+
+    return false
 end
 
 local function isAvatarThumbnailImage(rawImage)
@@ -64,7 +104,10 @@ local function isLikelyUserIdKey(rawKey)
     if key == "" then return false end
 
     if key == "userid" or key == "playeruserid" or key == "playerid"
-        or key == "targetuserid" or key == "inspectuserid" then
+        or key == "targetuserid" or key == "inspectuserid"
+        or key == "selecteduserid" or key == "profileuserid"
+        or key == "subjectuserid" or key == "owneruserid"
+        or key == "hoveruserid" then
         return true
     end
 
@@ -83,7 +126,8 @@ local function isLikelyNameKey(rawKey)
     local key = normalizeLower(rawKey)
     if key == "" then return false end
 
-    if key == "username" or key == "displayname" or key == "playername" or key == "targetname" then
+    if key == "username" or key == "displayname" or key == "playername" or key == "targetname"
+        or key == "inspectname" or key == "hovername" or key == "profilename" then
         return true
     end
 
@@ -104,7 +148,8 @@ end
 
 local function isLikelyPlayerObjectKey(rawKey)
     local key = normalizeLower(rawKey)
-    if key == "player" or key == "selectedplayer" or key == "targetplayer" or key == "subjectplayer" then
+    if key == "player" or key == "selectedplayer" or key == "targetplayer" or key == "subjectplayer"
+        or key == "hoveredplayer" or key == "inspectedplayer" then
         return true
     end
     return key:find("player", 1, true) ~= nil and not key:find("template", 1, true)
@@ -315,6 +360,7 @@ function UISpoofer:registerInstanceObservers(instance, watchAttributes)
     local watchValue = NUMERIC_VALUE_CLASS_SET[className] == true
         or STRING_VALUE_CLASS_SET[className] == true
         or className == "ObjectValue"
+    local identityContext = isLikelyIdentityContext(instance)
 
     if not watchImage and not watchText and not watchValue and not watchAttributes then
         return
@@ -362,7 +408,9 @@ function UISpoofer:registerInstanceObservers(instance, watchAttributes)
     if watchAttributes then
         local ok, conn = pcall(function()
             return instance.AttributeChanged:Connect(function(attrName)
-                if isLikelyUserIdKey(attrName) or isLikelyNameKey(attrName) then
+                if isLikelyUserIdKey(attrName)
+                    or isLikelyNameKey(attrName)
+                    or (identityContext and isGenericIdentityKey(attrName)) then
                     scheduleReapply()
                 end
             end)
@@ -378,7 +426,13 @@ function UISpoofer:applyToInstance(instance)
     if not instance or not instance.Parent then return end
 
     local className = instance.ClassName
-    local watchAttributes = false
+    local identityContext = isLikelyIdentityContext(instance)
+    local instanceName = normalizeLower(instance.Name)
+    local isUserIdCarrier = isLikelyUserIdKey(instance.Name)
+        or (identityContext and instanceName == "id")
+    local isNameCarrier = isLikelyNameKey(instance.Name)
+        or (identityContext and (instanceName == "name" or instanceName == "display" or instanceName == "displayname"))
+    local watchAttributes = identityContext
 
     if IMAGE_CLASS_SET[className] then
         local currentImage = instance.Image
@@ -398,7 +452,7 @@ function UISpoofer:applyToInstance(instance)
         end
     end
 
-    if NUMERIC_VALUE_CLASS_SET[className] and isLikelyUserIdKey(instance.Name) then
+    if NUMERIC_VALUE_CLASS_SET[className] and isUserIdCarrier then
         local currentNumeric = tonumber(instance.Value)
         if currentNumeric and math.floor(currentNumeric) ~= self.targetUserId then
             self:rememberOriginal(instance, "Value", instance.Value)
@@ -409,14 +463,14 @@ function UISpoofer:applyToInstance(instance)
     if STRING_VALUE_CLASS_SET[className] then
         local currentString = tostring(instance.Value or "")
 
-        if isLikelyUserIdKey(instance.Name) then
+        if isUserIdCarrier then
             local targetUserIdText = tostring(self.targetUserId)
             local currentNumeric = tonumber(currentString)
             if currentNumeric and math.floor(currentNumeric) ~= self.targetUserId then
                 self:rememberOriginal(instance, "Value", instance.Value)
                 pcall(function() instance.Value = targetUserIdText end)
             end
-        elseif isLikelyNameKey(instance.Name) then
+        elseif isNameCarrier then
             local rewritten = self:rewriteText(currentString)
             if not rewritten and currentString ~= (self.targetDisplayName or "") and currentString ~= (self.targetName or "") then
                 rewritten = self.targetDisplayName or self.targetName
@@ -439,7 +493,12 @@ function UISpoofer:applyToInstance(instance)
     local okAttrs, attrs = pcall(function() return instance:GetAttributes() end)
     if okAttrs and type(attrs) == "table" then
         for attrName, attrValue in pairs(attrs) do
-            if isLikelyUserIdKey(attrName) then
+            local attrIsUserIdCarrier = isLikelyUserIdKey(attrName)
+                or (identityContext and isGenericIdentityKey(attrName) and normalizeLower(attrName) == "id")
+            local attrIsNameCarrier = isLikelyNameKey(attrName)
+                or (identityContext and (normalizeLower(attrName) == "name" or normalizeLower(attrName) == "display" or normalizeLower(attrName) == "displayname"))
+
+            if attrIsUserIdCarrier then
                 watchAttributes = true
 
                 if type(attrValue) == "number" and math.floor(attrValue) ~= self.targetUserId then
@@ -453,7 +512,7 @@ function UISpoofer:applyToInstance(instance)
                         pcall(function() instance:SetAttribute(attrName, targetUserIdText) end)
                     end
                 end
-            elseif isLikelyNameKey(attrName) then
+            elseif attrIsNameCarrier then
                 watchAttributes = true
                 if type(attrValue) == "string" then
                     local rewritten = self:rewriteText(attrValue)
