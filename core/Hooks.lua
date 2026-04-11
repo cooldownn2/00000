@@ -19,7 +19,9 @@ local _uiSpooferProfileUserId = nil
 local _uiSpooferProfileName = nil
 local _uiSpooferProfileDisplayName = nil
 local _coreCallerScriptCache = setmetatable({}, { __mode = "k" })
-local GETCALLINGSCRIPT_FN = rawget(_G, "getcallingscript")
+local GETGENV_FN = rawget(_G, "getgenv")
+local RUNTIME_ENV = (type(GETGENV_FN) == "function" and GETGENV_FN()) or _G
+local GETCALLINGSCRIPT_FN = rawget(RUNTIME_ENV, "getcallingscript") or rawget(_G, "getcallingscript")
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
 local ASSIST_MIN_INTERVAL = 0.05
@@ -115,19 +117,19 @@ local function resolveUISpooferTargetProfile()
     end
 
     local targetName = tostring(targetUserId)
-    local okName, lookedUpName = pcall(function()
-        return Players:GetNameFromUserIdAsync(targetUserId)
-    end)
-    if okName and type(lookedUpName) == "string" and lookedUpName ~= "" then
-        targetName = lookedUpName
-    end
-
     local targetDisplayName = targetName
     local okPlayer, targetPlayer = pcall(function()
         return Players:GetPlayerByUserId(targetUserId)
     end)
-    if okPlayer and targetPlayer and type(targetPlayer.DisplayName) == "string" and targetPlayer.DisplayName ~= "" then
-        targetDisplayName = targetPlayer.DisplayName
+    if okPlayer and targetPlayer then
+        if type(targetPlayer.Name) == "string" and targetPlayer.Name ~= "" then
+            targetName = targetPlayer.Name
+        end
+        if type(targetPlayer.DisplayName) == "string" and targetPlayer.DisplayName ~= "" then
+            targetDisplayName = targetPlayer.DisplayName
+        else
+            targetDisplayName = targetName
+        end
     end
 
     _uiSpooferProfileUserId = targetUserId
