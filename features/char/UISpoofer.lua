@@ -15,6 +15,72 @@ local TEXT_CLASS_SET = {
     TextBox = true,
 }
 
+local NUMERIC_VALUE_CLASS_SET = {
+    IntValue = true,
+    NumberValue = true,
+}
+
+local STRING_VALUE_CLASS_SET = {
+    StringValue = true,
+}
+
+local NIL_SENTINEL = {}
+
+local function normalizeLower(raw)
+    return string.lower(tostring(raw or ""))
+end
+
+local function isLikelyUserIdKey(rawKey)
+    local key = normalizeLower(rawKey)
+    if key == "" then return false end
+
+    if key == "userid" or key == "playeruserid" or key == "playerid"
+        or key == "targetuserid" or key == "inspectuserid" then
+        return true
+    end
+
+    if key:find("user", 1, true) and key:find("id", 1, true) and not key:find("asset", 1, true) then
+        return true
+    end
+
+    if key:find("player", 1, true) and key:find("id", 1, true) then
+        return true
+    end
+
+    return false
+end
+
+local function isLikelyNameKey(rawKey)
+    local key = normalizeLower(rawKey)
+    if key == "" then return false end
+
+    if key == "username" or key == "displayname" or key == "playername" or key == "targetname" then
+        return true
+    end
+
+    if key:find("user", 1, true) and key:find("name", 1, true) then
+        return true
+    end
+
+    if key:find("player", 1, true) and key:find("name", 1, true) then
+        return true
+    end
+
+    if key:find("display", 1, true) and key:find("name", 1, true) then
+        return true
+    end
+
+    return false
+end
+
+local function isLikelyPlayerObjectKey(rawKey)
+    local key = normalizeLower(rawKey)
+    if key == "player" or key == "selectedplayer" or key == "targetplayer" or key == "subjectplayer" then
+        return true
+    end
+    return key:find("player", 1, true) ~= nil and not key:find("template", 1, true)
+end
+
 local function normalizeTargetText(raw)
     if raw == nil then return "" end
     local text = tostring(raw)
@@ -61,9 +127,11 @@ function UISpoofer.new(deps)
     self.targetName = nil
     self.targetDisplayName = nil
     self.targetHeadshot = nil
+    self.localUserId = self.localPlayer and self.localPlayer.UserId or nil
 
     self.connections = {}
     self.observedRoots = {}
+    self.watchedByInstance = setmetatable({}, { __mode = "k" })
     self.originalByInstance = setmetatable({}, { __mode = "k" })
 
     return self
@@ -78,6 +146,7 @@ function UISpoofer:disconnectAll()
         self.connections[i] = nil
     end
     self.observedRoots = {}
+    self.watchedByInstance = setmetatable({}, { __mode = "k" })
 end
 
 function UISpoofer:rememberOriginal(instance, key, value)
@@ -90,7 +159,25 @@ function UISpoofer:rememberOriginal(instance, key, value)
     end
 
     if rec[key] == nil then
-        rec[key] = value
+        rec[key] = (value == nil) and NIL_SENTINEL or value
+    end
+end
+
+function UISpoofer:rememberOriginalAttribute(instance, attrName, value)
+    if not instance or type(attrName) ~= "string" then return end
+
+    local rec = self.originalByInstance[instance]
+    if not rec then
+        rec = {}
+        self.originalByInstance[instance] = rec
+    end
+
+    if type(rec.Attributes) ~= "table" then
+        rec.Attributes = {}
+    end
+
+    if rec.Attributes[attrName] == nil then
+        rec.Attributes[attrName] = value
     end
 end
 
@@ -99,10 +186,21 @@ function UISpoofer:restoreAll()
         if instance and instance.Parent and rec then
             local className = instance.ClassName
             if rec.Image ~= nil and IMAGE_CLASS_SET[className] then
-                pcall(function() instance.Image = rec.Image end)
+                local value = (rec.Image == NIL_SENTINEL) and nil or rec.Image
+                pcall(function() instance.Image = value end)
             end
             if rec.Text ~= nil and TEXT_CLASS_SET[className] then
-                pcall(function() instance.Text = rec.Text end)
+                local value = (rec.Text == NIL_SENTINEL) and nil or rec.Text
+                pcall(function() instance.Text = value end)
+            end
+            if rec.Value ~= nil and (NUMERIC_VALUE_CLASS_SET[className] or STRING_VALUE_CLASS_SET[className] or className == "ObjectValue") then
+                local value = (rec.Value == NIL_SENTINEL) and nil or rec.Value
+                pcall(function() instance.Value = value end)
+            end
+            if type(rec.Attributes) == "table" then
+                for attrName, originalValue in pairs(rec.Attributes) do
+                    pcall(function() instance:SetAttribute(attrName, originalValue) end)
+                end
             end
         end
     end
