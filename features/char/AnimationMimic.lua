@@ -27,6 +27,10 @@ local SLOT_SPECS = {
 
 local ANIM_KEYS = { "climb", "fall", "jump", "run", "walk", "swim", "idle" }
 
+local BLOCKED_ANIMATION_NUMERIC_IDS = {
+    [507765943] = true,
+}
+
 local function getFirstAnimationInFolder(folder)
     if not folder then return nil end
     for _, child in ipairs(folder:GetChildren()) do
@@ -532,21 +536,31 @@ function AnimationMimic:resolveIdFromFolderData(folderData, childName, index)
     return self.shared:normalizeAnimationId(chosen)
 end
 
-function AnimationMimic:resolveIdFromFolderDataWithFallback(folderData, childName, index, fallbackId)
-    if self.settings.useFallbackWhenMissing then
-        return self:resolveIdFromFolderData(folderData, childName, index) or self.shared:normalizeAnimationId(fallbackId)
+function AnimationMimic:sanitizeResolvedAnimationId(rawId, fallbackRawId)
+    local cleaned = self.shared:normalizeAnimationId(rawId)
+    local numeric = self.shared:numericIdFromContentId(cleaned)
+    if numeric and BLOCKED_ANIMATION_NUMERIC_IDS[numeric] then
+        return self.shared:normalizeAnimationId(fallbackRawId)
     end
-    return self:resolveIdFromFolderData(folderData, childName, index)
+    return cleaned or self.shared:normalizeAnimationId(fallbackRawId)
+end
+
+function AnimationMimic:resolveIdFromFolderDataWithFallback(folderData, childName, index, fallbackId)
+    local resolved = self:resolveIdFromFolderData(folderData, childName, index)
+    if self.settings.useFallbackWhenMissing then
+        return self:sanitizeResolvedAnimationId(resolved, fallbackId)
+    end
+    return self:sanitizeResolvedAnimationId(resolved, nil)
 end
 
 function AnimationMimic:makeSingleAnimationData(name, rawId)
-    local cleaned = self.shared:normalizeAnimationId(rawId)
+    local cleaned = self:sanitizeResolvedAnimationId(rawId, nil)
     if not cleaned then return nil end
     return { byName = { [name] = cleaned }, ordered = { cleaned }, first = cleaned }
 end
 
 function AnimationMimic:makeIdleAnimationData(rawIdleId)
-    local cleaned = self.shared:normalizeAnimationId(rawIdleId)
+    local cleaned = self:sanitizeResolvedAnimationId(rawIdleId, nil)
     if not cleaned then return nil end
     return {
         byName = { Animation1 = cleaned, Animation2 = cleaned },
