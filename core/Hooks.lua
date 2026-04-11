@@ -5,11 +5,16 @@ local Taps
 local SilentAim
 local ForceHit
 local Settings
+local Players
 local LP, UIS, Mouse
 local hookedShoot, hookedNamecall, hookedIndex
 local gameStyle
 local random = math.random
 local HUGE = math.huge
+local UI_SPOOFER_RESOLVE_TTL = 1
+local _uiSpooferLastResolvedAt = 0
+local _uiSpooferLastInput = nil
+local _uiSpooferLastResolvedUserId = nil
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
 local ASSIST_MIN_INTERVAL = 0.05
@@ -27,6 +32,92 @@ end
 
 local function isValidHitInstance(value)
     return typeof(value) == "Instance" and value.Parent ~= nil
+end
+
+local function normalizeText(value)
+    local text = tostring(value or "")
+    text = text:gsub("^%s+", "")
+    text = text:gsub("%s+$", "")
+    return text
+end
+
+local function getUISpooferTargetInput()
+    if not Settings then return "" end
+
+    local target = normalizeText(Settings.UISpooferUser)
+    if target ~= "" then return target end
+
+    target = normalizeText(Settings.AvatarSpooferUser)
+    if target ~= "" then return target end
+
+    return normalizeText(Settings.CharacterModelUserId)
+end
+
+local function resolveUISpooferTargetUserId()
+    if not Settings or not Players then return nil end
+    if Settings.UISpooferEnabled ~= true then
+        _uiSpooferLastInput = nil
+        _uiSpooferLastResolvedUserId = nil
+        _uiSpooferLastResolvedAt = 0
+        return nil
+    end
+
+    local input = getUISpooferTargetInput()
+    if input == "" then return nil end
+
+    local now = os.clock()
+    if input == _uiSpooferLastInput
+        and _uiSpooferLastResolvedUserId
+        and (now - _uiSpooferLastResolvedAt) < UI_SPOOFER_RESOLVE_TTL then
+        return _uiSpooferLastResolvedUserId
+    end
+
+    local resolvedUserId = nil
+    local numeric = tonumber(input)
+    if numeric then
+        resolvedUserId = math.floor(numeric)
+    else
+        local ok, lookedUp = pcall(function()
+            return Players:GetUserIdFromNameAsync(input)
+        end)
+        if ok and type(lookedUp) == "number" then
+            resolvedUserId = math.floor(lookedUp)
+        end
+    end
+
+    _uiSpooferLastInput = input
+    _uiSpooferLastResolvedAt = now
+    _uiSpooferLastResolvedUserId = resolvedUserId
+    return resolvedUserId
+end
+
+local function remapUISpooferAvatarMethodArgs(self, method, ...)
+    if not Players or not LP or not rawequal(self, Players) then return nil end
+
+    if method ~= "GetCharacterAppearanceInfoAsync"
+        and method ~= "GetCharacterAppearanceAsync"
+        and method ~= "GetHumanoidDescriptionFromUserId"
+        and method ~= "GetNameFromUserIdAsync"
+        and method ~= "GetUserThumbnailAsync" then
+        return nil
+    end
+
+    local targetUserId = resolveUISpooferTargetUserId()
+    if not targetUserId then return nil end
+
+    local localUserId = tonumber(LP.UserId)
+    if not localUserId then return nil end
+
+    local args = {...}
+    local requestedUserId = tonumber(args[1])
+    if not requestedUserId then return nil end
+
+    if math.floor(requestedUserId) ~= math.floor(localUserId) then
+        return nil
+    end
+
+    args[1] = targetUserId
+    return args
 end
 
 local function cloneArray(arr)
@@ -206,6 +297,10 @@ local function buildHooks()
         if State.Unloaded then return oldNamecall(self, ...) end
 
         local method = getnamecallmethod()
+        local remappedAvatarArgs = remapUISpooferAvatarMethodArgs(self, method, ...)
+        if remappedAvatarArgs then
+            return oldNamecall(self, table.unpack(remappedAvatarArgs))
+        end
 
         if method ~= "FireServer" or not rawequal(self, MainEvent) then
             return oldNamecall(self, ...)
@@ -292,6 +387,7 @@ local function init(deps)
     SilentAim              = deps.SilentAim
     ForceHit               = deps.ForceHit
     Settings               = deps.Settings
+    Players                = deps.Players
     LP                     = deps.LP
     UIS                    = deps.UIS
     Mouse                  = LP and LP:GetMouse() or nil
