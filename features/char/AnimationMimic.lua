@@ -37,7 +37,7 @@ end
 local function hardResetAnimator(humanoid)
     if not humanoid then return end
     local tracks = humanoid:GetPlayingAnimationTracks()
-    for _, track in ipairs(tracks) do track:Stop(0) end
+    for _, track in ipairs(tracks) do track:Stop(0.15) end
 end
 
 local function flushAnimationState(character)
@@ -49,14 +49,14 @@ local function refreshAnimate(character)
     local animate = character and character:FindFirstChild("Animate")
     if animate and animate:IsA("LocalScript") then
         animate.Disabled = true
-        task.wait()
+        task.wait(0.2)
         animate.Disabled = false
     end
 
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if humanoid then
         local tracks = humanoid:GetPlayingAnimationTracks()
-        for _, track in ipairs(tracks) do track:Stop(0) end
+        for _, track in ipairs(tracks) do track:Stop(0.15) end
 
         local currentState = humanoid:GetState()
         local desiredState = Enum.HumanoidStateType.Running
@@ -1183,6 +1183,15 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
     if applyToken ~= self.applyToken then return false end
 
     if switchedTarget then
+        local hum = character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
+                track:Stop(0.2)
+            end
+            task.wait(0.2)
+        end
+        if applyToken ~= self.applyToken then return false end
+
         self:restoreOwnAnimationsHard(character)
         flushAnimationState(character)
         scrubTracksForDuration(character, 0.18)
