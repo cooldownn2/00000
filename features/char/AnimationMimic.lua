@@ -161,6 +161,7 @@ function AnimationMimic.new(deps)
     self.originalByCharacter = {}
     self.directControllerByChar = {}
     self.posePrimerByChar = {}
+    self.animationLoadableCache = {}
 
     self.lastTargetInput = nil
     self.pinnedTargetUserId = nil
@@ -523,7 +524,54 @@ function AnimationMimic:sanitizeResolvedAnimationId(rawId, fallbackRawId)
     if numeric and BLOCKED_ANIMATION_NUMERIC_IDS[numeric] then
         return self.shared:normalizeAnimationId(fallbackRawId)
     end
+    if cleaned and not self:isAnimationIdLoadable(cleaned) then
+        return self.shared:normalizeAnimationId(fallbackRawId)
+    end
     return cleaned or self.shared:normalizeAnimationId(fallbackRawId)
+end
+
+function AnimationMimic:isAnimationIdLoadable(contentId)
+    local numericId = self.shared:numericIdFromContentId(contentId)
+    if not numericId or numericId <= 0 then return false end
+
+    local cached = self.animationLoadableCache[numericId]
+    if cached ~= nil then
+        return cached
+    end
+
+    local character = self.localPlayer and self.localPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then
+        return true
+    end
+
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then
+        local okAnimator, newAnimator = pcall(function() return Instance.new("Animator") end)
+        if okAnimator and newAnimator then
+            newAnimator.Parent = humanoid
+            animator = newAnimator
+        end
+    end
+    if not animator then
+        return true
+    end
+
+    local animation = Instance.new("Animation")
+    animation.AnimationId = contentId
+
+    local okLoad, track = pcall(function()
+        return animator:LoadAnimation(animation)
+    end)
+
+    if okLoad and track then
+        pcall(function() track:Stop(0) end)
+        pcall(function() track:Destroy() end)
+    end
+    pcall(function() animation:Destroy() end)
+
+    self.animationLoadableCache[numericId] = okLoad == true
+    return okLoad == true
 end
 
 function AnimationMimic:resolveIdFromFolderDataWithFallback(folderData, childName, index, fallbackId)
