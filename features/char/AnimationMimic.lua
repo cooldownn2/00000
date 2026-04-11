@@ -169,7 +169,8 @@ function AnimationMimic.new(deps)
         useDirectTrackFallback = true,
         cacheTtlSeconds = 22,
         minLiveCoverage = 1,
-        replicateDescriptionToOthers = false,
+        replicateDescriptionToOthers = true,
+        replicationRetryDelays = { 0.12, 0.35 },
         invalidateAnimationCacheOnTargetSwitch = false,
         shortCircuitRigFetchOnFullDescription = false,
         alwaysAssistAfterApply = false,
@@ -701,6 +702,23 @@ function AnimationMimic:replicateAnimationStateForOthers(character, animationSet
     return false
 end
 
+function AnimationMimic:scheduleReplicationRetry(character, animationSet, token)
+    if self.settings.replicateDescriptionToOthers ~= true then return end
+    local retryDelays = self.settings.replicationRetryDelays or {}
+    if #retryDelays == 0 then return end
+
+    for _, delayTime in ipairs(retryDelays) do
+        local dt = tonumber(delayTime) or 0
+        task.defer(function()
+            task.wait(math.max(dt, 0))
+            if not self.active then return end
+            if token ~= self.applyToken then return end
+            if not character or not character.Parent then return end
+            self:replicateAnimationStateForOthers(character, animationSet)
+        end)
+    end
+end
+
 function AnimationMimic:applyAnimationSetViaDescription(humanoid, animationSet)
     if not humanoid or not animationSet then return false end
 
@@ -841,10 +859,30 @@ function AnimationMimic:startDirectController(character, animationSet, opts)
     }
     self.directControllerByChar[character] = controller
 
+    local function speedForLocomotionTrack(stateName)
+        if stateName ~= "run" and stateName ~= "walk" then
+            return 1
+        end
+
+        local baseWalk = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or 16
+        local baseRatio = baseWalk / 16
+        local moveRatio = math.clamp(humanoid.MoveDirection.Magnitude, 0, 1)
+        local speed = baseRatio * (0.75 + moveRatio * 0.5)
+        return math.clamp(speed, 0.7, 2.2)
+    end
+
+    local function applyTrackSpeed(track, stateName)
+        if not track then return end
+        pcall(function()
+            track:AdjustSpeed(speedForLocomotionTrack(stateName))
+        end)
+    end
+
     local function playState(nextState)
         if controller.active == nextState then
             local t = controller.tracks[nextState]
             if t and not t.IsPlaying then pcall(function() t:Play(0.08, 1, 1) end) end
+            applyTrackSpeed(t, nextState)
             return
         end
 
@@ -852,6 +890,7 @@ function AnimationMimic:startDirectController(character, animationSet, opts)
         for name, track in pairs(controller.tracks) do
             if name == nextState then
                 pcall(function() if not track.IsPlaying then track:Play(0.08, 1, 1) end end)
+                applyTrackSpeed(track, name)
             else
                 pcall(function() if track.IsPlaying then track:Stop(0.08) end end)
             end
@@ -1015,7 +1054,10 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     end
 
     self:unstickPoseAfterApply(character, animationSet)
-    self:replicateAnimationStateForOthers(character, animationSet)
+    local replicated = self:replicateAnimationStateForOthers(character, animationSet)
+    if not replicated then
+        self:scheduleReplicationRetry(character, animationSet, self.applyToken)
+    end
 
     if type(self.onAfterApply) == "function" then
         task.defer(function()
@@ -1074,7 +1116,10 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
     end
 
     self:unstickPoseAfterApply(character, ownSet)
-    self:replicateAnimationStateForOthers(character, ownSet)
+    local replicated = self:replicateAnimationStateForOthers(character, ownSet)
+    if not replicated then
+        self:scheduleReplicationRetry(character, ownSet, self.applyToken)
+    end
 
     return true
 end
