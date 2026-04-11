@@ -419,9 +419,14 @@ function UISpoofer:registerInstanceObservers(instance, watchAttributes)
     if watchAttributes then
         local ok, conn = pcall(function()
             return instance.AttributeChanged:Connect(function(attrName)
+                if identityContext then
+                    scheduleReapply()
+                    return
+                end
+
                 if isLikelyUserIdKey(attrName)
                     or isLikelyNameKey(attrName)
-                    or (identityContext and isGenericIdentityKey(attrName)) then
+                    or isGenericIdentityKey(attrName) then
                     scheduleReapply()
                 end
             end)
@@ -444,6 +449,8 @@ function UISpoofer:applyToInstance(instance)
     local isNameCarrier = isLikelyNameKey(instance.Name)
         or (identityContext and (instanceName == "name" or instanceName == "display" or instanceName == "displayname"))
     local watchAttributes = identityContext
+    local localUserId = tonumber(self.localUserId)
+    local targetUserIdText = tostring(self.targetUserId)
 
     if IMAGE_CLASS_SET[className] then
         local currentImage = instance.Image
@@ -457,15 +464,33 @@ function UISpoofer:applyToInstance(instance)
     if TEXT_CLASS_SET[className] then
         local currentText = instance.Text
         local rewritten = self:rewriteText(currentText)
+        if not rewritten and identityContext and localUserId then
+            local localUserIdText = tostring(localUserId)
+            local replaced, changed = replacePlain(currentText, localUserIdText, targetUserIdText)
+            if changed then
+                rewritten = replaced
+            end
+        end
         if rewritten and rewritten ~= currentText then
             self:rememberOriginal(instance, "Text", currentText)
             pcall(function() instance.Text = rewritten end)
         end
     end
 
-    if NUMERIC_VALUE_CLASS_SET[className] and isUserIdCarrier then
+    if NUMERIC_VALUE_CLASS_SET[className] then
         local currentNumeric = tonumber(instance.Value)
-        if currentNumeric and math.floor(currentNumeric) ~= self.targetUserId then
+        local currentId = currentNumeric and math.floor(currentNumeric) or nil
+        local shouldRewrite = false
+
+        if currentId then
+            if isUserIdCarrier and currentId ~= self.targetUserId then
+                shouldRewrite = true
+            elseif identityContext and localUserId and currentId == localUserId and currentId ~= self.targetUserId then
+                shouldRewrite = true
+            end
+        end
+
+        if shouldRewrite then
             self:rememberOriginal(instance, "Value", instance.Value)
             pcall(function() instance.Value = self.targetUserId end)
         end
@@ -473,11 +498,12 @@ function UISpoofer:applyToInstance(instance)
 
     if STRING_VALUE_CLASS_SET[className] then
         local currentString = tostring(instance.Value or "")
+        local currentNumeric = tonumber(currentString)
+        local currentId = currentNumeric and math.floor(currentNumeric) or nil
+        local isContextLocalId = identityContext and localUserId and currentId == localUserId
 
-        if isUserIdCarrier then
-            local targetUserIdText = tostring(self.targetUserId)
-            local currentNumeric = tonumber(currentString)
-            if currentNumeric and math.floor(currentNumeric) ~= self.targetUserId then
+        if isUserIdCarrier or isContextLocalId then
+            if currentId and currentId ~= self.targetUserId then
                 self:rememberOriginal(instance, "Value", instance.Value)
                 pcall(function() instance.Value = targetUserIdText end)
             end
@@ -493,9 +519,12 @@ function UISpoofer:applyToInstance(instance)
         end
     end
 
-    if className == "ObjectValue" and isLikelyPlayerObjectKey(instance.Name) then
+    if className == "ObjectValue" then
+        local shouldRewritePlayerObject = isLikelyPlayerObjectKey(instance.Name)
+            or (identityContext and instance.Value == self.localPlayer)
+
         local targetPlayer = self:getTargetPlayerInstance()
-        if targetPlayer and targetPlayer ~= instance.Value then
+        if shouldRewritePlayerObject and targetPlayer and targetPlayer ~= instance.Value then
             self:rememberOriginal(instance, "Value", instance.Value)
             pcall(function() instance.Value = targetPlayer end)
         end
@@ -517,7 +546,6 @@ function UISpoofer:applyToInstance(instance)
                     self:rememberOriginalAttribute(instance, attrName, attrValue)
                     pcall(function() instance:SetAttribute(attrName, self.targetUserId) end)
                 elseif type(attrValue) == "string" then
-                    local targetUserIdText = tostring(self.targetUserId)
                     local attrNumeric = tonumber(attrValue)
                     if attrNumeric and math.floor(attrNumeric) ~= self.targetUserId then
                         self:rememberOriginalAttribute(instance, attrName, attrValue)
@@ -534,6 +562,22 @@ function UISpoofer:applyToInstance(instance)
                     if rewritten and rewritten ~= attrValue then
                         self:rememberOriginalAttribute(instance, attrName, attrValue)
                         pcall(function() instance:SetAttribute(attrName, rewritten) end)
+                    end
+                end
+            elseif identityContext then
+                if type(attrValue) == "number" then
+                    local attrNumeric = math.floor(attrValue)
+                    if localUserId and attrNumeric == localUserId and attrNumeric ~= self.targetUserId then
+                        watchAttributes = true
+                        self:rememberOriginalAttribute(instance, attrName, attrValue)
+                        pcall(function() instance:SetAttribute(attrName, self.targetUserId) end)
+                    end
+                elseif type(attrValue) == "string" then
+                    local attrNumeric = tonumber(attrValue)
+                    if localUserId and attrNumeric and math.floor(attrNumeric) == localUserId and math.floor(attrNumeric) ~= self.targetUserId then
+                        watchAttributes = true
+                        self:rememberOriginalAttribute(instance, attrName, attrValue)
+                        pcall(function() instance:SetAttribute(attrName, targetUserIdText) end)
                     end
                 end
             end
