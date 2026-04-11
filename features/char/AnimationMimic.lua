@@ -552,6 +552,39 @@ function AnimationMimic:makeIdleAnimationData(rawIdleId)
     }
 end
 
+function AnimationMimic:cloneFolderData(folderData)
+    if not folderData then return nil end
+    local out = { byName = {}, ordered = {}, first = folderData.first }
+    for name, id in pairs(folderData.byName or {}) do
+        out.byName[name] = id
+    end
+    for i, id in ipairs(folderData.ordered or {}) do
+        out.ordered[i] = id
+    end
+    if not out.first then
+        out.first = out.ordered[1]
+    end
+    return out
+end
+
+function AnimationMimic:enrichJumpFromDescription(baseSet, descSet)
+    if not baseSet or not descSet then return baseSet end
+
+    local fallbackJump = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.jump)
+    local baseJump = self:resolveIdFromFolderData(baseSet.jump, "JumpAnim", 1)
+    local descJump = self:resolveIdFromFolderData(descSet.jump, "JumpAnim", 1)
+
+    if not descJump or descJump == fallbackJump then
+        return baseSet
+    end
+
+    if not baseJump or baseJump == fallbackJump then
+        baseSet.jump = self:cloneFolderData(descSet.jump)
+    end
+
+    return baseSet
+end
+
 function AnimationMimic:getCachedAnimationSet(userId)
     local entry = self.shared:cacheGetEntry(self.shared.animationSetCache, userId, self.settings.cacheTtlSeconds)
     if not entry then return nil end
@@ -711,7 +744,10 @@ end
 
 function AnimationMimic:getAnimationSetFromUserId(userId)
     local cached = self:getCachedAnimationSet(userId)
-    if cached then return cached end
+    if cached then
+        local cachedDesc = self:getAnimationSetFromDescription(userId)
+        return self:enrichJumpFromDescription(cached, cachedDesc)
+    end
 
     local fromLive = self:getAnimationSetFromLivePlayerWithWait(userId, self.settings.liveSourceWaitSeconds)
     local fromRig = self:getAnimationSetFromTempRig(userId)
@@ -744,8 +780,9 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
 
     if not best or not best.set then return nil end
 
-    self:setCachedAnimationSet(userId, best.set)
-    return best.set
+    local finalSet = self:enrichJumpFromDescription(best.set, fromDesc)
+    self:setCachedAnimationSet(userId, finalSet)
+    return finalSet
 
 end
 
