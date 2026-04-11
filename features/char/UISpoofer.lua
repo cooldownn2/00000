@@ -29,6 +29,10 @@ local IDENTITY_CONTEXT_KEYWORDS = {
     "inspect",
     "profile",
     "hover",
+    "people",
+    "playerlist",
+    "ingamemenu",
+    "social",
     "target",
     "avatar",
     "card",
@@ -53,7 +57,7 @@ local function isLikelyIdentityContext(instance)
     local cursor = instance
     local depth = 0
 
-    while cursor and depth < 6 do
+    while cursor and depth < 12 do
         local nodeName = normalizeLower(cursor.Name)
         if nodeName ~= "" and nodeName ~= "playergui" then
             for i = 1, #IDENTITY_CONTEXT_KEYWORDS do
