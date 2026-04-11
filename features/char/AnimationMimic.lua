@@ -61,9 +61,7 @@ end
 
 local function flushAnimationState(character)
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return end
-    local tracks = humanoid:GetPlayingAnimationTracks()
-    for _, track in ipairs(tracks) do track:Stop(0) end
+    hardResetAnimator(humanoid)
 end
 
 local function refreshAnimate(character)
@@ -136,6 +134,7 @@ function AnimationMimic.new(deps)
     self.lastTargetInput = nil
     self.pinnedTargetUserId = nil
     self.lastSourceUserId = nil
+    self.resumeUserId = nil
     self.applyToken = 0
 
     self.settings = {
@@ -550,7 +549,14 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
     end
 
     local fromDesc = self:getAnimationSetFromDescription(userId)
-    local fromRig = self:getAnimationSetFromTempRig(userId)
+    local descCoverage = countAnimationSetCoverage(fromDesc)
+    local fromRig = nil
+
+    -- Description can already provide complete slot coverage; avoid creating
+    -- a temp rig when we already have every animation bucket resolved.
+    if descCoverage < #ANIM_KEYS then
+        fromRig = self:getAnimationSetFromTempRig(userId)
+    end
 
     local function pickBetter(currentBest, candidate)
         if not candidate then return currentBest end
@@ -1075,6 +1081,7 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
 
     self.lastSourceUserId = numericUserId
     self.pinnedTargetUserId = numericUserId
+    self.resumeUserId = numericUserId
 
     local ok = self:applyAnimationSetToCharacter(character, animationSet)
     if not ok then return false end
@@ -1161,6 +1168,7 @@ function AnimationMimic:setEnabled(enabled)
     self.applyToken = self.applyToken + 1
 
     if not enabled then
+        self.resumeUserId = self.pinnedTargetUserId or self.lastSourceUserId or self.resumeUserId
         self.lastSourceUserId = nil
         self.pinnedTargetUserId = nil
         local character = self.localPlayer.Character
@@ -1171,10 +1179,11 @@ function AnimationMimic:setEnabled(enabled)
         flushAnimationState(character)
     else
         local character = self.localPlayer.Character
-        if character and character.Parent and self.lastSourceUserId then
+        local resumeTarget = self.pinnedTargetUserId or self.lastSourceUserId or self.resumeUserId
+        if character and character.Parent and resumeTarget then
             task.defer(function()
                 if self.active then
-                    self:mimicFromUserId(self.lastSourceUserId, true)
+                    self:mimicFromUserId(resumeTarget, true)
                 end
             end)
         end
@@ -1185,6 +1194,7 @@ function AnimationMimic:cleanup()
     self.active = false
     self.lastSourceUserId = nil
     self.pinnedTargetUserId = nil
+    self.resumeUserId = nil
     self.lastTargetInput = nil
     self.applyToken = self.applyToken + 1
 
