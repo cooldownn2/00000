@@ -26,6 +26,9 @@ local STABILIZE_INITIAL_ANIM_DELAY = 0.10
 local STABILIZE_ANIM_DELAY = 0.34
 local STABILIZE_FULL_REAPPLY_DELAY = 0.72
 local STABILIZE_POST_REAPPLY_ANIM_DELAY = 1.05
+local RESPAWN_ANIM_DELAY = 0.68
+local RESPAWN_REAPPLY_DELAY = 1.02
+local RESPAWN_POST_REAPPLY_ANIM_DELAY = 1.30
 
 local ENV_STATE_KEY = "__SauceCharacterModelState"
 local GETGENV_FN = rawget(_G, "getgenv")
@@ -256,9 +259,44 @@ local function onCharacterAdded(char)
     if not enabledState then return end
     if not ensureModules() then return end
 
+    switchApplyToken = switchApplyToken + 1
+    local applyToken = switchApplyToken
+
+    local target = normalizeTarget(targetState ~= "" and targetState or (Settings and Settings.CharacterModelUserId))
+    if target == "" then
+        outfit:onCharacterAdded(char)
+        return
+    end
+    if targetState == "" then
+        targetState = target
+    end
+
+    local function canApplyForToken()
+        return enabledState and applyToken == switchApplyToken and target == targetState and char and char.Parent
+    end
+
+    local function applyAnimAndEmote()
+        if not canApplyForToken() then return end
+        animation:mimicFromTarget(target)
+        emote:mimicFromTarget(target)
+    end
+
     outfit:onCharacterAdded(char)
-    animation:onCharacterAdded(char)
-    emote:onCharacterAdded(char)
+
+    -- Respawn stabilization sequence: outfit first, then animation/emote after
+    -- outfit's delayed apply, then one full reapply pass.
+    task.delay(RESPAWN_ANIM_DELAY, function()
+        applyAnimAndEmote()
+    end)
+
+    task.delay(RESPAWN_REAPPLY_DELAY, function()
+        if not canApplyForToken() then return end
+        outfit:reapply()
+    end)
+
+    task.delay(RESPAWN_POST_REAPPLY_ANIM_DELAY, function()
+        applyAnimAndEmote()
+    end)
 end
 
 local function cleanup()
