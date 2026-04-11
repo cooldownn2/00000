@@ -4,29 +4,27 @@ local RunService = game:GetService("RunService")
 local AnimationMimic = {}
 AnimationMimic.__index = AnimationMimic
 
--- FIX 1 (previous): jump and fall had the same asset ID (507765000).
 local R15_FALLBACK_ANIMATIONS = {
     climb = "rbxassetid://507765644",
-    fall  = "rbxassetid://507765000",
-    jump  = "rbxassetid://507765943",
-    run   = "rbxassetid://913376220",
-    walk  = "rbxassetid://913402848",
-    swim  = "rbxassetid://913384386",
+    fall = "rbxassetid://507765000",
+    jump = "rbxassetid://507765000",
+    run = "rbxassetid://913376220",
+    walk = "rbxassetid://913402848",
+    swim = "rbxassetid://913384386",
     idle1 = "rbxassetid://507766388",
     idle2 = "rbxassetid://507766666",
 }
 
 local SLOT_SPECS = {
     { folder = "climb", fallback = R15_FALLBACK_ANIMATIONS.climb },
-    { folder = "fall",  fallback = R15_FALLBACK_ANIMATIONS.fall  },
-    { folder = "jump",  fallback = R15_FALLBACK_ANIMATIONS.jump  },
-    { folder = "run",   fallback = R15_FALLBACK_ANIMATIONS.run   },
-    { folder = "walk",  fallback = R15_FALLBACK_ANIMATIONS.walk  },
-    { folder = "swim",  fallback = R15_FALLBACK_ANIMATIONS.swim  },
+    { folder = "fall", fallback = R15_FALLBACK_ANIMATIONS.fall },
+    { folder = "jump", fallback = R15_FALLBACK_ANIMATIONS.jump },
+    { folder = "run", fallback = R15_FALLBACK_ANIMATIONS.run },
+    { folder = "walk", fallback = R15_FALLBACK_ANIMATIONS.walk },
+    { folder = "swim", fallback = R15_FALLBACK_ANIMATIONS.swim },
 }
 
 local ANIM_KEYS = { "climb", "fall", "jump", "run", "walk", "swim", "idle" }
-local REQUIRED_ANIMATE_FOLDERS = { "idle", "run", "walk", "jump", "fall", "climb", "swim" }
 
 local function getFirstAnimationInFolder(folder)
     if not folder then return nil end
@@ -34,15 +32,6 @@ local function getFirstAnimationInFolder(folder)
         if child:IsA("Animation") then return child end
     end
     return nil
-end
-
-local function hasReadyAnimateFolders(animate)
-    if not animate then return false end
-    for _, folderName in ipairs(REQUIRED_ANIMATE_FOLDERS) do
-        local folder = animate:FindFirstChild(folderName)
-        if not folder then return false end
-    end
-    return true
 end
 
 local function hasAnimationFolderData(fd)
@@ -60,7 +49,7 @@ end
 
 local function getLocalRigType(localPlayer)
     local character = localPlayer.Character
-    local humanoid  = character and character:FindFirstChildOfClass("Humanoid")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     return humanoid and humanoid.RigType or Enum.HumanoidRigType.R15
 end
 
@@ -131,97 +120,46 @@ local function hasAnyPlayingTrack(humanoid)
     return #tracks > 0
 end
 
-local function isActionPriority(priority)
-    return priority == Enum.AnimationPriority.Action
-        or priority == Enum.AnimationPriority.Action2
-        or priority == Enum.AnimationPriority.Action3
-        or priority == Enum.AnimationPriority.Action4
-end
-
-local function hashAnimationSet(animationSet)
-    if not animationSet then return "none" end
-
-    local parts = {}
-    for _, key in ipairs(ANIM_KEYS) do
-        local folderData = animationSet[key]
-        if folderData then
-            parts[#parts + 1] = key
-            parts[#parts + 1] = ":"
-            if folderData.byName then
-                local names = {}
-                for n in pairs(folderData.byName) do names[#names + 1] = tostring(n) end
-                table.sort(names)
-                for i = 1, #names do
-                    local name = names[i]
-                    parts[#parts + 1] = name
-                    parts[#parts + 1] = "="
-                    parts[#parts + 1] = tostring(folderData.byName[name] or "")
-                    parts[#parts + 1] = ";"
-                end
-            end
-            if folderData.ordered then
-                parts[#parts + 1] = "|o="
-                for i = 1, #folderData.ordered do
-                    parts[#parts + 1] = tostring(folderData.ordered[i] or "")
-                    parts[#parts + 1] = ","
-                end
-            end
-            parts[#parts + 1] = "#"
-        end
-    end
-
-    return table.concat(parts, "")
-end
-
 function AnimationMimic.new(deps)
     local self = setmetatable({}, AnimationMimic)
 
-    self.shared       = deps.shared
-    self.localPlayer  = deps.localPlayer
+    self.shared = deps.shared
+    self.localPlayer = deps.localPlayer
     self.onAfterApply = deps.onAfterApply
 
-    self.active      = true
+    self.active = true
     self.connections = {}
-    self.originalByCharacter    = {}
+    self.originalByCharacter = {}
     self.directControllerByChar = {}
-    self.posePrimerByChar       = {}
-    self.recoveryWatcherByChar  = {}
-    self.replicateStateByChar   = {}
+    self.posePrimerByChar = {}
 
-    self.lastTargetInput    = nil
+    self.lastTargetInput = nil
     self.pinnedTargetUserId = nil
-    self.lastSourceUserId   = nil
-    self.applyToken         = 0
+    self.lastSourceUserId = nil
+    self.applyToken = 0
 
     self.settings = {
-        useFallbackWhenMissing                 = true,
-        useDirectTrackFallback                 = true,
-        cacheTtlSeconds                        = 22,
-        minLiveCoverage                        = 1,
-        replicateDescriptionToOthers           = true,
+        useFallbackWhenMissing = true,
+        useDirectTrackFallback = true,
+        cacheTtlSeconds = 22,
+        minLiveCoverage = 1,
+        replicateDescriptionToOthers = false,
         invalidateAnimationCacheOnTargetSwitch = false,
-        alwaysAssistAfterApply                 = false,
-        adaptiveAssistAfterApply               = true,
-        assistGraceSeconds                     = 0.18,
-        directControllerStep                   = 0.03,
-        assistControllerStep                   = 0.05,
-        recoveryWatcherStep                    = 0.12,
-        recoveryNoTrackGrace                   = 0.22,
-        replicateMinIntervalSeconds            = 0.45,
-        forceReplicateOnTargetSwitch           = true,
-        forceReplicateOnRestore                = true,
-        replicateRetryDelays                   = { 0.12, 0.30 },
+        alwaysAssistAfterApply = false,
+        adaptiveAssistAfterApply = true,
+        assistGraceSeconds = 0.18,
+        directControllerStep = 0.03,
+        assistControllerStep = 0.05,
     }
 
     self.fallbackNumericIds = {
         climb = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.climb),
-        fall  = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.fall),
-        jump  = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.jump),
-        run   = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.run),
-        walk  = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.walk),
-        swim  = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.swim),
+        fall = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.fall),
+        jump = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.jump),
+        run = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.run),
+        walk = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.walk),
+        swim = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.swim),
         idle1 = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.idle1),
-        idle2 = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.idle2),
     }
 
     return self
@@ -230,12 +168,12 @@ end
 function AnimationMimic:getGuaranteedFallbackSet()
     return {
         climb = self:makeSingleAnimationData("ClimbAnim", R15_FALLBACK_ANIMATIONS.climb),
-        fall  = self:makeSingleAnimationData("FallAnim",  R15_FALLBACK_ANIMATIONS.fall),
-        jump  = self:makeSingleAnimationData("JumpAnim",  R15_FALLBACK_ANIMATIONS.jump),
-        run   = self:makeSingleAnimationData("RunAnim",   R15_FALLBACK_ANIMATIONS.run),
-        walk  = self:makeSingleAnimationData("WalkAnim",  R15_FALLBACK_ANIMATIONS.walk),
-        swim  = self:makeSingleAnimationData("Swim",      R15_FALLBACK_ANIMATIONS.swim),
-        idle  = {
+        fall = self:makeSingleAnimationData("FallAnim", R15_FALLBACK_ANIMATIONS.fall),
+        jump = self:makeSingleAnimationData("JumpAnim", R15_FALLBACK_ANIMATIONS.jump),
+        run = self:makeSingleAnimationData("RunAnim", R15_FALLBACK_ANIMATIONS.run),
+        walk = self:makeSingleAnimationData("WalkAnim", R15_FALLBACK_ANIMATIONS.walk),
+        swim = self:makeSingleAnimationData("Swim", R15_FALLBACK_ANIMATIONS.swim),
+        idle = {
             byName = {
                 Animation1 = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.idle1),
                 Animation2 = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.idle2),
@@ -257,35 +195,18 @@ function AnimationMimic:hasNativePlayingTrack(character)
     local ignored = {}
     local controller = self.directControllerByChar[character]
     if controller and controller.tracks then
-        for _, t in pairs(controller.tracks) do ignored[t] = true end
+        for _, t in pairs(controller.tracks) do
+            ignored[t] = true
+        end
     end
 
     local primer = self.posePrimerByChar[character]
-    if primer and primer.track then ignored[primer.track] = true end
-
-    for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
-        if track.IsPlaying and not ignored[track] then return true end
+    if primer and primer.track then
+        ignored[primer.track] = true
     end
 
-    return false
-end
-
-function AnimationMimic:hasNativeLocomotionTrack(character)
-    if not character then return false end
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return false end
-
-    local ignored = {}
-    local controller = self.directControllerByChar[character]
-    if controller and controller.tracks then
-        for _, t in pairs(controller.tracks) do ignored[t] = true end
-    end
-
-    local primer = self.posePrimerByChar[character]
-    if primer and primer.track then ignored[primer.track] = true end
-
     for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
-        if track.IsPlaying and not ignored[track] and not isActionPriority(track.Priority) then
+        if track.IsPlaying and not ignored[track] then
             return true
         end
     end
@@ -293,109 +214,12 @@ function AnimationMimic:hasNativeLocomotionTrack(character)
     return false
 end
 
-function AnimationMimic:hasNativeBlockingTrack(character)
-    if not character then return false end
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return false end
-
-    local ignored = {}
-    local controller = self.directControllerByChar[character]
-    if controller and controller.tracks then
-        for _, t in pairs(controller.tracks) do ignored[t] = true end
-    end
-
-    local primer = self.posePrimerByChar[character]
-    if primer and primer.track then ignored[primer.track] = true end
-
-    for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
-        if track.IsPlaying and not ignored[track] then
-            local p = track.Priority
-            if p == Enum.AnimationPriority.Movement or isActionPriority(p) then
-                return true
-            end
-        end
-    end
-
-    return false
-end
-
-function AnimationMimic:stopRecoveryWatcher(character)
-    if not character then return end
-    local watcher = self.recoveryWatcherByChar[character]
-    if not watcher then return end
-    if watcher.connection and watcher.connection.Connected then
-        watcher.connection:Disconnect()
-    end
-    self.recoveryWatcherByChar[character] = nil
-end
-
-function AnimationMimic:stopAllRecoveryWatchers()
-    local chars = {}
-    for c in pairs(self.recoveryWatcherByChar) do chars[#chars + 1] = c end
-    for _, c in ipairs(chars) do self:stopRecoveryWatcher(c) end
-end
-
-function AnimationMimic:startRecoveryWatcher(character, animationSet)
-    if not character then return end
-    if not self.settings.useDirectTrackFallback then return end
-
-    self:stopRecoveryWatcher(character)
-
-    local watcher = {
-        connection   = nil,
-        nextCheckAt  = 0,
-        noTrackSince = nil,
-        set          = animationSet,
-    }
-
-    self.recoveryWatcherByChar[character] = watcher
-
-    watcher.connection = RunService.Heartbeat:Connect(function()
-        if not self.active or not character.Parent then
-            self:stopRecoveryWatcher(character)
-            return
-        end
-
-        local now = os.clock()
-        if now < watcher.nextCheckAt then return end
-        watcher.nextCheckAt = now + (self.settings.recoveryWatcherStep or 0.12)
-
-        if self.directControllerByChar[character] then
-            watcher.noTrackSince = nil
-            return
-        end
-
-        if self:hasNativeBlockingTrack(character) then
-            watcher.noTrackSince = nil
-            self:stopPosePrimer(character)
-            return
-        end
-
-        if not watcher.noTrackSince then
-            watcher.noTrackSince = now
-            return
-        end
-
-        if now - watcher.noTrackSince < (self.settings.recoveryNoTrackGrace or 0.22) then
-            return
-        end
-
-        watcher.noTrackSince = nil
-
-        local sourceSet = watcher.set or self:getGuaranteedFallbackSet()
-        self:ensureIdlePrimer(character, sourceSet)
-
-        local started = self:ensureAssistController(character, sourceSet)
-        if not started then
-            self:ensureAssistController(character, self:getGuaranteedFallbackSet())
-        end
-    end)
-end
-
 function AnimationMimic:ensureAssistController(character, animationSet)
     if not self.settings.useDirectTrackFallback then return false end
     local existing = self.directControllerByChar[character]
-    if existing and existing.assistMode then return true end
+    if existing and existing.assistMode then
+        return true
+    end
     return self:startDirectController(character, animationSet, { assistMode = true })
 end
 
@@ -458,7 +282,7 @@ function AnimationMimic:ensureIdlePrimer(character, animationSet)
     end
 
     track.Priority = Enum.AnimationPriority.Idle
-    track.Looped   = true
+    track.Looped = true
 
     local primer = { active = true, anim = anim, track = track }
     self.posePrimerByChar[character] = primer
@@ -479,7 +303,9 @@ function AnimationMimic:ensureIdlePrimer(character, animationSet)
                 end
             end
 
-            if hasOtherTrack then break end
+            if hasOtherTrack then
+                break
+            end
         end
 
         if primer.active then
@@ -499,7 +325,7 @@ function AnimationMimic:unstickPoseAfterApply(character, animationSet)
         task.wait(0.07)
         if not self.active or not character.Parent then return end
 
-        if self:hasNativeLocomotionTrack(character) then
+        if hasAnyPlayingTrack(humanoid) then
             self:stopPosePrimer(character)
             return
         end
@@ -508,7 +334,7 @@ function AnimationMimic:unstickPoseAfterApply(character, animationSet)
 
         task.wait(0.22)
         if not self.active or not character.Parent then return end
-        if self:hasNativeLocomotionTrack(character) then
+        if self:hasNativePlayingTrack(character) then
             self:stopPosePrimer(character)
             return
         end
@@ -519,12 +345,14 @@ function AnimationMimic:unstickPoseAfterApply(character, animationSet)
 
         task.wait(0.30)
         if not self.active or not character.Parent then return end
-        if self:hasNativeLocomotionTrack(character) then
+        if self:hasNativePlayingTrack(character) then
             self:stopPosePrimer(character)
             return
         end
 
-        if self.directControllerByChar[character] then return end
+        if self.directControllerByChar[character] then
+            return
+        end
 
         local started = self:startDirectController(character, animationSet, { assistMode = true })
         if not started then
@@ -547,12 +375,14 @@ function AnimationMimic:scheduleAssistIfNeeded(character, animationSet)
         if token ~= self.applyToken then return end
         if not character.Parent then return end
 
-        if self:hasNativeBlockingTrack(character) then
+        if self:hasNativePlayingTrack(character) then
             self:stopPosePrimer(character)
             return
         end
 
-        if self.directControllerByChar[character] then return end
+        if self.directControllerByChar[character] then
+            return
+        end
 
         local started = self:ensureAssistController(character, animationSet)
         if not started then
@@ -599,9 +429,6 @@ function AnimationMimic:extractFolderAnimationData(animate, folderName)
         end
     end
 
-    -- Return nil (not an empty table) when the folder has no valid animations,
-    -- so countAnimationSetCoverage marks this slot as uncovered correctly.
-    if not data.first then return nil end
     return data
 end
 
@@ -609,12 +436,12 @@ function AnimationMimic:buildAnimationSetFromAnimate(animate)
     if not animate then return nil end
     return {
         climb = self:extractFolderAnimationData(animate, "climb"),
-        fall  = self:extractFolderAnimationData(animate, "fall"),
-        jump  = self:extractFolderAnimationData(animate, "jump"),
-        run   = self:extractFolderAnimationData(animate, "run"),
-        walk  = self:extractFolderAnimationData(animate, "walk"),
-        swim  = self:extractFolderAnimationData(animate, "swim"),
-        idle  = self:extractFolderAnimationData(animate, "idle"),
+        fall = self:extractFolderAnimationData(animate, "fall"),
+        jump = self:extractFolderAnimationData(animate, "jump"),
+        run = self:extractFolderAnimationData(animate, "run"),
+        walk = self:extractFolderAnimationData(animate, "walk"),
+        swim = self:extractFolderAnimationData(animate, "swim"),
+        idle = self:extractFolderAnimationData(animate, "idle"),
     }
 end
 
@@ -628,8 +455,7 @@ end
 
 function AnimationMimic:resolveIdFromFolderDataWithFallback(folderData, childName, index, fallbackId)
     if self.settings.useFallbackWhenMissing then
-        return self:resolveIdFromFolderData(folderData, childName, index)
-            or self.shared:normalizeAnimationId(fallbackId)
+        return self:resolveIdFromFolderData(folderData, childName, index) or self.shared:normalizeAnimationId(fallbackId)
     end
     return self:resolveIdFromFolderData(folderData, childName, index)
 end
@@ -644,9 +470,9 @@ function AnimationMimic:makeIdleAnimationData(rawIdleId)
     local cleaned = self.shared:normalizeAnimationId(rawIdleId)
     if not cleaned then return nil end
     return {
-        byName  = { Animation1 = cleaned, Animation2 = cleaned },
+        byName = { Animation1 = cleaned, Animation2 = cleaned },
         ordered = { cleaned, cleaned },
-        first   = cleaned,
+        first = cleaned,
     }
 end
 
@@ -680,38 +506,18 @@ function AnimationMimic:getAnimationSetFromLivePlayer(userId)
     return (countAnimationSetCoverage(set) > 0) and set or nil
 end
 
--- FIX A (animation): HumanoidDescription animation fields return 0 when no
--- custom animation is set. Previously we passed 0 straight into normalizeAnimationId,
--- which could produce a bare "0" asset string. The Animate script then treated
--- that as a valid (but broken) ID and fell back to default/Rthro animations.
--- Now we treat any 0 or missing value as "unset" and return nil for that slot,
--- so countAnimationSetCoverage correctly marks it as uncovered. This means
--- pickBetter will prefer a fully-covered temp rig set over a zero-filled
--- description set, giving you the actual target animations.
 function AnimationMimic:getAnimationSetFromDescription(userId)
     local desc = self.shared:getTargetDescriptionCached(userId)
     if not desc then return nil end
 
-    local function safeSingle(name, rawId)
-        local numeric = tonumber(rawId)
-        if not numeric or numeric == 0 then return nil end
-        return self:makeSingleAnimationData(name, "rbxassetid://" .. numeric)
-    end
-
-    local function safeIdle(rawId)
-        local numeric = tonumber(rawId)
-        if not numeric or numeric == 0 then return nil end
-        return self:makeIdleAnimationData("rbxassetid://" .. numeric)
-    end
-
     return {
-        climb = safeSingle("ClimbAnim", desc.ClimbAnimation),
-        fall  = safeSingle("FallAnim",  desc.FallAnimation),
-        jump  = safeSingle("JumpAnim",  desc.JumpAnimation),
-        run   = safeSingle("RunAnim",   desc.RunAnimation),
-        walk  = safeSingle("WalkAnim",  desc.WalkAnimation),
-        swim  = safeSingle("Swim",      desc.SwimAnimation),
-        idle  = safeIdle(desc.IdleAnimation),
+        climb = self:makeSingleAnimationData("ClimbAnim", desc.ClimbAnimation),
+        fall = self:makeSingleAnimationData("FallAnim", desc.FallAnimation),
+        jump = self:makeSingleAnimationData("JumpAnim", desc.JumpAnimation),
+        run = self:makeSingleAnimationData("RunAnim", desc.RunAnimation),
+        walk = self:makeSingleAnimationData("WalkAnim", desc.WalkAnimation),
+        swim = self:makeSingleAnimationData("Swim", desc.SwimAnimation),
+        idle = self:makeIdleAnimationData(desc.IdleAnimation),
     }
 end
 
@@ -732,68 +538,45 @@ function AnimationMimic:getAnimationSetFromTempRig(userId)
     return set
 end
 
--- Merge by slot so partial live Animate trees do not block better rig/description
--- data for uncovered folders.
 function AnimationMimic:getAnimationSetFromUserId(userId)
     local cached = self:getCachedAnimationSet(userId)
     if cached then return cached end
 
     local fromLive = self:getAnimationSetFromLivePlayer(userId)
     local liveCoverage = countAnimationSetCoverage(fromLive)
-    if liveCoverage >= #ANIM_KEYS then
+    if liveCoverage >= (self.settings.minLiveCoverage or 1) and liveCoverage > 0 then
         self:setCachedAnimationSet(userId, fromLive)
         return fromLive
     end
 
     local fromDesc = self:getAnimationSetFromDescription(userId)
-    local descCoverage = countAnimationSetCoverage(fromDesc)
-    if descCoverage >= #ANIM_KEYS then
-        self:setCachedAnimationSet(userId, fromDesc)
-        return fromDesc
+    local fromRig = self:getAnimationSetFromTempRig(userId)
+
+    local function pickBetter(currentBest, candidate)
+        if not candidate then return currentBest end
+        local coverage = countAnimationSetCoverage(candidate.set)
+        if coverage <= 0 then return currentBest end
+        if not currentBest then
+            return { set = candidate.set, coverage = coverage, priority = candidate.priority }
+        end
+        if coverage > currentBest.coverage then
+            return { set = candidate.set, coverage = coverage, priority = candidate.priority }
+        end
+        if coverage == currentBest.coverage and candidate.priority > currentBest.priority then
+            return { set = candidate.set, coverage = coverage, priority = candidate.priority }
+        end
+        return currentBest
     end
 
-    local fromRig  = self:getAnimationSetFromTempRig(userId)
+    local best = nil
+    best = pickBetter(best, { set = fromLive, priority = 3 })
+    best = pickBetter(best, { set = fromRig, priority = 2 })
+    best = pickBetter(best, { set = fromDesc, priority = 1 })
 
-    local merged = {}
-    for _, key in ipairs(ANIM_KEYS) do
-        local liveSlot = fromLive and fromLive[key] or nil
-        local rigSlot = fromRig and fromRig[key] or nil
-        local descSlot = fromDesc and fromDesc[key] or nil
+    if not best or not best.set then return nil end
 
-        local picked = nil
-        -- When live coverage is partial, live slots can be stale/default.
-        -- Prefer description/rig first and only use live as last fallback.
-        if hasAnimationFolderData(descSlot) then
-            picked = descSlot
-        elseif hasAnimationFolderData(rigSlot) then
-            picked = rigSlot
-        elseif hasAnimationFolderData(liveSlot) then
-            picked = liveSlot
-        end
-
-        if picked then
-            local copy = {
-                byName = {},
-                ordered = {},
-                first = picked.first,
-            }
-
-            for name, id in pairs(picked.byName or {}) do
-                copy.byName[name] = id
-            end
-
-            for i = 1, #(picked.ordered or {}) do
-                copy.ordered[i] = picked.ordered[i]
-            end
-
-            merged[key] = copy
-        end
-    end
-
-    if countAnimationSetCoverage(merged) <= 0 then return nil end
-
-    self:setCachedAnimationSet(userId, merged)
-    return merged
+    self:setCachedAnimationSet(userId, best.set)
+    return best.set
 end
 
 function AnimationMimic:getAnimationSetFromUserIdWithRetry(userId, attempts)
@@ -816,12 +599,12 @@ function AnimationMimic:applyAnimationSetToDescriptionFields(desc, animationSet)
     end
 
     desc.ClimbAnimation = resolveNumeric("climb", "ClimbAnim", 1, R15_FALLBACK_ANIMATIONS.climb) or self.fallbackNumericIds.climb
-    desc.FallAnimation  = resolveNumeric("fall",  "FallAnim",  1, R15_FALLBACK_ANIMATIONS.fall)  or self.fallbackNumericIds.fall
-    desc.JumpAnimation  = resolveNumeric("jump",  "JumpAnim",  1, R15_FALLBACK_ANIMATIONS.jump)  or self.fallbackNumericIds.jump
-    desc.RunAnimation   = resolveNumeric("run",   "RunAnim",   1, R15_FALLBACK_ANIMATIONS.run)   or self.fallbackNumericIds.run
-    desc.WalkAnimation  = resolveNumeric("walk",  "WalkAnim",  1, R15_FALLBACK_ANIMATIONS.walk)  or self.fallbackNumericIds.walk
-    desc.SwimAnimation  = resolveNumeric("swim",  "Swim",      1, R15_FALLBACK_ANIMATIONS.swim)  or self.fallbackNumericIds.swim
-    desc.IdleAnimation  = resolveNumeric("idle",  "Animation1",1, R15_FALLBACK_ANIMATIONS.idle1) or self.fallbackNumericIds.idle1
+    desc.FallAnimation = resolveNumeric("fall", "FallAnim", 1, R15_FALLBACK_ANIMATIONS.fall) or self.fallbackNumericIds.fall
+    desc.JumpAnimation = resolveNumeric("jump", "JumpAnim", 1, R15_FALLBACK_ANIMATIONS.jump) or self.fallbackNumericIds.jump
+    desc.RunAnimation = resolveNumeric("run", "RunAnim", 1, R15_FALLBACK_ANIMATIONS.run) or self.fallbackNumericIds.run
+    desc.WalkAnimation = resolveNumeric("walk", "WalkAnim", 1, R15_FALLBACK_ANIMATIONS.walk) or self.fallbackNumericIds.walk
+    desc.SwimAnimation = resolveNumeric("swim", "Swim", 1, R15_FALLBACK_ANIMATIONS.swim) or self.fallbackNumericIds.swim
+    desc.IdleAnimation = resolveNumeric("idle", "Animation1", 1, R15_FALLBACK_ANIMATIONS.idle1) or self.fallbackNumericIds.idle1
 
     return true
 end
@@ -831,17 +614,6 @@ function AnimationMimic:replicateAnimationStateForOthers(character, animationSet
 
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
-
-    local force      = self._forceReplicateThisApply == true
-    local signature  = hashAnimationSet(animationSet)
-    local now        = os.clock()
-    local replicateState = self.replicateStateByChar[character]
-    if not force and replicateState and replicateState.signature == signature then
-        local dt = now - (replicateState.timestamp or 0)
-        if dt < (self.settings.replicateMinIntervalSeconds or 0.45) then
-            return true
-        end
-    end
 
     local liveColorSnapshot = self.shared:snapshotCharacterColors(character)
     local scales = self.shared:getCurrentScaleValues(humanoid)
@@ -864,10 +636,6 @@ function AnimationMimic:replicateAnimationStateForOthers(character, animationSet
     if humanoid.ApplyDescriptionClientServer then
         local okCS = pcall(function() humanoid:ApplyDescriptionClientServer(currentDesc) end)
         if okCS then
-            self.replicateStateByChar[character] = {
-                signature = signature,
-                timestamp = now,
-            }
             self.shared:restoreCharacterColors(character, liveColorSnapshot)
             task.defer(function()
                 task.wait(0.08)
@@ -882,93 +650,20 @@ function AnimationMimic:replicateAnimationStateForOthers(character, animationSet
     return false
 end
 
-function AnimationMimic:requestReplicateResync(character, animationSet, options)
-    options = options or {}
-    if not character or not animationSet then return false end
-
-    local startToken = self.applyToken
-    local retryDelays = options.retryDelays or self.settings.replicateRetryDelays or { 0.12, 0.30 }
-    local forceFirst = options.force == true
-
-    local function tryReplicate(forceFlag)
-        if not self.active then return false end
-        if startToken ~= self.applyToken then return false end
-        if not character.Parent then return false end
-
-        local prevForce = self._forceReplicateThisApply
-        self._forceReplicateThisApply = forceFlag == true
-        local ok = self:replicateAnimationStateForOthers(character, animationSet)
-        self._forceReplicateThisApply = prevForce
-        return ok
-    end
-
-    if tryReplicate(forceFirst) then
-        return true
-    end
-
-    task.defer(function()
-        for i = 1, #retryDelays do
-            local delaySeconds = retryDelays[i]
-            task.wait(delaySeconds)
-            if tryReplicate(true) then
-                return
-            end
-        end
-    end)
-
-    return false
-end
-
--- FIX B (accessories/scale): applyAnimationSetViaDescription was calling
--- ApplyDescription without snapshotting body scale or colors first.
--- ApplyDescription resets all scale fields on the description to their stored
--- values (often 1.0 defaults), making the body a different size than what the
--- accessories were rigged to — so accessories appear oversized or wrong.
--- We now snapshot scales and colors before applying, stamp them back on the
--- description, and restore colors after — matching what replicateAnimationStateForOthers
--- already did correctly.
 function AnimationMimic:applyAnimationSetViaDescription(humanoid, animationSet)
     if not humanoid or not animationSet then return false end
 
-    local character = humanoid.Parent
-    local scales    = self.shared:getCurrentScaleValues(humanoid)
-    local liveColorSnapshot = character and self.shared:snapshotCharacterColors(character) or nil
-
     local ok, currentDesc = pcall(function() return humanoid:GetAppliedDescription() end)
-    if not ok or not currentDesc then
-        if liveColorSnapshot then self.shared:destroyColorSnapshot(liveColorSnapshot) end
-        return false
-    end
+    if not ok or not currentDesc then return false end
 
-    -- Stamp live scales back so body proportions (and accessory fit) are preserved.
-    if scales then
-        self.shared:applyScaleValuesToDescription(currentDesc, scales)
-    end
-
-    if not self:applyAnimationSetToDescriptionFields(currentDesc, animationSet) then
-        if liveColorSnapshot then self.shared:destroyColorSnapshot(liveColorSnapshot) end
-        return false
-    end
+    if not self:applyAnimationSetToDescriptionFields(currentDesc, animationSet) then return false end
 
     if humanoid.ApplyDescriptionClientServer then
         local okCS = pcall(function() humanoid:ApplyDescriptionClientServer(currentDesc) end)
-        if okCS then
-            if character and liveColorSnapshot then
-                self.shared:restoreCharacterColors(character, liveColorSnapshot)
-                task.defer(function()
-                    task.wait(0.08)
-                    self.shared:restoreCharacterColors(character, liveColorSnapshot)
-                    self.shared:destroyColorSnapshot(liveColorSnapshot)
-                end)
-            end
-            return true, true
-        end
+        if okCS then return true end
     end
 
-    if liveColorSnapshot then
-        self.shared:destroyColorSnapshot(liveColorSnapshot)
-    end
-    return false, false
+    return pcall(function() humanoid:ApplyDescription(currentDesc) end)
 end
 
 function AnimationMimic:stopDirectController(character)
@@ -1004,48 +699,22 @@ function AnimationMimic:stopAllDirectControllers()
 end
 
 function AnimationMimic:pruneStaleCharacterAnimationState(currentCharacter)
-    local originalKeys = {}
     for character in pairs(self.originalByCharacter) do
-        originalKeys[#originalKeys + 1] = character
-    end
-    for i = 1, #originalKeys do
-        local character = originalKeys[i]
         if character ~= currentCharacter and (not character.Parent or character ~= self.localPlayer.Character) then
             self:resetCharacterAnimations(character)
             self.originalByCharacter[character] = nil
         end
     end
 
-    local controllerKeys = {}
     for character in pairs(self.directControllerByChar) do
-        controllerKeys[#controllerKeys + 1] = character
-    end
-    for i = 1, #controllerKeys do
-        local character = controllerKeys[i]
         if character ~= currentCharacter and (not character.Parent or character ~= self.localPlayer.Character) then
             self:stopDirectController(character)
         end
     end
 
-    local primerKeys = {}
     for character in pairs(self.posePrimerByChar) do
-        primerKeys[#primerKeys + 1] = character
-    end
-    for i = 1, #primerKeys do
-        local character = primerKeys[i]
         if character ~= currentCharacter and (not character.Parent or character ~= self.localPlayer.Character) then
             self:stopPosePrimer(character)
-        end
-    end
-
-    local watcherKeys = {}
-    for character in pairs(self.recoveryWatcherByChar) do
-        watcherKeys[#watcherKeys + 1] = character
-    end
-    for i = 1, #watcherKeys do
-        local character = watcherKeys[i]
-        if character ~= currentCharacter and (not character.Parent or character ~= self.localPlayer.Character) then
-            self:stopRecoveryWatcher(character)
         end
     end
 end
@@ -1074,13 +743,13 @@ function AnimationMimic:startDirectController(character, animationSet, opts)
     end
 
     local idMap = {
-        idle  = getAnimId("idle",  "Animation1", 1, R15_FALLBACK_ANIMATIONS.idle1),
-        run   = getAnimId("run",   "RunAnim",    1, R15_FALLBACK_ANIMATIONS.run),
-        walk  = getAnimId("walk",  "WalkAnim",   1, R15_FALLBACK_ANIMATIONS.walk),
-        jump  = getAnimId("jump",  "JumpAnim",   1, R15_FALLBACK_ANIMATIONS.jump),
-        fall  = getAnimId("fall",  "FallAnim",   1, R15_FALLBACK_ANIMATIONS.fall),
-        climb = getAnimId("climb", "ClimbAnim",  1, R15_FALLBACK_ANIMATIONS.climb),
-        swim  = getAnimId("swim",  "Swim",       1, R15_FALLBACK_ANIMATIONS.swim),
+        idle = getAnimId("idle", "Animation1", 1, R15_FALLBACK_ANIMATIONS.idle1),
+        run = getAnimId("run", "RunAnim", 1, R15_FALLBACK_ANIMATIONS.run),
+        walk = getAnimId("walk", "WalkAnim", 1, R15_FALLBACK_ANIMATIONS.walk),
+        jump = getAnimId("jump", "JumpAnim", 1, R15_FALLBACK_ANIMATIONS.jump),
+        fall = getAnimId("fall", "FallAnim", 1, R15_FALLBACK_ANIMATIONS.fall),
+        climb = getAnimId("climb", "ClimbAnim", 1, R15_FALLBACK_ANIMATIONS.climb),
+        swim = getAnimId("swim", "Swim", 1, R15_FALLBACK_ANIMATIONS.swim),
     }
 
     local tracks, animations = {}, {}
@@ -1095,7 +764,7 @@ function AnimationMimic:startDirectController(character, animationSet, opts)
             local okT, track = pcall(function() return animator:LoadAnimation(animation) end)
             if okT and track then
                 track.Priority = (stateName == "idle") and Enum.AnimationPriority.Idle or Enum.AnimationPriority.Movement
-                track.Looped   = (stateName ~= "jump" and stateName ~= "fall")
+                track.Looped = (stateName ~= "jump" and stateName ~= "fall")
                 tracks[stateName] = track
                 createdAny = true
             end
@@ -1111,13 +780,13 @@ function AnimationMimic:startDirectController(character, animationSet, opts)
     for _, t in pairs(tracks) do ownTrackSet[t] = true end
 
     local controller = {
-        tracks       = tracks,
-        trackSet     = ownTrackSet,
-        animations   = animations,
-        connection   = nil,
-        active       = nil,
+        tracks = tracks,
+        trackSet = ownTrackSet,
+        animations = animations,
+        connection = nil,
+        active = nil,
         nextUpdateAt = 0,
-        assistMode   = assistMode,
+        assistMode = assistMode,
     }
     self.directControllerByChar[character] = controller
 
@@ -1145,11 +814,15 @@ function AnimationMimic:startDirectController(character, animationSet, opts)
         end
 
         if controller.assistMode then
-            if self:hasNativeBlockingTrack(character) then
-                controller.active = nil
-                for _, track in pairs(controller.tracks) do
-                    pcall(function() if track.IsPlaying then track:Stop(0.08) end end)
+            local hasNativeTrack = false
+            for _, t in ipairs(humanoid:GetPlayingAnimationTracks()) do
+                if t.IsPlaying and not controller.trackSet[t] then
+                    hasNativeTrack = true
+                    break
                 end
+            end
+            if hasNativeTrack then
+                self:stopDirectController(character)
                 return
             end
         end
@@ -1160,16 +833,16 @@ function AnimationMimic:startDirectController(character, animationSet, opts)
             or (self.settings.directControllerStep or 0.03)
         controller.nextUpdateAt = now + step
 
-        local moveMag  = humanoid.MoveDirection.Magnitude
+        local moveMag = humanoid.MoveDirection.Magnitude
         local humState = humanoid:GetState()
 
         if humState == Enum.HumanoidStateType.Freefall then
             if tracks.fall then playState("fall") elseif tracks.jump then playState("jump") end
             return
         end
-        if humState == Enum.HumanoidStateType.Jumping  and tracks.jump  then playState("jump");  return end
+        if humState == Enum.HumanoidStateType.Jumping and tracks.jump then playState("jump"); return end
         if humState == Enum.HumanoidStateType.Climbing and tracks.climb then playState("climb"); return end
-        if humState == Enum.HumanoidStateType.Swimming and tracks.swim  then playState("swim");  return end
+        if humState == Enum.HumanoidStateType.Swimming and tracks.swim then playState("swim"); return end
 
         if moveMag > 0.08 then
             if tracks.run then playState("run") elseif tracks.walk then playState("walk") end
@@ -1203,7 +876,7 @@ function AnimationMimic:applyFolderDataToFolder(character, folder, folderData, s
 end
 
 function AnimationMimic:applySlotFromSet(character, animate, animationSet, folderName, fallbackId, shouldRemember)
-    local folder  = animate:FindFirstChild(folderName)
+    local folder = animate:FindFirstChild(folderName)
     local setData = animationSet and animationSet[folderName]
 
     if self:applyFolderDataToFolder(character, folder, setData, shouldRemember) > 0 then
@@ -1249,18 +922,13 @@ end
 function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     if not character or not animationSet then return false end
 
-    local animate  = character:FindFirstChild("Animate")
-    if animate and not hasReadyAnimateFolders(animate) then
-        animate = nil
-    end
+    local animate = character:FindFirstChild("Animate")
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
 
     hardResetAnimator(humanoid)
 
     local applied = 0
-    local usedDescriptionPath   = false
-    local descReplicatedNetwork = false
     if animate then
         for _, spec in ipairs(SLOT_SPECS) do
             if self:applySlotFromSet(character, animate, animationSet, spec.folder, spec.fallback, true) then
@@ -1273,17 +941,11 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     end
 
     if applied > 0 then
-        self:requestReplicateResync(character, animationSet, {
-            force = true,
-            retryDelays = { 0.08 },
-        })
         self:stopDirectController(character)
         self:stopPosePrimer(character)
         refreshAnimate(character)
     else
-        local descApplied, replicatedNetwork = self:applyAnimationSetViaDescription(humanoid, animationSet)
-        usedDescriptionPath   = true
-        descReplicatedNetwork = replicatedNetwork == true
+        local descApplied = self:applyAnimationSetViaDescription(humanoid, animationSet)
         if descApplied then
             self:stopDirectController(character)
             self:stopPosePrimer(character)
@@ -1302,26 +964,7 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     end
 
     self:unstickPoseAfterApply(character, animationSet)
-    if usedDescriptionPath and descReplicatedNetwork then
-        self.replicateStateByChar[character] = {
-            signature = hashAnimationSet(animationSet),
-            timestamp = os.clock(),
-        }
-
-        -- Some avatar package transitions can still appear stale for observers
-        -- after a single network apply; force one reconciliation pass.
-        if self._forceReplicateThisApply == true then
-            self:requestReplicateResync(character, animationSet, {
-                force = true,
-                retryDelays = { 0.18 },
-            })
-        end
-    else
-        self:requestReplicateResync(character, animationSet, {
-            force = self._forceReplicateThisApply == true,
-        })
-    end
-    self:startRecoveryWatcher(character, animationSet)
+    self:replicateAnimationStateForOthers(character, animationSet)
 
     if type(self.onAfterApply) == "function" then
         task.defer(function()
@@ -1332,32 +975,19 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     return true
 end
 
--- FIX 3 (previous): restoreOwnAnimationsHard now calls resetCharacterAnimations
--- first so saved originals are properly restored before re-applying ownSet.
 function AnimationMimic:restoreOwnAnimationsHard(character)
     if not character then return false end
 
-    self:resetCharacterAnimations(character)
+    local ownSet = self:getAnimationSetFromUserId(self.localPlayer.UserId)
+    if not ownSet then return false end
 
+    local animate = character:FindFirstChild("Animate")
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
 
     hardResetAnimator(humanoid)
 
-    local ownSet = self:getAnimationSetFromUserId(self.localPlayer.UserId)
-    if not ownSet then
-        flushAnimationState(character)
-        return false
-    end
-
-    local animate = character:FindFirstChild("Animate")
-    if animate and not hasReadyAnimateFolders(animate) then
-        animate = nil
-    end
-
     local applied = 0
-    local usedDescriptionPath   = false
-    local descReplicatedNetwork = false
     if animate then
         for _, spec in ipairs(SLOT_SPECS) do
             if self:applySlotFromSet(character, animate, ownSet, spec.folder, spec.fallback, false) then
@@ -1370,18 +1000,11 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
     end
 
     if applied > 0 then
-        self:requestReplicateResync(character, ownSet, {
-            force = true,
-            retryDelays = { 0.08 },
-        })
         self:stopDirectController(character)
         self:stopPosePrimer(character)
         refreshAnimate(character)
     else
-        local descApplied, replicatedNetwork = self:applyAnimationSetViaDescription(humanoid, ownSet)
-        usedDescriptionPath   = true
-        descReplicatedNetwork = replicatedNetwork == true
-        if descApplied then
+        if self:applyAnimationSetViaDescription(humanoid, ownSet) then
             self:stopDirectController(character)
             self:stopPosePrimer(character)
         else
@@ -1400,26 +1023,7 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
     end
 
     self:unstickPoseAfterApply(character, ownSet)
-    self._forceReplicateThisApply = self.settings.forceReplicateOnRestore == true
-    if usedDescriptionPath and descReplicatedNetwork then
-        self.replicateStateByChar[character] = {
-            signature = hashAnimationSet(ownSet),
-            timestamp = os.clock(),
-        }
-
-        if self._forceReplicateThisApply == true then
-            self:requestReplicateResync(character, ownSet, {
-                force = true,
-                retryDelays = { 0.18 },
-            })
-        end
-    else
-        self:requestReplicateResync(character, ownSet, {
-            force = self._forceReplicateThisApply == true,
-        })
-    end
-    self._forceReplicateThisApply = false
-    self:startRecoveryWatcher(character, ownSet)
+    self:replicateAnimationStateForOthers(character, ownSet)
 
     return true
 end
@@ -1469,12 +1073,10 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
         if applyToken ~= self.applyToken then return false end
     end
 
-    self.lastSourceUserId   = numericUserId
+    self.lastSourceUserId = numericUserId
     self.pinnedTargetUserId = numericUserId
 
-    self._forceReplicateThisApply = switchedTarget and self.settings.forceReplicateOnTargetSwitch == true
     local ok = self:applyAnimationSetToCharacter(character, animationSet)
-    self._forceReplicateThisApply = false
     if not ok then return false end
 
     task.defer(function()
@@ -1500,7 +1102,7 @@ function AnimationMimic:mimicFromTarget(target)
     local userId = self.shared:resolveUserToId(target)
     if not userId then return false end
 
-    self.lastTargetInput    = target
+    self.lastTargetInput = target
     self.pinnedTargetUserId = userId
 
     if self.settings.invalidateAnimationCacheOnTargetSwitch then
@@ -1524,8 +1126,6 @@ function AnimationMimic:reapply()
 end
 
 function AnimationMimic:onCharacterAdded(newCharacter)
-        newCharacter:WaitForChild("Animate", 5)
-        task.wait(0.25)
     if not self.active then return end
 
     self.applyToken = self.applyToken + 1
@@ -1536,8 +1136,7 @@ function AnimationMimic:onCharacterAdded(newCharacter)
     local hum = newCharacter:WaitForChild("Humanoid", 10)
     if not hum or respawnToken ~= self.applyToken or not self.active then return end
 
-    newCharacter:WaitForChild("Animate", 5)
-    task.wait(0.25)
+    task.wait(0.15)
     if respawnToken ~= self.applyToken or not self.active or not newCharacter.Parent then return end
 
     task.spawn(function()
@@ -1545,8 +1144,8 @@ function AnimationMimic:onCharacterAdded(newCharacter)
         for _ = 1, 4 do
             if not self.active or respawnToken ~= self.applyToken or not newCharacter.Parent then return end
             if self.pinnedTargetUserId and self:mimicFromUserId(self.pinnedTargetUserId, true) then return end
-            if self.lastSourceUserId   and self:mimicFromUserId(self.lastSourceUserId, true)   then return end
-            if self.lastTargetInput ~= nil and self:mimicFromTarget(self.lastTargetInput)       then return end
+            if self.lastSourceUserId and self:mimicFromUserId(self.lastSourceUserId, true) then return end
+            if self.lastTargetInput ~= nil and self:mimicFromTarget(self.lastTargetInput) then return end
             task.wait(backoff)
             if not self.active or respawnToken ~= self.applyToken then return end
             backoff = math.min(backoff * 2, 2)
@@ -1554,8 +1153,6 @@ function AnimationMimic:onCharacterAdded(newCharacter)
     end)
 end
 
--- FIX 4 (previous): setEnabled re-enable was dead code. Fixed by preserving
--- the pinned target across disable/enable cycle.
 function AnimationMimic:setEnabled(enabled)
     enabled = enabled == true
     if self.active == enabled then return end
@@ -1564,27 +1161,20 @@ function AnimationMimic:setEnabled(enabled)
     self.applyToken = self.applyToken + 1
 
     if not enabled then
-        local savedPinned = self.pinnedTargetUserId
-        self.lastSourceUserId         = nil
-        self.pinnedTargetUserId       = nil
-        self._forceReplicateThisApply = false
-        self.replicateStateByChar     = {}
+        self.lastSourceUserId = nil
+        self.pinnedTargetUserId = nil
         local character = self.localPlayer.Character
         self:stopAllDirectControllers()
         self:stopAllPosePrimers()
-        self:stopAllRecoveryWatchers()
         self:resetCharacterAnimations(character)
         self.originalByCharacter = {}
         flushAnimationState(character)
-        self._savedPinnedForReEnable = savedPinned
     else
-        local character    = self.localPlayer.Character
-        local resumeTarget = self._savedPinnedForReEnable
-        self._savedPinnedForReEnable = nil
-        if character and character.Parent and resumeTarget then
+        local character = self.localPlayer.Character
+        if character and character.Parent and self.lastSourceUserId then
             task.defer(function()
                 if self.active then
-                    self:mimicFromUserId(resumeTarget, true)
+                    self:mimicFromUserId(self.lastSourceUserId, true)
                 end
             end)
         end
@@ -1592,19 +1182,15 @@ function AnimationMimic:setEnabled(enabled)
 end
 
 function AnimationMimic:cleanup()
-    self.active                   = false
-    self.lastSourceUserId         = nil
-    self.pinnedTargetUserId       = nil
-    self.lastTargetInput          = nil
-    self._savedPinnedForReEnable  = nil
-    self.applyToken               = self.applyToken + 1
-    self._forceReplicateThisApply = false
-    self.replicateStateByChar     = {}
+    self.active = false
+    self.lastSourceUserId = nil
+    self.pinnedTargetUserId = nil
+    self.lastTargetInput = nil
+    self.applyToken = self.applyToken + 1
 
     local character = self.localPlayer.Character
     self:stopAllDirectControllers()
     self:stopAllPosePrimers()
-    self:stopAllRecoveryWatchers()
     self:resetCharacterAnimations(character)
     self.originalByCharacter = {}
 
