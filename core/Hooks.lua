@@ -218,6 +218,81 @@ local function remapUISpooferAvatarMethodArgs(self, method, ...)
     return args
 end
 
+local function rewriteUISpooferUrl(rawUrl, localUserId, targetUserId)
+    if type(rawUrl) ~= "string" or rawUrl == "" then return nil end
+
+    local lowerUrl = string.lower(rawUrl)
+    local hasIdentityRoute = lowerUrl:find("avatar", 1, true) ~= nil
+        or lowerUrl:find("users", 1, true) ~= nil
+        or lowerUrl:find("inventory", 1, true) ~= nil
+        or lowerUrl:find("catalog", 1, true) ~= nil
+    if not hasIdentityRoute then
+        return nil
+    end
+
+    local localIdText = tostring(localUserId)
+    local targetIdText = tostring(targetUserId)
+    local rewritten = rawUrl
+    local changed = false
+
+    local v1, c1 = rewritten:gsub("([?&][uU][sS][eE][rR][iI][dD]=)" .. localIdText, "%1" .. targetIdText)
+    if c1 > 0 then rewritten = v1; changed = true end
+
+    local v2, c2 = rewritten:gsub("([?&][uU][sS][eE][rR][iI][dD][sS]=)" .. localIdText, "%1" .. targetIdText)
+    if c2 > 0 then rewritten = v2; changed = true end
+
+    local v3, c3 = rewritten:gsub("([/][uU][sS][eE][rR][sS][/-])" .. localIdText .. "([/?#&])", "%1" .. targetIdText .. "%2")
+    if c3 > 0 then rewritten = v3; changed = true end
+
+    local v4, c4 = rewritten:gsub("([/][uU][sS][eE][rR][sS][/-])" .. localIdText .. "$", "%1" .. targetIdText)
+    if c4 > 0 then rewritten = v4; changed = true end
+
+    if changed then return rewritten end
+    return nil
+end
+
+local function remapUISpooferHttpApiArgs(self, method, ...)
+    if not LP or not method then return nil end
+    if method ~= "GetAsync" and method ~= "PostAsync" and method ~= "RequestAsync" then return nil end
+
+    local className = ""
+    pcall(function() className = tostring(self.ClassName or "") end)
+    className = string.lower(className)
+    if className ~= "httprbxapiservice" then
+        return nil
+    end
+
+    local targetUserId = resolveUISpooferTargetUserId()
+    if not targetUserId then return nil end
+
+    local localUserId = tonumber(LP.UserId)
+    if not localUserId or localUserId == targetUserId then return nil end
+
+    local args = {...}
+    if method == "RequestAsync" and type(args[1]) == "table" then
+        local request = args[1]
+        local url = request.Url
+        local rewritten = rewriteUISpooferUrl(url, localUserId, targetUserId)
+        if rewritten and rewritten ~= url then
+            local requestCopy = {}
+            for k, v in pairs(request) do requestCopy[k] = v end
+            requestCopy.Url = rewritten
+            args[1] = requestCopy
+            return args
+        end
+        return nil
+    end
+
+    local url = args[1]
+    local rewritten = rewriteUISpooferUrl(url, localUserId, targetUserId)
+    if rewritten and rewritten ~= url then
+        args[1] = rewritten
+        return args
+    end
+
+    return nil
+end
+
 local function cloneArray(arr)
     if table.clone then return table.clone(arr) end
     local out = {}
@@ -400,6 +475,11 @@ local function buildHooks()
         if State.Unloaded then return oldNamecall(self, ...) end
 
         local method = getnamecallmethod()
+        local remappedHttpArgs = remapUISpooferHttpApiArgs(self, method, ...)
+        if remappedHttpArgs then
+            return oldNamecall(self, table.unpack(remappedHttpArgs))
+        end
+
         local remappedAvatarArgs = remapUISpooferAvatarMethodArgs(self, method, ...)
         if remappedAvatarArgs then
             return oldNamecall(self, table.unpack(remappedAvatarArgs))
