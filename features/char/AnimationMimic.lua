@@ -194,7 +194,7 @@ function AnimationMimic.new(deps)
 end
 
 function AnimationMimic:getGuaranteedFallbackSet()
-    return {
+    local set = {
         climb = self:makeSingleAnimationData("ClimbAnim", R15_FALLBACK_ANIMATIONS.climb),
         fall = self:makeSingleAnimationData("FallAnim", R15_FALLBACK_ANIMATIONS.fall),
         jump = self:makeSingleAnimationData("JumpAnim", R15_FALLBACK_ANIMATIONS.jump),
@@ -213,6 +213,9 @@ function AnimationMimic:getGuaranteedFallbackSet()
             first = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.idle1),
         },
     }
+    set.__descriptionCompatible = false
+    set.__source = "fallback"
+    return set
 end
 
 function AnimationMimic:hasNativePlayingTrack(character)
@@ -546,14 +549,19 @@ function AnimationMimic:getAnimationSetFromLivePlayer(userId)
     if not animate then return nil end
 
     local set = self:buildAnimationSetFromAnimate(animate)
-    return (countAnimationSetCoverage(set) > 0) and set or nil
+    if countAnimationSetCoverage(set) <= 0 then
+        return nil
+    end
+    set.__descriptionCompatible = false
+    set.__source = "live-animate"
+    return set
 end
 
 function AnimationMimic:getAnimationSetFromDescription(userId)
     local desc = self.shared:getTargetDescriptionCached(userId)
     if not desc then return nil end
 
-    return {
+    local set = {
         climb = self:makeSingleAnimationData("ClimbAnim", desc.ClimbAnimation),
         fall = self:makeSingleAnimationData("FallAnim", desc.FallAnimation),
         jump = self:makeSingleAnimationData("JumpAnim", desc.JumpAnimation),
@@ -562,6 +570,9 @@ function AnimationMimic:getAnimationSetFromDescription(userId)
         swim = self:makeSingleAnimationData("Swim", desc.SwimAnimation),
         idle = self:makeIdleAnimationData(desc.IdleAnimation),
     }
+    set.__descriptionCompatible = true
+    set.__source = "user-description"
+    return set
 end
 
 function AnimationMimic:getAnimationSetFromLiveDescription(userId)
@@ -575,7 +586,7 @@ function AnimationMimic:getAnimationSetFromLiveDescription(userId)
     local okDesc, desc = pcall(function() return humanoid:GetAppliedDescription() end)
     if not okDesc or not desc then return nil end
 
-    return {
+    local set = {
         climb = self:makeSingleAnimationData("ClimbAnim", desc.ClimbAnimation),
         fall = self:makeSingleAnimationData("FallAnim", desc.FallAnimation),
         jump = self:makeSingleAnimationData("JumpAnim", desc.JumpAnimation),
@@ -584,6 +595,9 @@ function AnimationMimic:getAnimationSetFromLiveDescription(userId)
         swim = self:makeSingleAnimationData("Swim", desc.SwimAnimation),
         idle = self:makeIdleAnimationData(desc.IdleAnimation),
     }
+    set.__descriptionCompatible = true
+    set.__source = "live-description"
+    return set
 end
 
 function AnimationMimic:isLikelyFallbackSet(animationSet)
@@ -628,6 +642,10 @@ function AnimationMimic:getAnimationSetFromTempRig(userId)
     end
 
     local set = self:buildAnimationSetFromAnimate(animate)
+    if set then
+        set.__descriptionCompatible = false
+        set.__source = "temp-rig"
+    end
     rig:Destroy()
     return set
 end
@@ -726,6 +744,9 @@ end
 
 function AnimationMimic:replicateAnimationStateForOthers(character, animationSet)
     if not self.settings.replicateDescriptionToOthers then return true end
+    if not animationSet or animationSet.__descriptionCompatible ~= true then
+        return true
+    end
 
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
@@ -784,6 +805,7 @@ end
 
 function AnimationMimic:applyAnimationSetViaDescription(humanoid, animationSet)
     if not humanoid or not animationSet then return false end
+    if animationSet.__descriptionCompatible ~= true then return false end
 
     local ok, currentDesc = pcall(function() return humanoid:GetAppliedDescription() end)
     if not ok or not currentDesc then return false end
