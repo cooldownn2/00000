@@ -33,16 +33,16 @@ local function getFirstAnimationInFolder(folder)
     for _, child in ipairs(folder:GetChildren()) do
         if child:IsA("Animation") then return child end
     end
-
-    local function hasReadyAnimateFolders(animate)
-        if not animate then return false end
-        for _, folderName in ipairs(REQUIRED_ANIMATE_FOLDERS) do
-            local folder = animate:FindFirstChild(folderName)
-            if not folder then return false end
-        end
-        return true
-    end
     return nil
+end
+
+local function hasReadyAnimateFolders(animate)
+    if not animate then return false end
+    for _, folderName in ipairs(REQUIRED_ANIMATE_FOLDERS) do
+        local folder = animate:FindFirstChild(folderName)
+        if not folder then return false end
+    end
+    return true
 end
 
 local function hasAnimationFolderData(fd)
@@ -271,32 +271,6 @@ function AnimationMimic:hasNativePlayingTrack(character)
 end
 
 function AnimationMimic:hasNativeLocomotionTrack(character)
-
-    function AnimationMimic:hasNativeBlockingTrack(character)
-        if not character then return false end
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if not humanoid then return false end
-
-        local ignored = {}
-        local controller = self.directControllerByChar[character]
-        if controller and controller.tracks then
-            for _, t in pairs(controller.tracks) do ignored[t] = true end
-        end
-
-        local primer = self.posePrimerByChar[character]
-        if primer and primer.track then ignored[primer.track] = true end
-
-        for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
-            if track.IsPlaying and not ignored[track] then
-                local p = track.Priority
-                if p == Enum.AnimationPriority.Movement or isActionPriority(p) then
-                    return true
-                end
-            end
-        end
-
-        return false
-    end
     if not character then return false end
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
@@ -313,6 +287,32 @@ function AnimationMimic:hasNativeLocomotionTrack(character)
     for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
         if track.IsPlaying and not ignored[track] and not isActionPriority(track.Priority) then
             return true
+        end
+    end
+
+    return false
+end
+
+function AnimationMimic:hasNativeBlockingTrack(character)
+    if not character then return false end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
+
+    local ignored = {}
+    local controller = self.directControllerByChar[character]
+    if controller and controller.tracks then
+        for _, t in pairs(controller.tracks) do ignored[t] = true end
+    end
+
+    local primer = self.posePrimerByChar[character]
+    if primer and primer.track then ignored[primer.track] = true end
+
+    for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
+        if track.IsPlaying and not ignored[track] then
+            local p = track.Priority
+            if p == Enum.AnimationPriority.Movement or isActionPriority(p) then
+                return true
+            end
         end
     end
 
@@ -365,7 +365,6 @@ function AnimationMimic:startRecoveryWatcher(character, animationSet)
             return
         end
 
-        if self:hasNativePlayingTrack(character) then
         if self:hasNativeBlockingTrack(character) then
             watcher.noTrackSince = nil
             self:stopPosePrimer(character)
@@ -500,7 +499,6 @@ function AnimationMimic:unstickPoseAfterApply(character, animationSet)
         task.wait(0.07)
         if not self.active or not character.Parent then return end
 
-        if hasAnyPlayingTrack(humanoid) then
         if self:hasNativeLocomotionTrack(character) then
             self:stopPosePrimer(character)
             return
@@ -510,7 +508,6 @@ function AnimationMimic:unstickPoseAfterApply(character, animationSet)
 
         task.wait(0.22)
         if not self.active or not character.Parent then return end
-        if self:hasNativePlayingTrack(character) then
         if self:hasNativeLocomotionTrack(character) then
             self:stopPosePrimer(character)
             return
@@ -522,7 +519,6 @@ function AnimationMimic:unstickPoseAfterApply(character, animationSet)
 
         task.wait(0.30)
         if not self.active or not character.Parent then return end
-        if self:hasNativePlayingTrack(character) then
         if self:hasNativeLocomotionTrack(character) then
             self:stopPosePrimer(character)
             return
@@ -551,15 +547,10 @@ function AnimationMimic:scheduleAssistIfNeeded(character, animationSet)
         if token ~= self.applyToken then return end
         if not character.Parent then return end
 
-        if self:hasNativePlayingTrack(character) then
         if self:hasNativeBlockingTrack(character) then
             self:stopPosePrimer(character)
             return
         end
-    local animate  = character:FindFirstChild("Animate")
-    if animate and not hasReadyAnimateFolders(animate) then
-        animate = nil
-    end
 
         if self.directControllerByChar[character] then return end
 
@@ -1154,17 +1145,12 @@ function AnimationMimic:startDirectController(character, animationSet, opts)
         end
 
         if controller.assistMode then
-            if self:hasNativePlayingTrack(character) then
             if self:hasNativeBlockingTrack(character) then
                 controller.active = nil
                 for _, track in pairs(controller.tracks) do
                     pcall(function() if track.IsPlaying then track:Stop(0.08) end end)
                 end
                 return
-                local animate = character:FindFirstChild("Animate")
-                if animate and not hasReadyAnimateFolders(animate) then
-                    animate = nil
-                end
             end
         end
 
@@ -1264,6 +1250,9 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     if not character or not animationSet then return false end
 
     local animate  = character:FindFirstChild("Animate")
+    if animate and not hasReadyAnimateFolders(animate) then
+        animate = nil
+    end
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
 
@@ -1362,6 +1351,9 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
     end
 
     local animate = character:FindFirstChild("Animate")
+    if animate and not hasReadyAnimateFolders(animate) then
+        animate = nil
+    end
 
     local applied = 0
     local usedDescriptionPath   = false
