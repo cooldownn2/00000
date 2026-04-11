@@ -20,9 +20,6 @@ local enabledState = false
 local targetState = ""
 local lastUpdate = 0
 local UPDATE_INTERVAL = 0.1
-local switchSerial = 0
-
-local STABILIZE_PASS_DELAYS = { 0.45, 1.1, 2.0 }
 
 local ENV_STATE_KEY = "__SauceCharacterModelState"
 local GETGENV_FN = rawget(_G, "getgenv")
@@ -59,22 +56,6 @@ local function ensureModules()
     outfit = CharOutfit.new({
         shared = shared,
         localPlayer = LP,
-        onAfterApply = function(appliedUserId)
-            if not enabledState then return end
-            if not animation or not emote then return end
-
-            task.defer(function()
-                if not enabledState then return end
-                if targetState == "" then return end
-
-                if appliedUserId then
-                    animation:mimicFromUserId(appliedUserId, true)
-                else
-                    animation:reapply()
-                end
-                emote:reapply()
-            end)
-        end,
     })
 
     return true
@@ -98,9 +79,6 @@ local function switchTargetSafe(target)
     if not enabledState then return false end
     if target == nil or target == "" then return false end
 
-    switchSerial = switchSerial + 1
-    local thisSwitch = switchSerial
-
     local outfitOk = outfit:setTarget(target)
 
     task.defer(function()
@@ -109,20 +87,6 @@ local function switchTargetSafe(target)
             emote:mimicFromTarget(target)
         end
     end)
-
-    for _, delayTime in ipairs(STABILIZE_PASS_DELAYS) do
-        local dt = tonumber(delayTime) or 0
-        task.defer(function()
-            task.wait(math.max(dt, 0))
-            if thisSwitch ~= switchSerial then return end
-            if not enabledState then return end
-            if targetState ~= target then return end
-            if not ensureModules() then return end
-
-            animation:reapply()
-            emote:reapply()
-        end)
-    end
 
     return outfitOk
 end
@@ -268,7 +232,6 @@ end
 local function cleanup()
     enabledState = false
     targetState = ""
-    switchSerial = switchSerial + 1
 
     if outfit then outfit:cleanup() end
     if animation then animation:cleanup() end
