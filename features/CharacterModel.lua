@@ -22,8 +22,10 @@ local lastUpdate = 0
 local UPDATE_INTERVAL = 0.1
 local switchApplyToken = 0
 
-local STABILIZE_ANIM_DELAY = 0.22
-local STABILIZE_FULL_DELAY = 0.72
+local STABILIZE_INITIAL_ANIM_DELAY = 0.10
+local STABILIZE_ANIM_DELAY = 0.34
+local STABILIZE_FULL_REAPPLY_DELAY = 0.72
+local STABILIZE_POST_REAPPLY_ANIM_DELAY = 1.05
 
 local ENV_STATE_KEY = "__SauceCharacterModelState"
 local GETGENV_FN = rawget(_G, "getgenv")
@@ -86,33 +88,36 @@ local function switchTargetSafe(target)
     switchApplyToken = switchApplyToken + 1
     local applyToken = switchApplyToken
 
+    local function canApplyForToken()
+        return enabledState and applyToken == switchApplyToken and target == targetState
+    end
+
+    local function applyAnimAndEmote()
+        if not canApplyForToken() then return end
+        animation:mimicFromTarget(target)
+        emote:mimicFromTarget(target)
+    end
+
     local outfitOk = outfit:setTarget(target)
 
-    task.defer(function()
-        if enabledState and applyToken == switchApplyToken and target == targetState then
-            animation:mimicFromTarget(target)
-            emote:mimicFromTarget(target)
-        end
-    end)
+    -- Run animation shortly after switch instead of immediate defer so outfit
+    -- apply/body-description writes have a chance to settle first.
+    task.delay(STABILIZE_INITIAL_ANIM_DELAY, applyAnimAndEmote)
 
-    -- First stabilization pass: re-run animation + emote after outfit/apply settle.
+    -- Stabilization pass: re-run animation + emote after initial settle.
     task.delay(STABILIZE_ANIM_DELAY, function()
-        if not enabledState then return end
-        if applyToken ~= switchApplyToken then return end
-        if target ~= targetState then return end
-        animation:mimicFromTarget(target)
-        emote:mimicFromTarget(target)
+        applyAnimAndEmote()
     end)
 
-    -- Full stabilization pass: mirrors the user's successful "char twice"
-    -- workaround to fix first-apply races without manual reset/rerun.
-    task.delay(STABILIZE_FULL_DELAY, function()
-        if not enabledState then return end
-        if applyToken ~= switchApplyToken then return end
-        if target ~= targetState then return end
+    -- Full stabilization pass: mirror the successful "char twice" behavior.
+    task.delay(STABILIZE_FULL_REAPPLY_DELAY, function()
+        if not canApplyForToken() then return end
         outfit:reapply()
-        animation:mimicFromTarget(target)
-        emote:mimicFromTarget(target)
+    end)
+
+    -- Apply animation/emote after reapply has had time to finish async work.
+    task.delay(STABILIZE_POST_REAPPLY_ANIM_DELAY, function()
+        applyAnimAndEmote()
     end)
 
     return outfitOk
