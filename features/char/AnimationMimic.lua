@@ -165,6 +165,7 @@ function AnimationMimic.new(deps)
     self.originalByCharacter = {}
     self.directControllerByChar = {}
     self.posePrimerByChar = {}
+    self.unstickSerialByChar = {}
 
     self.lastTargetInput = nil
     self.pinnedTargetUserId = nil
@@ -177,7 +178,6 @@ function AnimationMimic.new(deps)
         cacheTtlSeconds = 22,
         minLiveCoverage = 7,
         liveSourceWaitSeconds = 1.5,
-        -- FIXED: enabled so other players see animations
         replicateDescriptionToOthers = true,
         replicationRetryDelays = { 0.15, 0.4 },
         invalidateAnimationCacheOnTargetSwitch = true,
@@ -257,6 +257,19 @@ function AnimationMimic:stopAllPosePrimers()
     for _, c in ipairs(chars) do self:stopPosePrimer(c) end
 end
 
+function AnimationMimic:nextUnstickSerial(character)
+    local serial = (self.unstickSerialByChar[character] or 0) + 1
+    self.unstickSerialByChar[character] = serial
+    return serial
+end
+
+function AnimationMimic:isUnstickStillCurrent(character, serial, applyToken)
+    if not self.active then return false end
+    if not character or not character.Parent then return false end
+    if applyToken and applyToken ~= self.applyToken then return false end
+    return self.unstickSerialByChar[character] == serial
+end
+
 function AnimationMimic:ensureIdlePrimer(character, animationSet)
     if not character or not character.Parent then return end
     local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -334,16 +347,19 @@ function AnimationMimic:ensureIdlePrimer(character, animationSet)
     end)
 end
 
-function AnimationMimic:unstickPoseAfterApply(character, animationSet)
+function AnimationMimic:unstickPoseAfterApply(character, animationSet, applyToken)
     if not character or not character.Parent then return end
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
+
+    local serial = self:nextUnstickSerial(character)
+    if not self:isUnstickStillCurrent(character, serial, applyToken) then return end
 
     forceAnimationKick(character)
 
     task.defer(function()
         task.wait(0.07)
-        if not self.active or not character.Parent then return end
+        if not self:isUnstickStillCurrent(character, serial, applyToken) then return end
 
         if hasAnyPlayingTrack(humanoid) then
             self:stopPosePrimer(character)
@@ -353,7 +369,7 @@ function AnimationMimic:unstickPoseAfterApply(character, animationSet)
         self:ensureIdlePrimer(character, animationSet)
 
         task.wait(0.22)
-        if not self.active or not character.Parent then return end
+        if not self:isUnstickStillCurrent(character, serial, applyToken) then return end
         if self:hasNativePlayingTrack(character) then
             self:stopPosePrimer(character)
             return
@@ -364,7 +380,7 @@ function AnimationMimic:unstickPoseAfterApply(character, animationSet)
         self:ensureIdlePrimer(character, animationSet)
 
         task.wait(0.30)
-        if not self.active or not character.Parent then return end
+        if not self:isUnstickStillCurrent(character, serial, applyToken) then return end
         if self:hasNativePlayingTrack(character) then
             self:stopPosePrimer(character)
             return
@@ -413,11 +429,28 @@ end
 
 function AnimationMimic:rememberOriginal(character, animationObject)
     if not character or not animationObject then return end
-    if not self.originalByCharacter[character] then
-        self.originalByCharacter[character] = {}
+    local saved = self.originalByCharacter[character]
+
+    -- Keep only live animation references so this table cannot grow forever.
+    if saved then
+        for trackedAnimation in pairs(saved) do
+            if not trackedAnimation or not trackedAnimation.Parent then
+                saved[trackedAnimation] = nil
+            end
+        end
+        if next(saved) == nil then
+            self.originalByCharacter[character] = nil
+            saved = nil
+        end
     end
-    if self.originalByCharacter[character][animationObject] == nil then
-        self.originalByCharacter[character][animationObject] = animationObject.AnimationId
+
+    if not saved then
+        saved = {}
+        self.originalByCharacter[character] = saved
+    end
+
+    if saved[animationObject] == nil then
+        saved[animationObject] = animationObject.AnimationId
     end
 end
 
@@ -524,7 +557,6 @@ function AnimationMimic:getAnimationSetFromLivePlayer(userId)
     if countAnimationSetCoverage(set) <= 0 then
         return nil
     end
-    -- FIXED: mark as compatible so replication path is used
     set.__descriptionCompatible = true
     set.__source = "live-animate"
     return set
@@ -955,6 +987,12 @@ function AnimationMimic:pruneStaleCharacterAnimationState(currentCharacter)
             self:stopPosePrimer(character)
         end
     end
+
+    for character in pairs(self.unstickSerialByChar) do
+        if character ~= currentCharacter and (not character.Parent or character ~= self.localPlayer.Character) then
+            self.unstickSerialByChar[character] = nil
+        end
+    end
 end
 
 function AnimationMimic:startDirectController(character, animationSet, opts)
@@ -1210,7 +1248,7 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
         self:scheduleAssistIfNeeded(character, animationSet)
     end
 
-    self:unstickPoseAfterApply(character, animationSet)
+    self:unstickPoseAfterApply(character, animationSet, self.applyToken)
     local replicated = self:replicateAnimationStateForOthers(character, animationSet)
     if not replicated then
         self:scheduleReplicationRetry(character, animationSet, self.applyToken)
@@ -1272,7 +1310,7 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
         self:scheduleAssistIfNeeded(character, ownSet)
     end
 
-    self:unstickPoseAfterApply(character, ownSet)
+    self:unstickPoseAfterApply(character, ownSet, self.applyToken)
     local replicated = self:replicateAnimationStateForOthers(character, ownSet)
     if not replicated then
         self:scheduleReplicationRetry(character, ownSet, self.applyToken)
@@ -1371,10 +1409,14 @@ function AnimationMimic:mimicFromTarget(target)
     local userId = self.shared:resolveUserToId(target)
     if not userId then return false end
 
+    local previousTargetUserId = self.pinnedTargetUserId or self.lastSourceUserId
+
     self.lastTargetInput = target
     self.pinnedTargetUserId = userId
 
-    if self.settings.invalidateAnimationCacheOnTargetSwitch then
+    if self.settings.invalidateAnimationCacheOnTargetSwitch
+        and previousTargetUserId
+        and previousTargetUserId ~= userId then
         self.shared.animationSetCache[userId] = nil
     end
 
@@ -1438,6 +1480,7 @@ function AnimationMimic:setEnabled(enabled)
         self:stopAllPosePrimers()
         self:resetCharacterAnimations(character)
         self.originalByCharacter = {}
+        self.unstickSerialByChar = {}
         flushAnimationState(character)
     else
         local character = self.localPlayer.Character
@@ -1465,6 +1508,7 @@ function AnimationMimic:cleanup()
     self:stopAllPosePrimers()
     self:resetCharacterAnimations(character)
     self.originalByCharacter = {}
+    self.unstickSerialByChar = {}
 
     flushAnimationState(character)
 end
