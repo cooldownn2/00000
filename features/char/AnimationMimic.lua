@@ -174,6 +174,7 @@ function AnimationMimic.new(deps)
         useDirectTrackFallback = true,
         cacheTtlSeconds = 22,
         minLiveCoverage = 1,
+        liveSourceWaitSeconds = 0.75,
         replicateDescriptionToOthers = true,
         replicationRetryDelays = { 0.12, 0.35 },
         invalidateAnimationCacheOnTargetSwitch = false,
@@ -533,7 +534,7 @@ function AnimationMimic:resolveIdFromFolderData(folderData, childName, index)
     if folderData then
         chosen = folderData.byName[childName] or folderData.ordered[index] or folderData.first
     end
-    return self.shared:normalizeAnimationId(chosen)
+    return self:sanitizeResolvedAnimationId(chosen, nil)
 end
 
 function AnimationMimic:sanitizeResolvedAnimationId(rawId, fallbackRawId)
@@ -602,6 +603,35 @@ function AnimationMimic:getAnimationSetFromLivePlayer(userId)
     set.__descriptionCompatible = false
     set.__source = "live-animate"
     return set
+end
+
+function AnimationMimic:getAnimationSetFromLivePlayerWithWait(userId, timeoutSeconds)
+    local okPlayer, player = pcall(function() return Players:GetPlayerByUserId(userId) end)
+    if not okPlayer or not player then
+        return nil
+    end
+
+    local deadline = os.clock() + math.max(timeoutSeconds or 0, 0)
+    local bestSet, bestCoverage = nil, 0
+
+    repeat
+        local liveSet = self:getAnimationSetFromLivePlayer(userId)
+        local coverage = countAnimationSetCoverage(liveSet)
+        if coverage > bestCoverage then
+            bestSet = liveSet
+            bestCoverage = coverage
+        end
+
+        if coverage >= (self.settings.minLiveCoverage or 1) and coverage > 0 then
+            return liveSet
+        end
+
+        if os.clock() < deadline then
+            task.wait(0.08)
+        end
+    until os.clock() >= deadline
+
+    return bestSet
 end
 
 function AnimationMimic:getAnimationSetFromDescription(userId)
@@ -701,7 +731,7 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
     local cached = self:getCachedAnimationSet(userId)
     if cached then return cached end
 
-    local fromLive = self:getAnimationSetFromLivePlayer(userId)
+    local fromLive = self:getAnimationSetFromLivePlayerWithWait(userId, self.settings.liveSourceWaitSeconds)
     local liveCoverage = countAnimationSetCoverage(fromLive)
     if liveCoverage >= (self.settings.minLiveCoverage or 1) and liveCoverage > 0 then
         self:setCachedAnimationSet(userId, fromLive)
