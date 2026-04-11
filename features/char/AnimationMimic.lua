@@ -27,9 +27,9 @@ local SLOT_SPECS = {
 local ANIM_KEYS = { "climb", "fall", "jump", "run", "walk", "swim", "idle" }
 
 local BLOCKED_ANIMATION_NUMERIC_IDS = {
-    [10921160088] = true,
-    [10921150788] = true,
-    [10921154678] = true,
+    [10921160088] = false,
+    [10921150788] = false,
+    [10921154678] = false,
 }
 
 local function getFirstAnimationInFolder(folder)
