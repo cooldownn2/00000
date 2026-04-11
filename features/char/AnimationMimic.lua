@@ -171,7 +171,7 @@ function AnimationMimic.new(deps)
         minLiveCoverage = 1,
         replicateDescriptionToOthers = true,
         replicationRetryDelays = { 0.12, 0.35 },
-        invalidateAnimationCacheOnTargetSwitch = false,
+        invalidateAnimationCacheOnTargetSwitch = true,
         shortCircuitRigFetchOnFullDescription = false,
         alwaysAssistAfterApply = false,
         adaptiveAssistAfterApply = true,
@@ -622,8 +622,8 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
 
     local best = nil
     best = pickBetter(best, { set = fromLive, priority = 3 })
-    best = pickBetter(best, { set = fromRig, priority = 2 })
-    best = pickBetter(best, { set = fromDesc, priority = 1 })
+    best = pickBetter(best, { set = fromDesc, priority = 2 })
+    best = pickBetter(best, { set = fromRig, priority = 1 })
 
     if not best or not best.set then return nil end
 
