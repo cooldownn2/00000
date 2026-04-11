@@ -268,11 +268,89 @@ function UISpoofer:rewriteText(rawText)
     return text
 end
 
+function UISpoofer:getTargetPlayerInstance()
+    if not self.targetUserId then return nil end
+    local ok, player = pcall(function()
+        return Players:GetPlayerByUserId(self.targetUserId)
+    end)
+    if ok then return player end
+    return nil
+end
+
+function UISpoofer:registerInstanceObservers(instance, watchAttributes)
+    if not instance or self.watchedByInstance[instance] then return end
+
+    local className = instance.ClassName
+    local watchImage = IMAGE_CLASS_SET[className] == true
+    local watchText = TEXT_CLASS_SET[className] == true
+    local watchValue = NUMERIC_VALUE_CLASS_SET[className] == true
+        or STRING_VALUE_CLASS_SET[className] == true
+        or className == "ObjectValue"
+
+    if not watchImage and not watchText and not watchValue and not watchAttributes then
+        return
+    end
+
+    self.watchedByInstance[instance] = true
+
+    local function scheduleReapply()
+        if not self.active then return end
+        if not instance.Parent then return end
+
+        task.defer(function()
+            if not self.active or not instance.Parent then return end
+            self:applyToInstance(instance)
+        end)
+    end
+
+    if watchImage then
+        local ok, conn = pcall(function()
+            return instance:GetPropertyChangedSignal("Image"):Connect(scheduleReapply)
+        end)
+        if ok and conn then
+            self.connections[#self.connections + 1] = conn
+        end
+    end
+
+    if watchText then
+        local ok, conn = pcall(function()
+            return instance:GetPropertyChangedSignal("Text"):Connect(scheduleReapply)
+        end)
+        if ok and conn then
+            self.connections[#self.connections + 1] = conn
+        end
+    end
+
+    if watchValue then
+        local ok, conn = pcall(function()
+            return instance:GetPropertyChangedSignal("Value"):Connect(scheduleReapply)
+        end)
+        if ok and conn then
+            self.connections[#self.connections + 1] = conn
+        end
+    end
+
+    if watchAttributes then
+        local ok, conn = pcall(function()
+            return instance.AttributeChanged:Connect(function(attrName)
+                if isLikelyUserIdKey(attrName) or isLikelyNameKey(attrName) then
+                    scheduleReapply()
+                end
+            end)
+        end)
+        if ok and conn then
+            self.connections[#self.connections + 1] = conn
+        end
+    end
+end
+
 function UISpoofer:applyToInstance(instance)
     if not self.active or not self.targetUserId then return end
     if not instance or not instance.Parent then return end
 
     local className = instance.ClassName
+    local localUserId = self.localUserId
+    local watchAttributes = false
 
     if IMAGE_CLASS_SET[className] then
         local currentImage = instance.Image
@@ -281,7 +359,6 @@ function UISpoofer:applyToInstance(instance)
             self:rememberOriginal(instance, "Image", currentImage)
             pcall(function() instance.Image = rewritten end)
         end
-        return
     end
 
     if TEXT_CLASS_SET[className] then
@@ -292,6 +369,73 @@ function UISpoofer:applyToInstance(instance)
             pcall(function() instance.Text = rewritten end)
         end
     end
+
+    if localUserId and NUMERIC_VALUE_CLASS_SET[className] and isLikelyUserIdKey(instance.Name) then
+        local currentNumeric = tonumber(instance.Value)
+        if currentNumeric and math.floor(currentNumeric) == localUserId and currentNumeric ~= self.targetUserId then
+            self:rememberOriginal(instance, "Value", instance.Value)
+            pcall(function() instance.Value = self.targetUserId end)
+        end
+    end
+
+    if STRING_VALUE_CLASS_SET[className] then
+        local currentString = tostring(instance.Value or "")
+
+        if localUserId and isLikelyUserIdKey(instance.Name) then
+            local localUserIdText = tostring(localUserId)
+            local targetUserIdText = tostring(self.targetUserId)
+            if currentString == localUserIdText and currentString ~= targetUserIdText then
+                self:rememberOriginal(instance, "Value", instance.Value)
+                pcall(function() instance.Value = targetUserIdText end)
+            end
+        elseif isLikelyNameKey(instance.Name) then
+            local rewritten = self:rewriteText(currentString)
+            if rewritten and rewritten ~= currentString then
+                self:rememberOriginal(instance, "Value", instance.Value)
+                pcall(function() instance.Value = rewritten end)
+            end
+        end
+    end
+
+    if className == "ObjectValue" and isLikelyPlayerObjectKey(instance.Name) and instance.Value == self.localPlayer then
+        local targetPlayer = self:getTargetPlayerInstance()
+        if targetPlayer and targetPlayer ~= instance.Value then
+            self:rememberOriginal(instance, "Value", instance.Value)
+            pcall(function() instance.Value = targetPlayer end)
+        end
+    end
+
+    local okAttrs, attrs = pcall(function() return instance:GetAttributes() end)
+    if okAttrs and type(attrs) == "table" then
+        for attrName, attrValue in pairs(attrs) do
+            if isLikelyUserIdKey(attrName) then
+                watchAttributes = true
+
+                if type(attrValue) == "number" and localUserId and math.floor(attrValue) == localUserId and attrValue ~= self.targetUserId then
+                    self:rememberOriginalAttribute(instance, attrName, attrValue)
+                    pcall(function() instance:SetAttribute(attrName, self.targetUserId) end)
+                elseif type(attrValue) == "string" and localUserId then
+                    local localUserIdText = tostring(localUserId)
+                    local targetUserIdText = tostring(self.targetUserId)
+                    if attrValue == localUserIdText and attrValue ~= targetUserIdText then
+                        self:rememberOriginalAttribute(instance, attrName, attrValue)
+                        pcall(function() instance:SetAttribute(attrName, targetUserIdText) end)
+                    end
+                end
+            elseif isLikelyNameKey(attrName) then
+                watchAttributes = true
+                if type(attrValue) == "string" then
+                    local rewritten = self:rewriteText(attrValue)
+                    if rewritten and rewritten ~= attrValue then
+                        self:rememberOriginalAttribute(instance, attrName, attrValue)
+                        pcall(function() instance:SetAttribute(attrName, rewritten) end)
+                    end
+                end
+            end
+        end
+    end
+
+    self:registerInstanceObservers(instance, watchAttributes)
 end
 
 function UISpoofer:scanRoot(root)
