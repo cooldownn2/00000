@@ -1536,7 +1536,8 @@ function AnimationMimic:onCharacterAdded(newCharacter)
     local hum = newCharacter:WaitForChild("Humanoid", 10)
     if not hum or respawnToken ~= self.applyToken or not self.active then return end
 
-    task.wait(0.15)
+    newCharacter:WaitForChild("Animate", 5)
+    task.wait(0.25)
     if respawnToken ~= self.applyToken or not self.active or not newCharacter.Parent then return end
 
     task.spawn(function()
