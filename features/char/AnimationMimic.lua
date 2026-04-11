@@ -560,7 +560,25 @@ function AnimationMimic:getAnimationSetFromTempRig(userId)
         return nil
     end
 
+    local folderNames = { "run", "walk", "jump", "fall", "climb", "swim", "idle" }
+    local deadline = os.clock() + 5
+    repeat
+        task.wait(0.1)
+        local allReady = true
+        for _, name in ipairs(folderNames) do
+            local folder = animate:FindFirstChild(name)
+            if not folder or #folder:GetChildren() == 0 then
+                allReady = false
+                break
+            end
+        end
+        if allReady then break end
+    until os.clock() >= deadline
+
     local set = self:buildAnimationSetFromAnimate(animate)
+    if set and countAnimationSetCoverage(set) < 4 then
+        set = nil
+    end
     if set then
         set.__descriptionCompatible = false
         set.__source = "temp-rig"
@@ -617,7 +635,7 @@ function AnimationMimic:getAnimationSetFromUserIdWithRetry(userId, attempts)
         if set then
             return set
         elseif i < attempts then
-            task.wait(0.12)
+            task.wait(0.5)
         end
     end
     return nil
@@ -1153,6 +1171,11 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
 
     local animationSet = self:getAnimationSetFromUserIdWithRetry(numericUserId, 3)
     if not animationSet then
+        if switchedTarget then
+            self:restoreOwnAnimationsHard(character)
+            flushAnimationState(character)
+            scrubTracksForDuration(character, 0.18)
+        end
         self.lastSourceUserId = nil
         return false
     end
