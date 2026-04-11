@@ -15,6 +15,11 @@ local UI_SPOOFER_RESOLVE_TTL = 1
 local _uiSpooferLastResolvedAt = 0
 local _uiSpooferLastInput = nil
 local _uiSpooferLastResolvedUserId = nil
+local _uiSpooferProfileUserId = nil
+local _uiSpooferProfileName = nil
+local _uiSpooferProfileDisplayName = nil
+local _coreCallerScriptCache = setmetatable({}, { __mode = "k" })
+local GETCALLINGSCRIPT_FN = rawget(_G, "getcallingscript")
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
 local ASSIST_MIN_INTERVAL = 0.05
@@ -59,6 +64,9 @@ local function resolveUISpooferTargetUserId()
         _uiSpooferLastInput = nil
         _uiSpooferLastResolvedUserId = nil
         _uiSpooferLastResolvedAt = 0
+        _uiSpooferProfileUserId = nil
+        _uiSpooferProfileName = nil
+        _uiSpooferProfileDisplayName = nil
         return nil
     end
 
@@ -89,6 +97,96 @@ local function resolveUISpooferTargetUserId()
     _uiSpooferLastResolvedAt = now
     _uiSpooferLastResolvedUserId = resolvedUserId
     return resolvedUserId
+end
+
+local function resolveUISpooferTargetProfile()
+    local targetUserId = resolveUISpooferTargetUserId()
+    if not targetUserId then
+        _uiSpooferProfileUserId = nil
+        _uiSpooferProfileName = nil
+        _uiSpooferProfileDisplayName = nil
+        return nil, nil, nil
+    end
+
+    if _uiSpooferProfileUserId == targetUserId
+        and _uiSpooferProfileName
+        and _uiSpooferProfileDisplayName then
+        return _uiSpooferProfileUserId, _uiSpooferProfileName, _uiSpooferProfileDisplayName
+    end
+
+    local targetName = tostring(targetUserId)
+    local okName, lookedUpName = pcall(function()
+        return Players:GetNameFromUserIdAsync(targetUserId)
+    end)
+    if okName and type(lookedUpName) == "string" and lookedUpName ~= "" then
+        targetName = lookedUpName
+    end
+
+    local targetDisplayName = targetName
+    local okPlayer, targetPlayer = pcall(function()
+        return Players:GetPlayerByUserId(targetUserId)
+    end)
+    if okPlayer and targetPlayer and type(targetPlayer.DisplayName) == "string" and targetPlayer.DisplayName ~= "" then
+        targetDisplayName = targetPlayer.DisplayName
+    end
+
+    _uiSpooferProfileUserId = targetUserId
+    _uiSpooferProfileName = targetName
+    _uiSpooferProfileDisplayName = targetDisplayName
+    return targetUserId, targetName, targetDisplayName
+end
+
+local function isCoreGuiIdentityCaller()
+    if type(GETCALLINGSCRIPT_FN) ~= "function" then return false end
+
+    local ok, callingScript = pcall(GETCALLINGSCRIPT_FN)
+    if not ok or typeof(callingScript) ~= "Instance" then
+        return false
+    end
+
+    local cached = _coreCallerScriptCache[callingScript]
+    if cached ~= nil then
+        return cached
+    end
+
+    local isCore = false
+    local okName, fullName = pcall(function()
+        return string.lower(callingScript:GetFullName())
+    end)
+    if okName and type(fullName) == "string" then
+        isCore = fullName:find("coregui", 1, true) ~= nil
+            or fullName:find("robloxgui", 1, true) ~= nil
+            or fullName:find("ingamemenu", 1, true) ~= nil
+            or fullName:find("playerlist", 1, true) ~= nil
+            or fullName:find("inspect", 1, true) ~= nil
+            or fullName:find("social", 1, true) ~= nil
+    end
+
+    _coreCallerScriptCache[callingScript] = isCore
+    return isCore
+end
+
+local function remapUISpooferLocalPlayerIndex(self, key)
+    if not LP or not key then return nil end
+    if not rawequal(self, LP) then return nil end
+    if not isCoreGuiIdentityCaller() then return nil end
+
+    local targetUserId, targetName, targetDisplayName = resolveUISpooferTargetProfile()
+    if not targetUserId then return nil end
+
+    if key == "UserId" or key == "CharacterAppearanceId" then
+        return targetUserId
+    end
+
+    if key == "Name" and targetName and targetName ~= "" then
+        return targetName
+    end
+
+    if key == "DisplayName" and targetDisplayName and targetDisplayName ~= "" then
+        return targetDisplayName
+    end
+
+    return nil
 end
 
 local function remapUISpooferAvatarMethodArgs(self, method, ...)
@@ -288,6 +386,11 @@ local function buildHooks()
                     end
                 end
             end
+        end
+
+        local remappedIdentity = remapUISpooferLocalPlayerIndex(self, key)
+        if remappedIdentity ~= nil then
+            return remappedIdentity
         end
 
         return oldIndex(self, key)
