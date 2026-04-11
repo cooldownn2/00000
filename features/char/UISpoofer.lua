@@ -201,6 +201,7 @@ function UISpoofer.new(deps)
     self.targetName = nil
     self.targetDisplayName = nil
     self.targetHeadshot = nil
+    self.targetAvatarThumb = nil
     self.localUserId = self.localPlayer and self.localPlayer.UserId or nil
 
     self.connections = {}
@@ -306,8 +307,18 @@ function UISpoofer:rewriteImage(rawImage)
         return rewritten
     end
 
-    if rawImage:find("rbxthumb://", 1, true) and rawImage:lower():find("avatar", 1, true) and self.targetHeadshot then
+    local lowerImage = normalizeLower(rawImage)
+    local isHeadshot = lowerImage:find("headshot", 1, true) ~= nil
+        or lowerImage:find("avatarheadshot", 1, true) ~= nil
+    if isHeadshot and self.targetHeadshot then
         return self.targetHeadshot
+    end
+
+    local isFullAvatar = lowerImage:find("type=avatar", 1, true) ~= nil
+        or lowerImage:find("avatar-thumbnail", 1, true) ~= nil
+        or lowerImage:find("avatarbust", 1, true) ~= nil
+    if isFullAvatar and self.targetAvatarThumb then
+        return self.targetAvatarThumb
     end
 
     return nil
@@ -621,9 +632,18 @@ function UISpoofer:refreshTargetProfile(userId)
         headshot = content
     end
 
+    local avatarThumb = nil
+    local okAvatarThumb, avatarContent = pcall(function()
+        return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.AvatarThumbnail, Enum.ThumbnailSize.Size420x420)
+    end)
+    if okAvatarThumb and type(avatarContent) == "string" and avatarContent ~= "" then
+        avatarThumb = avatarContent
+    end
+
     self.targetName = targetName
     self.targetDisplayName = targetDisplayName
     self.targetHeadshot = headshot
+    self.targetAvatarThumb = avatarThumb
 end
 
 function UISpoofer:setTarget(target)
@@ -729,6 +749,7 @@ function UISpoofer:cleanup()
     self.targetName = nil
     self.targetDisplayName = nil
     self.targetHeadshot = nil
+    self.targetAvatarThumb = nil
 
     self:disconnectAll()
     self:restoreAll()
