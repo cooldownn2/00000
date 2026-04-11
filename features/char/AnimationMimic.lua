@@ -834,6 +834,76 @@ function AnimationMimic:applyAnimationSetViaDescription(humanoid, animationSet)
     return pcall(function() humanoid:ApplyDescription(currentDesc) end)
 end
 
+function AnimationMimic:applyTargetDescriptionAnimations(userId, token)
+    if not self.active then return false end
+
+    local character = self.localPlayer.Character
+    if not character or not character.Parent then return false end
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
+
+    self:stopDirectController(character)
+    self:stopPosePrimer(character)
+
+    local okTarget, targetDesc = pcall(function()
+        return Players:GetHumanoidDescriptionFromUserId(userId)
+    end)
+    if not okTarget or not targetDesc then
+        targetDesc = self.shared:getTargetDescriptionCached(userId)
+    end
+    if not targetDesc then return false end
+
+    local okCurrent, currentDesc = pcall(function() return humanoid:GetAppliedDescription() end)
+    if not okCurrent or not currentDesc then return false end
+
+    local function copyAnimationFields(into, from)
+        into.RunAnimation = from.RunAnimation
+        into.WalkAnimation = from.WalkAnimation
+        into.IdleAnimation = from.IdleAnimation
+        into.JumpAnimation = from.JumpAnimation
+        into.FallAnimation = from.FallAnimation
+        into.ClimbAnimation = from.ClimbAnimation
+        into.SwimAnimation = from.SwimAnimation
+    end
+
+    copyAnimationFields(currentDesc, targetDesc)
+    applyScaleSnapshotToDesc(currentDesc, snapshotHumanoidScales(humanoid))
+
+    local function doApply(desc)
+        if humanoid.ApplyDescriptionClientServer then
+            local okCS = pcall(function() humanoid:ApplyDescriptionClientServer(desc) end)
+            if okCS then return true end
+        end
+        return pcall(function() humanoid:ApplyDescription(desc) end)
+    end
+
+    if not doApply(currentDesc) then return false end
+    doApply(currentDesc)
+
+    task.defer(function()
+        task.wait(0.1)
+        if not self.active then return end
+        if token and token ~= self.applyToken then return end
+        if not character.Parent then return end
+
+        local okDesc2, desc2 = pcall(function() return humanoid:GetAppliedDescription() end)
+        if not okDesc2 or not desc2 then return end
+
+        copyAnimationFields(desc2, targetDesc)
+        applyScaleSnapshotToDesc(desc2, snapshotHumanoidScales(humanoid))
+        doApply(desc2)
+    end)
+
+    if type(self.onAfterApply) == "function" then
+        task.defer(function()
+            pcall(self.onAfterApply)
+        end)
+    end
+
+    return true
+end
+
 function AnimationMimic:stopDirectController(character)
     if not character then return end
 
@@ -1243,6 +1313,19 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
     local switchedTarget = self.lastSourceUserId and self.lastSourceUserId ~= numericUserId
     if switchedTarget then
         self.shared.animationSetCache[numericUserId] = nil
+        self:stopDirectController(character)
+        self:stopPosePrimer(character)
+        flushAnimationState(character)
+        scrubTracksForDuration(character, 0.12)
+        if applyToken ~= self.applyToken then return false end
+    end
+
+    local directDescriptionApplied = self:applyTargetDescriptionAnimations(numericUserId, applyToken)
+    if directDescriptionApplied then
+        self.lastSourceUserId = numericUserId
+        self.pinnedTargetUserId = numericUserId
+        self.resumeUserId = numericUserId
+        return true
     end
 
     local animationSet = self:getAnimationSetFromUserIdWithRetry(numericUserId, 3)
@@ -1257,22 +1340,6 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
     end
 
     if applyToken ~= self.applyToken then return false end
-
-    if switchedTarget then
-        local hum = character:FindFirstChildOfClass("Humanoid")
-        if hum then
-            for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
-                track:Stop(0.2)
-            end
-            task.wait(0.2)
-        end
-        if applyToken ~= self.applyToken then return false end
-
-        self:restoreOwnAnimationsHard(character)
-        flushAnimationState(character)
-        scrubTracksForDuration(character, 0.18)
-        if applyToken ~= self.applyToken then return false end
-    end
 
     self.lastSourceUserId = numericUserId
     self.pinnedTargetUserId = numericUserId
