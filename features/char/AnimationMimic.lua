@@ -33,12 +33,6 @@ local function countAnimationSetCoverage(animationSet)
     return covered
 end
 
-local function getLocalRigType(localPlayer)
-    local character = localPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    return humanoid and humanoid.RigType or Enum.HumanoidRigType.R15
-end
-
 local function hardResetAnimator(humanoid)
     if not humanoid then return end
     local tracks = humanoid:GetPlayingAnimationTracks()
@@ -161,7 +155,6 @@ function AnimationMimic.new(deps)
     self.onAfterApply = deps.onAfterApply
 
     self.active = true
-    self.connections = {}
     self.originalByCharacter = {}
     self.directControllerByChar = {}
     self.posePrimerByChar = {}
@@ -181,7 +174,6 @@ function AnimationMimic.new(deps)
         replicateDescriptionToOthers = true,
         replicationRetryDelays = { 0.15, 0.4 },
         invalidateAnimationCacheOnTargetSwitch = true,
-        shortCircuitRigFetchOnFullDescription = false,
         alwaysAssistAfterApply = false,
         adaptiveAssistAfterApply = false,
         assistGraceSeconds = 0.18,
