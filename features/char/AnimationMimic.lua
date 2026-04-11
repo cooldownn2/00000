@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local InsertService = game:GetService("InsertService")
 
 local AnimationMimic = {}
 AnimationMimic.__index = AnimationMimic
@@ -190,7 +191,39 @@ function AnimationMimic.new(deps)
         idle1 = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.idle1),
     }
 
+    self.safeDescriptionAnimationIds = {}
+    for _, id in pairs(self.fallbackNumericIds) do
+        if id then self.safeDescriptionAnimationIds[id] = true end
+    end
+
+    self.descriptionAnimationAssetValidation = {}
+
     return self
+end
+
+function AnimationMimic:isDescriptionAnimationAssetIdValid(numericId)
+    if not numericId or numericId <= 0 then return false end
+    if self.safeDescriptionAnimationIds[numericId] then return true end
+
+    local cached = self.descriptionAnimationAssetValidation[numericId]
+    if cached ~= nil then
+        return cached == true
+    end
+
+    local ok, assetModel = pcall(function() return InsertService:LoadAsset(numericId) end)
+    if not ok or not assetModel then
+        self.descriptionAnimationAssetValidation[numericId] = false
+        return false
+    end
+
+    local hasR15AnimFolder = false
+    if assetModel:FindFirstChild("R15Anim", true) then
+        hasR15AnimFolder = true
+    end
+
+    pcall(function() assetModel:Destroy() end)
+    self.descriptionAnimationAssetValidation[numericId] = hasR15AnimFolder
+    return hasR15AnimFolder
 end
 
 function AnimationMimic:getGuaranteedFallbackSet()
@@ -731,13 +764,29 @@ function AnimationMimic:applyAnimationSetToDescriptionFields(desc, animationSet)
         )
     end
 
-    desc.ClimbAnimation = resolveNumeric("climb", "ClimbAnim", 1, R15_FALLBACK_ANIMATIONS.climb) or self.fallbackNumericIds.climb
-    desc.FallAnimation = resolveNumeric("fall", "FallAnim", 1, R15_FALLBACK_ANIMATIONS.fall) or self.fallbackNumericIds.fall
-    desc.JumpAnimation = resolveNumeric("jump", "JumpAnim", 1, R15_FALLBACK_ANIMATIONS.jump) or self.fallbackNumericIds.jump
-    desc.RunAnimation = resolveNumeric("run", "RunAnim", 1, R15_FALLBACK_ANIMATIONS.run) or self.fallbackNumericIds.run
-    desc.WalkAnimation = resolveNumeric("walk", "WalkAnim", 1, R15_FALLBACK_ANIMATIONS.walk) or self.fallbackNumericIds.walk
-    desc.SwimAnimation = resolveNumeric("swim", "Swim", 1, R15_FALLBACK_ANIMATIONS.swim) or self.fallbackNumericIds.swim
-    desc.IdleAnimation = resolveNumeric("idle", "Animation1", 1, R15_FALLBACK_ANIMATIONS.idle1) or self.fallbackNumericIds.idle1
+    local climb = resolveNumeric("climb", "ClimbAnim", 1, R15_FALLBACK_ANIMATIONS.climb) or self.fallbackNumericIds.climb
+    local fall = resolveNumeric("fall", "FallAnim", 1, R15_FALLBACK_ANIMATIONS.fall) or self.fallbackNumericIds.fall
+    local jump = resolveNumeric("jump", "JumpAnim", 1, R15_FALLBACK_ANIMATIONS.jump) or self.fallbackNumericIds.jump
+    local run = resolveNumeric("run", "RunAnim", 1, R15_FALLBACK_ANIMATIONS.run) or self.fallbackNumericIds.run
+    local walk = resolveNumeric("walk", "WalkAnim", 1, R15_FALLBACK_ANIMATIONS.walk) or self.fallbackNumericIds.walk
+    local swim = resolveNumeric("swim", "Swim", 1, R15_FALLBACK_ANIMATIONS.swim) or self.fallbackNumericIds.swim
+    local idle = resolveNumeric("idle", "Animation1", 1, R15_FALLBACK_ANIMATIONS.idle1) or self.fallbackNumericIds.idle1
+
+    local toValidate = { climb, fall, jump, run, walk, swim, idle }
+    for i = 1, #toValidate do
+        local id = toValidate[i]
+        if not self:isDescriptionAnimationAssetIdValid(id) then
+            return false
+        end
+    end
+
+    desc.ClimbAnimation = climb
+    desc.FallAnimation = fall
+    desc.JumpAnimation = jump
+    desc.RunAnimation = run
+    desc.WalkAnimation = walk
+    desc.SwimAnimation = swim
+    desc.IdleAnimation = idle
 
     return true
 end
