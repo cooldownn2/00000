@@ -3,15 +3,6 @@ local Players = game:GetService("Players")
 local EmoteMimic = {}
 EmoteMimic.__index = EmoteMimic
 
-local ANIMATE_FOLDER_TO_DESC_FIELD = {
-    climb = "ClimbAnimation",
-    fall = "FallAnimation",
-    jump = "JumpAnimation",
-    run = "RunAnimation",
-    walk = "WalkAnimation",
-    swim = "SwimAnimation",
-}
-
 local function hasAnyTableEntries(value)
     return type(value) == "table" and next(value) ~= nil
 end
@@ -56,15 +47,6 @@ local function stableSerialize(value, out)
     return out
 end
 
-local function firstAnimationInFolder(folder)
-    if not folder then return nil end
-    for _, child in ipairs(folder:GetChildren()) do
-        if child:IsA("Animation") then
-            return child
-        end
-    end
-    return nil
-end
 
 function EmoteMimic.new(deps)
     local self = setmetatable({}, EmoteMimic)
@@ -205,43 +187,6 @@ function EmoteMimic:applyEmotesToHumanoid(humanoid, emoteData)
     if not setAny then
         self.shared:destroyColorSnapshot(colorSnapshot)
         return false
-    end
-
-    -- Preserve currently active animation slot ids from Animate so emote
-    -- description applies do not reset animation mimic back to defaults.
-    local function captureCurrentAnimationSlots(character)
-        local out = {}
-        local animate = character and character:FindFirstChild("Animate")
-        if not animate then return out end
-
-        for folderName, descField in pairs(ANIMATE_FOLDER_TO_DESC_FIELD) do
-            local folder = animate:FindFirstChild(folderName)
-            local animObj = firstAnimationInFolder(folder)
-            if animObj and animObj.AnimationId and animObj.AnimationId ~= "" then
-                local numeric = self.shared:numericIdFromContentId(animObj.AnimationId)
-                if numeric and numeric > 0 then
-                    out[descField] = numeric
-                end
-            end
-        end
-
-        local idleFolder = animate:FindFirstChild("idle")
-        local idleAnim = idleFolder and (idleFolder:FindFirstChild("Animation1") or firstAnimationInFolder(idleFolder))
-        if idleAnim and idleAnim.AnimationId and idleAnim.AnimationId ~= "" then
-            local idleNumeric = self.shared:numericIdFromContentId(idleAnim.AnimationId)
-            if idleNumeric and idleNumeric > 0 then
-                out.IdleAnimation = idleNumeric
-            end
-        end
-
-        return out
-    end
-
-    local preservedAnimationFields = captureCurrentAnimationSlots(character)
-    for fieldName, numericId in pairs(preservedAnimationFields) do
-        pcall(function()
-            currentDesc[fieldName] = numericId
-        end)
     end
 
     self.shared:applyScaleValuesToDescription(currentDesc, scaleSnapshot)

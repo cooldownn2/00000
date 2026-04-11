@@ -1140,11 +1140,12 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     local animate = character:FindFirstChild("Animate")
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
+    local preferDescriptionApply = animationSet.__descriptionCompatible == true
 
     hardResetAnimator(humanoid)
 
     local applied = 0
-    if animate then
+    if animate and not preferDescriptionApply then
         for _, spec in ipairs(SLOT_SPECS) do
             if self:applySlotFromSet(character, animate, animationSet, spec.folder, spec.fallback, true) then
                 applied = applied + 1
@@ -1166,7 +1167,8 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
             self:stopPosePrimer(character)
         else
             local fallbackSet = self:getGuaranteedFallbackSet()
-            if not self:startDirectController(character, fallbackSet) then return false end
+            local directSet = preferDescriptionApply and fallbackSet or animationSet
+            if not self:startDirectController(character, directSet) then return false end
         end
     end
 
@@ -1203,11 +1205,12 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
     local animate = character:FindFirstChild("Animate")
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
+    local preferDescriptionApply = ownSet.__descriptionCompatible == true
 
     hardResetAnimator(humanoid)
 
     local applied = 0
-    if animate then
+    if animate and not preferDescriptionApply then
         for _, spec in ipairs(SLOT_SPECS) do
             if self:applySlotFromSet(character, animate, ownSet, spec.folder, spec.fallback, false) then
                 applied = applied + 1
@@ -1229,7 +1232,8 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
         else
             if not self.active then return false end
             local fallbackSet = self:getGuaranteedFallbackSet()
-            if not self:startDirectController(character, fallbackSet) then return false end
+            local directSet = preferDescriptionApply and fallbackSet or ownSet
+            if not self:startDirectController(character, directSet) then return false end
         end
     end
 

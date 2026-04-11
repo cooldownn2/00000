@@ -58,9 +58,6 @@ local function ensureModules()
     animation = CharAnimation.new({
         shared = shared,
         localPlayer = LP,
-        onAfterApply = function()
-            if emote then emote:reapply() end
-        end,
     })
     outfit = CharOutfit.new({
         shared = shared,
@@ -97,8 +94,8 @@ local function switchTargetSafe(target)
 
     local function applyAnimAndEmote()
         if not canApplyForToken() then return end
-        animation:mimicFromTarget(target)
         emote:mimicFromTarget(target)
+        animation:mimicFromTarget(target)
     end
 
     local outfitOk = outfit:setTarget(target)
