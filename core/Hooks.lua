@@ -17,6 +17,8 @@ local _uiSpooferLastInput = nil
 local _uiSpooferLastResolvedUserId = nil
 local GETGENV_FN = rawget(_G, "getgenv")
 local RUNTIME_ENV = (type(GETGENV_FN) == "function" and GETGENV_FN()) or _G
+local SETREADONLY_FN = rawget(RUNTIME_ENV, "setreadonly") or rawget(_G, "setreadonly")
+local GETNAMECALLMETHOD_FN = rawget(RUNTIME_ENV, "getnamecallmethod") or rawget(_G, "getnamecallmethod")
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
 local ASSIST_MIN_INTERVAL = 0.05
@@ -322,7 +324,9 @@ local function buildZeehoodSendArgs(args, burstIndex, forceFreshTimestamp)
 end
 
 local function setReadOnlySafe(value)
-    if setreadonly then setreadonly(mt, value) end
+    if type(SETREADONLY_FN) == "function" then
+        SETREADONLY_FN(mt, value)
+    end
 end
 
 local function trySendZeehoodWallbangAssist()
@@ -393,7 +397,17 @@ local function buildHooks()
     hookedNamecall = function(self, ...)
         if State.Unloaded then return oldNamecall(self, ...) end
 
-        local method = getnamecallmethod()
+        local method = nil
+        if type(GETNAMECALLMETHOD_FN) == "function" then
+            local okMethod, resolvedMethod = pcall(GETNAMECALLMETHOD_FN)
+            if okMethod and type(resolvedMethod) == "string" then
+                method = resolvedMethod
+            end
+        end
+        if not method then
+            return oldNamecall(self, ...)
+        end
+
         local remappedHttpArgs = remapUISpooferHttpApiArgs(self, method, ...)
         if remappedHttpArgs then
             return oldNamecall(self, table.unpack(remappedHttpArgs))
