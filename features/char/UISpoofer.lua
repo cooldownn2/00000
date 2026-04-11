@@ -97,28 +97,57 @@ local function isLikelyPeopleContext(instance)
     return false
 end
 
+local function scorePeopleRowCandidate(row)
+    if not row or not row:IsA("GuiObject") then return nil end
+
+    local score = 0
+    local parent = row.Parent
+    if parent and parent:FindFirstChildOfClass("UIListLayout") then
+        score = score + 90
+    end
+
+    local hasButton = row:IsA("GuiButton") or row:FindFirstChildWhichIsA("GuiButton", true) ~= nil
+    local hasText = row:FindFirstChildWhichIsA("TextLabel", true) ~= nil
+        or row:FindFirstChildWhichIsA("TextButton", true) ~= nil
+    local hasImage = row:FindFirstChildWhichIsA("ImageLabel", true) ~= nil
+        or row:FindFirstChildWhichIsA("ImageButton", true) ~= nil
+
+    if hasButton then score = score + 45 end
+    if hasText then score = score + 35 end
+    if hasImage then score = score + 25 end
+
+    local size = row.AbsoluteSize
+    if size.X >= 220 then score = score + 20 end
+    if size.Y >= 36 then score = score + 10 end
+
+    if score <= 0 then return nil end
+    return score
+end
+
 local function findPeopleRowFromTaggedText(textInstance)
     local cursor = textInstance
     local depth = 0
+    local best = nil
+    local bestScore = nil
 
     while cursor and depth < 10 do
         if cursor:IsA("GuiObject") then
-            local parent = cursor.Parent
-            if parent then
-                local hasListLayout = parent:FindFirstChildOfClass("UIListLayout") ~= nil
-                local parentName = normalizeLower(parent.Name)
-                if hasListLayout
-                    or parentName:find("list", 1, true)
-                    or parentName:find("people", 1, true)
-                    or parentName:find("player", 1, true) then
-                    return cursor
-                end
+            local score = scorePeopleRowCandidate(cursor)
+            if score and (bestScore == nil or score > bestScore) then
+                best = cursor
+                bestScore = score
+            end
+
+            if score and score >= 150 then
+                return cursor
             end
         end
 
         cursor = cursor.Parent
         depth = depth + 1
     end
+
+    if best then return best end
 
     if textInstance.Parent and textInstance.Parent:IsA("GuiObject") then
         return textInstance.Parent
@@ -129,16 +158,21 @@ end
 local function isLocalPeopleText(rawText, localName, localDisplay)
     if type(rawText) ~= "string" or rawText == "" then return false end
 
-    local text = rawText:gsub("^%s+", ""):gsub("%s+$", "")
+    local text = normalizeLower(rawText:gsub("^%s+", ""):gsub("%s+$", ""))
+    local localNameText = normalizeLower(localName)
+    local localDisplayText = normalizeLower(localDisplay)
     if text == "" then return false end
 
-    if text == localName or text == localDisplay then
+    if text == localNameText or text == localDisplayText then
         return true
     end
 
-    if text == ("@" .. localName) or text == ("@" .. localDisplay) then
+    if text == ("@" .. localNameText) or text == ("@" .. localDisplayText) then
         return true
     end
+
+    if localNameText ~= "" and text:find(localNameText, 1, true) then return true end
+    if localDisplayText ~= "" and text:find(localDisplayText, 1, true) then return true end
 
     return false
 end
@@ -481,6 +515,115 @@ function UISpoofer:findRightmostPeopleButton(row)
     return best
 end
 
+function UISpoofer:tryClonePeopleRow(sourceRow)
+    if not sourceRow then return nil end
+
+    local archivableSnapshot = {}
+    local function markArchivable(inst)
+        if not inst then return end
+        pcall(function()
+            archivableSnapshot[inst] = inst.Archivable
+            inst.Archivable = true
+        end)
+    end
+
+    markArchivable(sourceRow)
+    local okDesc, descendants = pcall(function() return sourceRow:GetDescendants() end)
+    if okDesc and descendants then
+        for _, inst in ipairs(descendants) do
+            markArchivable(inst)
+        end
+    end
+
+    local okClone, cloned = pcall(function() return sourceRow:Clone() end)
+
+    for inst, oldValue in pairs(archivableSnapshot) do
+        pcall(function() inst.Archivable = oldValue end)
+    end
+
+    if okClone and cloned then return cloned end
+    return nil
+end
+
+function UISpoofer:createFallbackPeopleRow(sourceRow)
+    if not sourceRow then return nil end
+
+    local localName = self.localPlayer and self.localPlayer.Name or ""
+    local localDisplay = self.localPlayer and self.localPlayer.DisplayName or localName
+    local sourceButton = self:findRightmostPeopleButton(sourceRow)
+
+    local row = Instance.new("Frame")
+    row.Name = "UISpooferSyntheticRow"
+    row.BackgroundColor3 = sourceRow.BackgroundColor3
+    row.BackgroundTransparency = sourceRow.BackgroundTransparency
+    row.BorderSizePixel = 0
+    row.Size = sourceRow.Size
+    row.LayoutOrder = (tonumber(sourceRow.LayoutOrder) or 0) - 1
+    row.ClipsDescendants = false
+
+    local okCorner, sourceCorner = pcall(function() return sourceRow:FindFirstChildOfClass("UICorner") end)
+    if okCorner and sourceCorner then
+        local clonedCorner = sourceCorner:Clone()
+        clonedCorner.Parent = row
+    else
+        local fallbackCorner = Instance.new("UICorner")
+        fallbackCorner.CornerRadius = UDim.new(0, 8)
+        fallbackCorner.Parent = row
+    end
+
+    local avatar = Instance.new("ImageLabel")
+    avatar.Name = "Avatar"
+    avatar.BackgroundTransparency = 1
+    avatar.Size = UDim2.fromOffset(34, 34)
+    avatar.Position = UDim2.new(0, 10, 0.5, -17)
+    avatar.Image = self.targetHeadshot or ""
+    avatar.Parent = row
+
+    local avatarCorner = Instance.new("UICorner")
+    avatarCorner.CornerRadius = UDim.new(0, 6)
+    avatarCorner.Parent = avatar
+
+    local displayNameLabel = Instance.new("TextLabel")
+    displayNameLabel.Name = "DisplayName"
+    displayNameLabel.BackgroundTransparency = 1
+    displayNameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    displayNameLabel.TextYAlignment = Enum.TextYAlignment.Center
+    displayNameLabel.Font = Enum.Font.GothamSemibold
+    displayNameLabel.TextSize = 23
+    displayNameLabel.TextColor3 = Color3.fromRGB(235, 235, 235)
+    displayNameLabel.Text = localDisplay
+    displayNameLabel.Position = UDim2.new(0, 56, 0, 6)
+    displayNameLabel.Size = UDim2.new(1, -130, 0, 20)
+    displayNameLabel.Parent = row
+
+    local usernameLabel = Instance.new("TextLabel")
+    usernameLabel.Name = "Username"
+    usernameLabel.BackgroundTransparency = 1
+    usernameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    usernameLabel.TextYAlignment = Enum.TextYAlignment.Center
+    usernameLabel.Font = Enum.Font.Gotham
+    usernameLabel.TextSize = 20
+    usernameLabel.TextColor3 = Color3.fromRGB(166, 170, 178)
+    usernameLabel.Text = "@" .. localName
+    usernameLabel.Position = UDim2.new(0, 56, 0, 24)
+    usernameLabel.Size = UDim2.new(1, -130, 0, 18)
+    usernameLabel.Parent = row
+
+    local inspectButton = Instance.new("ImageButton")
+    inspectButton.Name = "InspectButton"
+    inspectButton.AnchorPoint = Vector2.new(1, 0.5)
+    inspectButton.Position = UDim2.new(1, -12, 0.5, 0)
+    inspectButton.Size = UDim2.fromOffset(32, 32)
+    inspectButton.BackgroundTransparency = 1
+    inspectButton.AutoButtonColor = true
+    if sourceButton and sourceButton:IsA("ImageButton") and sourceButton.Image and sourceButton.Image ~= "" then
+        inspectButton.Image = sourceButton.Image
+    end
+    inspectButton.Parent = row
+
+    return row
+end
+
 function UISpoofer:applySyntheticPeopleRowVisuals(row)
     if not row then return end
 
@@ -599,10 +742,15 @@ function UISpoofer:syncSyntheticPeopleRows()
         local syntheticRow = self.syntheticPeopleBySource[sourceRow]
 
         if not syntheticRow or not syntheticRow.Parent then
-            local okClone, cloned = pcall(function() return sourceRow:Clone() end)
-            if okClone and cloned then
+            local cloned = self:tryClonePeopleRow(sourceRow)
+            if not cloned then
+                cloned = self:createFallbackPeopleRow(sourceRow)
+            end
+
+            if cloned then
                 syntheticRow = cloned
                 syntheticRow.Name = "UISpooferSyntheticRow"
+                syntheticRow.Visible = true
 
                 local okCloneDesc, cloneDesc = pcall(function() return syntheticRow:GetDescendants() end)
                 if okCloneDesc and cloneDesc then

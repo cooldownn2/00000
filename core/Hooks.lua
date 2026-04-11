@@ -15,14 +15,8 @@ local UI_SPOOFER_RESOLVE_TTL = 1
 local _uiSpooferLastResolvedAt = 0
 local _uiSpooferLastInput = nil
 local _uiSpooferLastResolvedUserId = nil
-local _uiSpooferProfileUserId = nil
-local _uiSpooferProfileName = nil
-local _uiSpooferProfileDisplayName = nil
-local _coreCallerScriptCache = setmetatable({}, { __mode = "k" })
 local GETGENV_FN = rawget(_G, "getgenv")
 local RUNTIME_ENV = (type(GETGENV_FN) == "function" and GETGENV_FN()) or _G
-local GETCALLINGSCRIPT_FN = rawget(RUNTIME_ENV, "getcallingscript") or rawget(_G, "getcallingscript")
-local CHECKCALLER_FN = rawget(RUNTIME_ENV, "checkcaller") or rawget(_G, "checkcaller")
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
 local ASSIST_MIN_INTERVAL = 0.05
@@ -67,9 +61,6 @@ local function resolveUISpooferTargetUserId()
         _uiSpooferLastInput = nil
         _uiSpooferLastResolvedUserId = nil
         _uiSpooferLastResolvedAt = 0
-        _uiSpooferProfileUserId = nil
-        _uiSpooferProfileName = nil
-        _uiSpooferProfileDisplayName = nil
         return nil
     end
 
@@ -100,81 +91,6 @@ local function resolveUISpooferTargetUserId()
     _uiSpooferLastResolvedAt = now
     _uiSpooferLastResolvedUserId = resolvedUserId
     return resolvedUserId
-end
-
-local function resolveUISpooferTargetProfile()
-    local targetUserId = resolveUISpooferTargetUserId()
-    if not targetUserId then
-        _uiSpooferProfileUserId = nil
-        _uiSpooferProfileName = nil
-        _uiSpooferProfileDisplayName = nil
-        return nil, nil, nil
-    end
-
-    if _uiSpooferProfileUserId == targetUserId
-        and _uiSpooferProfileName
-        and _uiSpooferProfileDisplayName then
-        return _uiSpooferProfileUserId, _uiSpooferProfileName, _uiSpooferProfileDisplayName
-    end
-
-    local targetName = tostring(targetUserId)
-    local targetDisplayName = targetName
-    local okPlayer, targetPlayer = pcall(function()
-        return Players:GetPlayerByUserId(targetUserId)
-    end)
-    if okPlayer and targetPlayer then
-        if type(targetPlayer.Name) == "string" and targetPlayer.Name ~= "" then
-            targetName = targetPlayer.Name
-        end
-        if type(targetPlayer.DisplayName) == "string" and targetPlayer.DisplayName ~= "" then
-            targetDisplayName = targetPlayer.DisplayName
-        else
-            targetDisplayName = targetName
-        end
-    end
-
-    _uiSpooferProfileUserId = targetUserId
-    _uiSpooferProfileName = targetName
-    _uiSpooferProfileDisplayName = targetDisplayName
-    return targetUserId, targetName, targetDisplayName
-end
-
-local function isCoreGuiIdentityCaller()
-    if type(GETCALLINGSCRIPT_FN) ~= "function" then return false end
-
-    local ok, callingScript = pcall(GETCALLINGSCRIPT_FN)
-    if not ok or typeof(callingScript) ~= "Instance" then
-        return false
-    end
-
-    local cached = _coreCallerScriptCache[callingScript]
-    if cached ~= nil then
-        return cached
-    end
-
-    local isCore = false
-    local okName, fullName = pcall(function()
-        return string.lower(callingScript:GetFullName())
-    end)
-    if okName and type(fullName) == "string" then
-        isCore = fullName:find("coregui", 1, true) ~= nil
-            or fullName:find("robloxgui", 1, true) ~= nil
-            or fullName:find("ingamemenu", 1, true) ~= nil
-            or fullName:find("playerlist", 1, true) ~= nil
-            or fullName:find("inspect", 1, true) ~= nil
-            or fullName:find("social", 1, true) ~= nil
-    end
-
-    _coreCallerScriptCache[callingScript] = isCore
-    return isCore
-end
-
-local function isInternalCaller()
-    if type(CHECKCALLER_FN) ~= "function" then return false end
-
-    local ok, isCaller = pcall(CHECKCALLER_FN)
-    if not ok then return false end
-    return isCaller == true
 end
 
 local function remapUISpooferLocalPlayerIndex(self, key)
