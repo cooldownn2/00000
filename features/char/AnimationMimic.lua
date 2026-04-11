@@ -146,11 +146,11 @@ function AnimationMimic.new(deps)
     self.applyToken = 0
 
     self.settings = {
-        useDirectTrackFallback = true,
+        useDirectTrackFallback = false,
         cacheTtlSeconds = 22,
         minLiveCoverage = 1,
         liveSourceWaitSeconds = 0.75,
-        replicateDescriptionToOthers = false,
+        replicateDescriptionToOthers = true,
         replicationRetryDelays = { 0.12, 0.35 },
         invalidateAnimationCacheOnTargetSwitch = false,
         shortCircuitRigFetchOnFullDescription = false,
@@ -460,9 +460,9 @@ function AnimationMimic:makeIdleAnimationData(rawIdleId)
     local cleaned = self:sanitizeResolvedAnimationId(rawIdleId, nil)
     if not cleaned then return nil end
     return {
-        byName = { Animation1 = cleaned, Animation2 = cleaned },
-        ordered = { cleaned, cleaned },
-        first = cleaned,
+        byName = { Animation1 = cleaned },
+        ordered = { cleaned },
+        first = nil,
     }
 end
 
@@ -574,7 +574,6 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
     if cached then return cached end
 
     local fromLive = self:getAnimationSetFromLivePlayerWithWait(userId, self.settings.liveSourceWaitSeconds)
-    local fromRig = self:getAnimationSetFromTempRig(userId)
     local fromDesc = self:getAnimationSetFromDescription(userId)
 
     local function pickBetter(currentBest, candidate)
@@ -599,8 +598,13 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
 
     local best = nil
     best = pickBetter(best, { set = fromLive, priority = 3 })
-    best = pickBetter(best, { set = fromRig, priority = 2 })
     best = pickBetter(best, { set = fromDesc, priority = 1 })
+
+    local bestCoverage = best and best.coverage or 0
+    if bestCoverage < #ANIM_KEYS then
+        local fromRig = self:getAnimationSetFromTempRig(userId)
+        best = pickBetter(best, { set = fromRig, priority = 2 })
+    end
 
     if not best or not best.set then return nil end
 
@@ -664,7 +668,7 @@ end
 
 function AnimationMimic:replicateAnimationStateForOthers(character, animationSet)
     if not self.settings.replicateDescriptionToOthers then return true end
-    if not animationSet or animationSet.__descriptionCompatible ~= true then
+    if not animationSet then
         return true
     end
 
@@ -723,7 +727,8 @@ function AnimationMimic:scheduleReplicationRetry(character, animationSet, token)
     end
 end
 
-function AnimationMimic:applyAnimationSetViaDescription(humanoid, animationSet)
+function AnimationMimic:applyAnimationSetViaDescription(humanoid, animationSet, opts)
+    opts = opts or {}
     if not humanoid or not animationSet then return false end
 
     local ok, currentDesc = pcall(function() return humanoid:GetAppliedDescription() end)
@@ -734,6 +739,10 @@ function AnimationMimic:applyAnimationSetViaDescription(humanoid, animationSet)
     if humanoid.ApplyDescriptionClientServer then
         local okCS = pcall(function() humanoid:ApplyDescriptionClientServer(currentDesc) end)
         if okCS then return true end
+    end
+
+    if opts.requireReplication == true then
+        return false
     end
 
     return pcall(function() humanoid:ApplyDescription(currentDesc) end)
@@ -1010,6 +1019,27 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
 
     hardResetAnimator(humanoid)
 
+    local requireReplication = self.settings.replicateDescriptionToOthers == true
+    if requireReplication then
+        local descApplied = self:applyAnimationSetViaDescription(humanoid, animationSet, { requireReplication = true })
+        if descApplied then
+            self:stopDirectController(character)
+            self:stopPosePrimer(character)
+            refreshAnimate(character)
+            self:unstickPoseAfterApply(character, animationSet)
+            local replicated = self:replicateAnimationStateForOthers(character, animationSet)
+            if not replicated then
+                self:scheduleReplicationRetry(character, animationSet, self.applyToken)
+            end
+            if type(self.onAfterApply) == "function" then
+                task.defer(function()
+                    pcall(self.onAfterApply)
+                end)
+            end
+            return true
+        end
+    end
+
     local applied = 0
     if animate then
         for _, spec in ipairs(SLOT_SPECS) do
@@ -1038,9 +1068,7 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
 
     if self.settings.alwaysAssistAfterApply then
         local startedAssist = self:ensureAssistController(character, animationSet)
-        if not startedAssist then
-            self:ensureAssistController(character, animationSet)
-        end
+        startedAssist = startedAssist
     elseif self.settings.adaptiveAssistAfterApply then
         self:scheduleAssistIfNeeded(character, animationSet)
     end
@@ -1100,9 +1128,7 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
 
     if self.settings.alwaysAssistAfterApply then
         local startedAssist = self:ensureAssistController(character, ownSet)
-        if not startedAssist then
-            self:ensureAssistController(character, ownSet)
-        end
+        startedAssist = startedAssist
     elseif self.settings.adaptiveAssistAfterApply then
         self:scheduleAssistIfNeeded(character, ownSet)
     end
