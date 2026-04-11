@@ -560,7 +560,7 @@ function AnimationMimic:getAnimationSetFromTempRig(userId)
         return nil
     end
 
-    local folderNames = { "run", "walk", "jump", "fall", "climb", "swim", "idle" }
+    local folderNames = { "run", "walk", "jump", "fall", "idle" }
     local deadline = os.clock() + 5
     repeat
         task.wait(0.1)
@@ -621,7 +621,7 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
     best = pickBetter(best, { set = fromDesc, priority = 1 })
 
     if not best or not best.set then return nil end
-    if (best.coverage or 0) < #ANIM_KEYS then return nil end
+    if (best.coverage or 0) < 5 then return nil end
 
     self:setCachedAnimationSet(userId, best.set)
     return best.set
