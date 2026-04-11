@@ -253,6 +253,11 @@ local function update()
 end
 
 local function onCharacterAdded(char)
+    local shouldEnable = Settings and Settings.CharacterModelEnabled == true
+    if shouldEnable and not enabledState then
+        setEnabled(true)
+    end
+
     if not enabledState then return end
     if not ensureModules() then return end
 
@@ -264,7 +269,7 @@ local function onCharacterAdded(char)
         outfit:onCharacterAdded(char)
         return
     end
-    if targetState == "" then
+    if targetState == "" or target ~= targetState then
         targetState = target
     end
 
