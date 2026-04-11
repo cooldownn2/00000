@@ -211,6 +211,7 @@ function AnimationMimic.new(deps)
         walk  = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.walk),
         swim  = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.swim),
         idle1 = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.idle1),
+        idle2 = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.idle2),
     }
 
     return self
@@ -702,7 +703,19 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
     if cached then return cached end
 
     local fromLive = self:getAnimationSetFromLivePlayer(userId)
+    local liveCoverage = countAnimationSetCoverage(fromLive)
+    if liveCoverage >= #ANIM_KEYS then
+        self:setCachedAnimationSet(userId, fromLive)
+        return fromLive
+    end
+
     local fromDesc = self:getAnimationSetFromDescription(userId)
+    local descCoverage = countAnimationSetCoverage(fromDesc)
+    if descCoverage >= #ANIM_KEYS then
+        self:setCachedAnimationSet(userId, fromDesc)
+        return fromDesc
+    end
+
     local fromRig  = self:getAnimationSetFromTempRig(userId)
 
     local merged = {}
@@ -712,12 +725,14 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
         local descSlot = fromDesc and fromDesc[key] or nil
 
         local picked = nil
-        if hasAnimationFolderData(liveSlot) then
-            picked = liveSlot
+        -- When live coverage is partial, live slots can be stale/default.
+        -- Prefer description/rig first and only use live as last fallback.
+        if hasAnimationFolderData(descSlot) then
+            picked = descSlot
         elseif hasAnimationFolderData(rigSlot) then
             picked = rigSlot
-        elseif hasAnimationFolderData(descSlot) then
-            picked = descSlot
+        elseif hasAnimationFolderData(liveSlot) then
+            picked = liveSlot
         end
 
         if picked then
@@ -914,16 +929,10 @@ function AnimationMimic:applyAnimationSetViaDescription(humanoid, animationSet)
         end
     end
 
-    local applyOk = pcall(function() humanoid:ApplyDescription(currentDesc) end)
-    if character and liveColorSnapshot then
-        self.shared:restoreCharacterColors(character, liveColorSnapshot)
-        task.defer(function()
-            task.wait(0.08)
-            self.shared:restoreCharacterColors(character, liveColorSnapshot)
-            self.shared:destroyColorSnapshot(liveColorSnapshot)
-        end)
+    if liveColorSnapshot then
+        self.shared:destroyColorSnapshot(liveColorSnapshot)
     end
-    return applyOk, false
+    return false, false
 end
 
 function AnimationMimic:stopDirectController(character)
@@ -959,26 +968,46 @@ function AnimationMimic:stopAllDirectControllers()
 end
 
 function AnimationMimic:pruneStaleCharacterAnimationState(currentCharacter)
+    local originalKeys = {}
     for character in pairs(self.originalByCharacter) do
+        originalKeys[#originalKeys + 1] = character
+    end
+    for i = 1, #originalKeys do
+        local character = originalKeys[i]
         if character ~= currentCharacter and (not character.Parent or character ~= self.localPlayer.Character) then
             self:resetCharacterAnimations(character)
             self.originalByCharacter[character] = nil
         end
     end
 
+    local controllerKeys = {}
     for character in pairs(self.directControllerByChar) do
+        controllerKeys[#controllerKeys + 1] = character
+    end
+    for i = 1, #controllerKeys do
+        local character = controllerKeys[i]
         if character ~= currentCharacter and (not character.Parent or character ~= self.localPlayer.Character) then
             self:stopDirectController(character)
         end
     end
 
+    local primerKeys = {}
     for character in pairs(self.posePrimerByChar) do
+        primerKeys[#primerKeys + 1] = character
+    end
+    for i = 1, #primerKeys do
+        local character = primerKeys[i]
         if character ~= currentCharacter and (not character.Parent or character ~= self.localPlayer.Character) then
             self:stopPosePrimer(character)
         end
     end
 
+    local watcherKeys = {}
     for character in pairs(self.recoveryWatcherByChar) do
+        watcherKeys[#watcherKeys + 1] = character
+    end
+    for i = 1, #watcherKeys do
+        local character = watcherKeys[i]
         if character ~= currentCharacter and (not character.Parent or character ~= self.localPlayer.Character) then
             self:stopRecoveryWatcher(character)
         end
@@ -1205,6 +1234,10 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     end
 
     if applied > 0 then
+        self:requestReplicateResync(character, animationSet, {
+            force = true,
+            retryDelays = { 0.08 },
+        })
         self:stopDirectController(character)
         self:stopPosePrimer(character)
         refreshAnimate(character)
@@ -1295,6 +1328,10 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
     end
 
     if applied > 0 then
+        self:requestReplicateResync(character, ownSet, {
+            force = true,
+            retryDelays = { 0.08 },
+        })
         self:stopDirectController(character)
         self:stopPosePrimer(character)
         refreshAnimate(character)
