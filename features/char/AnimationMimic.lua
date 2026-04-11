@@ -549,8 +549,13 @@ function AnimationMimic:getAnimationSetFromDescription(userId)
 end
 
 function AnimationMimic:getAnimationSetFromTempRig(userId)
-    local rigType = getLocalRigType(self.localPlayer)
-    local ok, rig = pcall(function() return Players:CreateHumanoidModelFromUserId(userId, rigType) end)
+    local targetRigType = Enum.HumanoidRigType.R15
+    local avatarType = self.shared:getUserAvatarType(userId)
+    if avatarType == "R6" then
+        targetRigType = Enum.HumanoidRigType.R6
+    end
+
+    local ok, rig = pcall(function() return Players:CreateHumanoidModelFromUserId(userId, targetRigType) end)
     if not ok or not rig then return nil end
 
     rig.Name = "AnimationMimicTempRig"
