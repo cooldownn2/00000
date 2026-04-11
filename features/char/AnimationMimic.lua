@@ -4,35 +4,16 @@ local RunService = game:GetService("RunService")
 local AnimationMimic = {}
 AnimationMimic.__index = AnimationMimic
 
-local R15_FALLBACK_ANIMATIONS = {
-    climb = "rbxassetid://507765644",
-    fall = "rbxassetid://507765000",
-    jump = "rbxassetid://507765000",
-    run = "rbxassetid://913376220",
-    walk = "rbxassetid://913402848",
-    swim = "rbxassetid://913384386",
-    idle1 = "rbxassetid://507766388",
-    idle2 = "rbxassetid://507766666",
-}
-
 local SLOT_SPECS = {
-    { folder = "climb", fallback = R15_FALLBACK_ANIMATIONS.climb },
-    { folder = "fall", fallback = R15_FALLBACK_ANIMATIONS.fall },
-    { folder = "jump", fallback = R15_FALLBACK_ANIMATIONS.jump },
-    { folder = "run", fallback = R15_FALLBACK_ANIMATIONS.run },
-    { folder = "walk", fallback = R15_FALLBACK_ANIMATIONS.walk },
-    { folder = "swim", fallback = R15_FALLBACK_ANIMATIONS.swim },
+    { folder = "climb" },
+    { folder = "fall" },
+    { folder = "jump" },
+    { folder = "run" },
+    { folder = "walk" },
+    { folder = "swim" },
 }
 
 local ANIM_KEYS = { "climb", "fall", "jump", "run", "walk", "swim", "idle" }
-
-local function getFirstAnimationInFolder(folder)
-    if not folder then return nil end
-    for _, child in ipairs(folder:GetChildren()) do
-        if child:IsA("Animation") then return child end
-    end
-    return nil
-end
 
 local function hasAnimationFolderData(fd)
     return fd ~= nil and fd.first ~= nil
@@ -165,7 +146,6 @@ function AnimationMimic.new(deps)
     self.applyToken = 0
 
     self.settings = {
-        useFallbackWhenMissing = true,
         useDirectTrackFallback = true,
         cacheTtlSeconds = 22,
         minLiveCoverage = 1,
@@ -181,54 +161,12 @@ function AnimationMimic.new(deps)
         assistControllerStep = 0.05,
     }
 
-    self.fallbackNumericIds = {
-        climb = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.climb),
-        fall = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.fall),
-        jump = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.jump),
-        run = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.run),
-        walk = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.walk),
-        swim = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.swim),
-        idle1 = self.shared:numericIdFromContentId(R15_FALLBACK_ANIMATIONS.idle1),
-    }
-
-    self.safeDescriptionAnimationIds = {}
-    for _, id in pairs(self.fallbackNumericIds) do
-        if id then self.safeDescriptionAnimationIds[id] = true end
-    end
-
     return self
 end
 
 function AnimationMimic:isDescriptionAnimationAssetIdValid(numericId)
     if not numericId or numericId <= 0 then return false end
-    if self.safeDescriptionAnimationIds[numericId] then return true end
-    -- Trust description-provided IDs unless explicitly blocked.
     return true
-end
-
-function AnimationMimic:getGuaranteedFallbackSet()
-    local set = {
-        climb = self:makeSingleAnimationData("ClimbAnim", R15_FALLBACK_ANIMATIONS.climb),
-        fall = self:makeSingleAnimationData("FallAnim", R15_FALLBACK_ANIMATIONS.fall),
-        jump = self:makeSingleAnimationData("JumpAnim", R15_FALLBACK_ANIMATIONS.jump),
-        run = self:makeSingleAnimationData("RunAnim", R15_FALLBACK_ANIMATIONS.run),
-        walk = self:makeSingleAnimationData("WalkAnim", R15_FALLBACK_ANIMATIONS.walk),
-        swim = self:makeSingleAnimationData("Swim", R15_FALLBACK_ANIMATIONS.swim),
-        idle = {
-            byName = {
-                Animation1 = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.idle1),
-                Animation2 = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.idle2),
-            },
-            ordered = {
-                self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.idle1),
-                self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.idle2),
-            },
-            first = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.idle1),
-        },
-    }
-    set.__descriptionCompatible = false
-    set.__source = "fallback"
-    return set
 end
 
 function AnimationMimic:hasNativePlayingTrack(character)
@@ -297,12 +235,7 @@ function AnimationMimic:ensureIdlePrimer(character, animationSet)
     if not humanoid then return end
     if hasAnyPlayingTrack(humanoid) then return end
 
-    local idleId = self:resolveIdFromFolderDataWithFallback(
-        animationSet and animationSet.idle,
-        "Animation1",
-        1,
-        R15_FALLBACK_ANIMATIONS.idle1
-    )
+    local idleId = self:resolveIdFromFolderData(animationSet and animationSet.idle, "Animation1", 1)
     if not idleId then return end
 
     local existing = self.posePrimerByChar[character]
@@ -413,9 +346,9 @@ function AnimationMimic:unstickPoseAfterApply(character, animationSet)
             return
         end
 
-        local started = self:startDirectController(character, self:getGuaranteedFallbackSet(), { assistMode = true })
+        local started = self:startDirectController(character, animationSet, { assistMode = true })
         if not started then
-            self:startDirectController(character, self:getGuaranteedFallbackSet(), { assistMode = true })
+            self:startDirectController(character, animationSet, { assistMode = true })
         end
     end)
 end
@@ -443,9 +376,9 @@ function AnimationMimic:scheduleAssistIfNeeded(character, animationSet)
             return
         end
 
-        local started = self:ensureAssistController(character, self:getGuaranteedFallbackSet())
+        local started = self:ensureAssistController(character, animationSet)
         if not started then
-            self:ensureAssistController(character, self:getGuaranteedFallbackSet())
+            self:ensureAssistController(character, animationSet)
         end
     end)
 end
@@ -515,14 +448,6 @@ end
 function AnimationMimic:sanitizeResolvedAnimationId(rawId, fallbackRawId)
     local cleaned = self.shared:normalizeAnimationId(rawId)
     return cleaned or self.shared:normalizeAnimationId(fallbackRawId)
-end
-
-function AnimationMimic:resolveIdFromFolderDataWithFallback(folderData, childName, index, fallbackId)
-    local resolved = self:resolveIdFromFolderData(folderData, childName, index)
-    if self.settings.useFallbackWhenMissing then
-        return self:sanitizeResolvedAnimationId(resolved, fallbackId)
-    end
-    return self:sanitizeResolvedAnimationId(resolved, nil)
 end
 
 function AnimationMimic:makeSingleAnimationData(name, rawId)
@@ -623,35 +548,6 @@ function AnimationMimic:getAnimationSetFromDescription(userId)
     return set
 end
 
-function AnimationMimic:isLikelyFallbackSet(animationSet)
-    if not animationSet then return false end
-
-    local fallbackByKey = {
-        climb = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.climb),
-        fall = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.fall),
-        jump = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.jump),
-        run = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.run),
-        walk = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.walk),
-        swim = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.swim),
-        idle = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.idle1),
-    }
-
-    local matched = 0
-    local total = 0
-    for _, key in ipairs(ANIM_KEYS) do
-        local folderData = animationSet[key]
-        if folderData and folderData.first then
-            total = total + 1
-            local firstId = self.shared:normalizeAnimationId(folderData.first)
-            if firstId and fallbackByKey[key] and firstId == fallbackByKey[key] then
-                matched = matched + 1
-            end
-        end
-    end
-
-    return total >= 6 and matched >= 6
-end
-
 function AnimationMimic:getAnimationSetFromTempRig(userId)
     local rigType = getLocalRigType(self.localPlayer)
     local ok, rig = pcall(function() return Players:CreateHumanoidModelFromUserId(userId, rigType) end)
@@ -729,19 +625,23 @@ end
 function AnimationMimic:applyAnimationSetToDescriptionFields(desc, animationSet)
     if not desc or not animationSet then return false end
 
-    local function resolveNumeric(folder, childName, idx, fallback)
+    local function resolveNumeric(folder, childName, idx)
         return self.shared:numericIdFromContentId(
-            self:resolveIdFromFolderDataWithFallback(animationSet[folder], childName, idx, fallback)
+            self:resolveIdFromFolderData(animationSet[folder], childName, idx)
         )
     end
 
-    local climb = resolveNumeric("climb", "ClimbAnim", 1, R15_FALLBACK_ANIMATIONS.climb) or self.fallbackNumericIds.climb
-    local fall = resolveNumeric("fall", "FallAnim", 1, R15_FALLBACK_ANIMATIONS.fall) or self.fallbackNumericIds.fall
-    local jump = resolveNumeric("jump", "JumpAnim", 1, R15_FALLBACK_ANIMATIONS.jump) or self.fallbackNumericIds.jump
-    local run = resolveNumeric("run", "RunAnim", 1, R15_FALLBACK_ANIMATIONS.run) or self.fallbackNumericIds.run
-    local walk = resolveNumeric("walk", "WalkAnim", 1, R15_FALLBACK_ANIMATIONS.walk) or self.fallbackNumericIds.walk
-    local swim = resolveNumeric("swim", "Swim", 1, R15_FALLBACK_ANIMATIONS.swim) or self.fallbackNumericIds.swim
-    local idle = resolveNumeric("idle", "Animation1", 1, R15_FALLBACK_ANIMATIONS.idle1) or self.fallbackNumericIds.idle1
+    local climb = resolveNumeric("climb", "ClimbAnim", 1)
+    local fall = resolveNumeric("fall", "FallAnim", 1)
+    local jump = resolveNumeric("jump", "JumpAnim", 1)
+    local run = resolveNumeric("run", "RunAnim", 1)
+    local walk = resolveNumeric("walk", "WalkAnim", 1)
+    local swim = resolveNumeric("swim", "Swim", 1)
+    local idle = resolveNumeric("idle", "Animation1", 1)
+
+    if not (climb and fall and jump and run and walk and swim and idle) then
+        return false
+    end
 
     local toValidate = { climb, fall, jump, run, walk, swim, idle }
     for i = 1, #toValidate do
@@ -911,18 +811,18 @@ function AnimationMimic:startDirectController(character, animationSet, opts)
     end
     if not animator then return false end
 
-    local function getAnimId(folder, childName, idx, fb)
-        return self:resolveIdFromFolderDataWithFallback(animationSet[folder], childName, idx, fb)
+    local function getAnimId(folder, childName, idx)
+        return self:resolveIdFromFolderData(animationSet[folder], childName, idx)
     end
 
     local idMap = {
-        idle = getAnimId("idle", "Animation1", 1, R15_FALLBACK_ANIMATIONS.idle1),
-        run = getAnimId("run", "RunAnim", 1, R15_FALLBACK_ANIMATIONS.run),
-        walk = getAnimId("walk", "WalkAnim", 1, R15_FALLBACK_ANIMATIONS.walk),
-        jump = getAnimId("jump", "JumpAnim", 1, R15_FALLBACK_ANIMATIONS.jump),
-        fall = getAnimId("fall", "FallAnim", 1, R15_FALLBACK_ANIMATIONS.fall),
-        climb = getAnimId("climb", "ClimbAnim", 1, R15_FALLBACK_ANIMATIONS.climb),
-        swim = getAnimId("swim", "Swim", 1, R15_FALLBACK_ANIMATIONS.swim),
+        idle = getAnimId("idle", "Animation1", 1),
+        run = getAnimId("run", "RunAnim", 1),
+        walk = getAnimId("walk", "WalkAnim", 1),
+        jump = getAnimId("jump", "JumpAnim", 1),
+        fall = getAnimId("fall", "FallAnim", 1),
+        climb = getAnimId("climb", "ClimbAnim", 1),
+        swim = getAnimId("swim", "Swim", 1),
     }
 
     local tracks, animations = {}, {}
@@ -1069,7 +969,7 @@ function AnimationMimic:applyFolderDataToFolder(character, folder, folderData, s
     return changed
 end
 
-function AnimationMimic:applySlotFromSet(character, animate, animationSet, folderName, fallbackId, shouldRemember)
+function AnimationMimic:applySlotFromSet(character, animate, animationSet, folderName, shouldRemember)
     local folder = animate:FindFirstChild(folderName)
     local setData = animationSet and animationSet[folderName]
 
@@ -1077,15 +977,7 @@ function AnimationMimic:applySlotFromSet(character, animate, animationSet, folde
         return true
     end
 
-    local firstAnim = getFirstAnimationInFolder(folder)
-    if not firstAnim or not self.settings.useFallbackWhenMissing then return false end
-
-    local fallback = self.shared:normalizeAnimationId(fallbackId)
-    if not fallback then return false end
-
-    if shouldRemember then self:rememberOriginal(character, firstAnim) end
-    firstAnim.AnimationId = fallback
-    return true
+    return false
 end
 
 function AnimationMimic:applyIdleFromSet(character, animate, idleData, shouldRemember)
@@ -1097,11 +989,7 @@ function AnimationMimic:applyIdleFromSet(character, animate, idleData, shouldRem
     for _, child in ipairs(idleFolder:GetChildren()) do
         if child:IsA("Animation") then
             idx = idx + 1
-            local fallback = nil
-            if self.settings.useFallbackWhenMissing then
-                fallback = (child.Name == "Animation2") and R15_FALLBACK_ANIMATIONS.idle2 or R15_FALLBACK_ANIMATIONS.idle1
-            end
-            local resolvedIdle = self:resolveIdFromFolderDataWithFallback(idleData, child.Name, idx, fallback)
+            local resolvedIdle = self:resolveIdFromFolderData(idleData, child.Name, idx)
             if resolvedIdle then
                 if shouldRemember then self:rememberOriginal(character, child) end
                 child.AnimationId = resolvedIdle
@@ -1125,7 +1013,7 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     local applied = 0
     if animate then
         for _, spec in ipairs(SLOT_SPECS) do
-            if self:applySlotFromSet(character, animate, animationSet, spec.folder, spec.fallback, true) then
+            if self:applySlotFromSet(character, animate, animationSet, spec.folder, true) then
                 applied = applied + 1
             end
         end
@@ -1151,7 +1039,7 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     if self.settings.alwaysAssistAfterApply then
         local startedAssist = self:ensureAssistController(character, animationSet)
         if not startedAssist then
-            self:ensureAssistController(character, self:getGuaranteedFallbackSet())
+            self:ensureAssistController(character, animationSet)
         end
     elseif self.settings.adaptiveAssistAfterApply then
         self:scheduleAssistIfNeeded(character, animationSet)
@@ -1187,7 +1075,7 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
     local applied = 0
     if animate then
         for _, spec in ipairs(SLOT_SPECS) do
-            if self:applySlotFromSet(character, animate, ownSet, spec.folder, spec.fallback, false) then
+            if self:applySlotFromSet(character, animate, ownSet, spec.folder, false) then
                 applied = applied + 1
             end
         end
@@ -1213,7 +1101,7 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
     if self.settings.alwaysAssistAfterApply then
         local startedAssist = self:ensureAssistController(character, ownSet)
         if not startedAssist then
-            self:ensureAssistController(character, self:getGuaranteedFallbackSet())
+            self:ensureAssistController(character, ownSet)
         end
     elseif self.settings.adaptiveAssistAfterApply then
         self:scheduleAssistIfNeeded(character, ownSet)
