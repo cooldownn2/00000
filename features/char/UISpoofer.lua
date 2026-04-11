@@ -30,6 +30,35 @@ local function normalizeLower(raw)
     return string.lower(tostring(raw or ""))
 end
 
+local function isAvatarThumbnailImage(rawImage)
+    local image = normalizeLower(rawImage)
+    if image == "" then return false end
+
+    if image:find("rbxthumb://", 1, true) then
+        return image:find("type=avatar", 1, true) ~= nil
+            or image:find("type=headshot", 1, true) ~= nil
+            or image:find("type=avatarheadshot", 1, true) ~= nil
+            or image:find("type=avatarbust", 1, true) ~= nil
+    end
+
+    local hasThumbHost = image:find("thumbnails.roblox.com", 1, true) ~= nil
+        or image:find("thumbs.roblox.com", 1, true) ~= nil
+        or image:find("avatar-thumbnail", 1, true) ~= nil
+        or image:find("avatar-headshot", 1, true) ~= nil
+    if not hasThumbHost then
+        return false
+    end
+
+    local hasUserHint = image:find("userid=", 1, true) ~= nil
+        or image:find("userids=", 1, true) ~= nil
+        or image:find("/users/", 1, true) ~= nil
+    local hasAvatarHint = image:find("avatar", 1, true) ~= nil
+        or image:find("headshot", 1, true) ~= nil
+        or image:find("bust", 1, true) ~= nil
+
+    return hasUserHint and hasAvatarHint
+end
+
 local function isLikelyUserIdKey(rawKey)
     local key = normalizeLower(rawKey)
     if key == "" then return false end
@@ -211,28 +240,28 @@ end
 function UISpoofer:rewriteImage(rawImage)
     if type(rawImage) ~= "string" or rawImage == "" then return nil end
     if not self.targetUserId then return nil end
+    if not isAvatarThumbnailImage(rawImage) then return nil end
 
     local targetId = tostring(self.targetUserId)
     local rewritten = rawImage
     local changed = false
 
-    local v1, c1 = rewritten:gsub("([?&][iI][dD]=)%d+", "%1" .. targetId)
-    if c1 > 0 then
-        rewritten = v1
-        changed = true
-    end
+    local v1, c1 = rewritten:gsub("([?&][uU][sS][eE][rR][iI][dD]=)%d+", "%1" .. targetId)
+    if c1 > 0 then rewritten = v1; changed = true end
 
-    local v2, c2 = rewritten:gsub("([?&][uU][sS][eE][rR][iI][dD]=)%d+", "%1" .. targetId)
-    if c2 > 0 then
-        rewritten = v2
-        changed = true
+    local v2, c2 = rewritten:gsub("([?&][uU][sS][eE][rR][iI][dD][sS]=)%d+[,%d]*", "%1" .. targetId)
+    if c2 > 0 then rewritten = v2; changed = true end
+
+    if normalizeLower(rawImage):find("rbxthumb://", 1, true) then
+        local v3, c3 = rewritten:gsub("([?&][iI][dD]=)%d+", "%1" .. targetId)
+        if c3 > 0 then rewritten = v3; changed = true end
     end
 
     if changed then
         return rewritten
     end
 
-    if rawImage:find("rbxthumb://", 1, true) and rawImage:lower():find("avatar", 1, true) then
+    if rawImage:find("rbxthumb://", 1, true) and rawImage:lower():find("avatar", 1, true) and self.targetHeadshot then
         return self.targetHeadshot
     end
 
@@ -349,7 +378,6 @@ function UISpoofer:applyToInstance(instance)
     if not instance or not instance.Parent then return end
 
     local className = instance.ClassName
-    local localUserId = self.localUserId
     local watchAttributes = false
 
     if IMAGE_CLASS_SET[className] then
@@ -370,9 +398,9 @@ function UISpoofer:applyToInstance(instance)
         end
     end
 
-    if localUserId and NUMERIC_VALUE_CLASS_SET[className] and isLikelyUserIdKey(instance.Name) then
+    if NUMERIC_VALUE_CLASS_SET[className] and isLikelyUserIdKey(instance.Name) then
         local currentNumeric = tonumber(instance.Value)
-        if currentNumeric and math.floor(currentNumeric) == localUserId and currentNumeric ~= self.targetUserId then
+        if currentNumeric and math.floor(currentNumeric) ~= self.targetUserId then
             self:rememberOriginal(instance, "Value", instance.Value)
             pcall(function() instance.Value = self.targetUserId end)
         end
@@ -381,15 +409,18 @@ function UISpoofer:applyToInstance(instance)
     if STRING_VALUE_CLASS_SET[className] then
         local currentString = tostring(instance.Value or "")
 
-        if localUserId and isLikelyUserIdKey(instance.Name) then
-            local localUserIdText = tostring(localUserId)
+        if isLikelyUserIdKey(instance.Name) then
             local targetUserIdText = tostring(self.targetUserId)
-            if currentString == localUserIdText and currentString ~= targetUserIdText then
+            local currentNumeric = tonumber(currentString)
+            if currentNumeric and math.floor(currentNumeric) ~= self.targetUserId then
                 self:rememberOriginal(instance, "Value", instance.Value)
                 pcall(function() instance.Value = targetUserIdText end)
             end
         elseif isLikelyNameKey(instance.Name) then
             local rewritten = self:rewriteText(currentString)
+            if not rewritten and currentString ~= (self.targetDisplayName or "") and currentString ~= (self.targetName or "") then
+                rewritten = self.targetDisplayName or self.targetName
+            end
             if rewritten and rewritten ~= currentString then
                 self:rememberOriginal(instance, "Value", instance.Value)
                 pcall(function() instance.Value = rewritten end)
@@ -397,7 +428,7 @@ function UISpoofer:applyToInstance(instance)
         end
     end
 
-    if className == "ObjectValue" and isLikelyPlayerObjectKey(instance.Name) and instance.Value == self.localPlayer then
+    if className == "ObjectValue" and isLikelyPlayerObjectKey(instance.Name) then
         local targetPlayer = self:getTargetPlayerInstance()
         if targetPlayer and targetPlayer ~= instance.Value then
             self:rememberOriginal(instance, "Value", instance.Value)
@@ -411,13 +442,13 @@ function UISpoofer:applyToInstance(instance)
             if isLikelyUserIdKey(attrName) then
                 watchAttributes = true
 
-                if type(attrValue) == "number" and localUserId and math.floor(attrValue) == localUserId and attrValue ~= self.targetUserId then
+                if type(attrValue) == "number" and math.floor(attrValue) ~= self.targetUserId then
                     self:rememberOriginalAttribute(instance, attrName, attrValue)
                     pcall(function() instance:SetAttribute(attrName, self.targetUserId) end)
-                elseif type(attrValue) == "string" and localUserId then
-                    local localUserIdText = tostring(localUserId)
+                elseif type(attrValue) == "string" then
                     local targetUserIdText = tostring(self.targetUserId)
-                    if attrValue == localUserIdText and attrValue ~= targetUserIdText then
+                    local attrNumeric = tonumber(attrValue)
+                    if attrNumeric and math.floor(attrNumeric) ~= self.targetUserId then
                         self:rememberOriginalAttribute(instance, attrName, attrValue)
                         pcall(function() instance:SetAttribute(attrName, targetUserIdText) end)
                     end
@@ -426,6 +457,9 @@ function UISpoofer:applyToInstance(instance)
                 watchAttributes = true
                 if type(attrValue) == "string" then
                     local rewritten = self:rewriteText(attrValue)
+                    if not rewritten and attrValue ~= (self.targetDisplayName or "") and attrValue ~= (self.targetName or "") then
+                        rewritten = self.targetDisplayName or self.targetName
+                    end
                     if rewritten and rewritten ~= attrValue then
                         self:rememberOriginalAttribute(instance, attrName, attrValue)
                         pcall(function() instance:SetAttribute(attrName, rewritten) end)
