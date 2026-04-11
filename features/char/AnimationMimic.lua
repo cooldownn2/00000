@@ -148,7 +148,7 @@ function AnimationMimic.new(deps)
     self.settings = {
         useDirectTrackFallback = true,
         cacheTtlSeconds = 22,
-        minLiveCoverage = 6,
+        minLiveCoverage = 7,
         liveSourceWaitSeconds = 1.5,
         replicateDescriptionToOthers = false,
         replicationRetryDelays = { 0.12, 0.35 },
@@ -603,6 +603,7 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
     best = pickBetter(best, { set = fromDesc, priority = 1 })
 
     if not best or not best.set then return nil end
+    if (best.coverage or 0) < #ANIM_KEYS then return nil end
 
     self:setCachedAnimationSet(userId, best.set)
     return best.set
@@ -1145,6 +1146,11 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
         return false
     end
 
+    local switchedTarget = self.lastSourceUserId and self.lastSourceUserId ~= numericUserId
+    if switchedTarget then
+        self.shared.animationSetCache[numericUserId] = nil
+    end
+
     local animationSet = self:getAnimationSetFromUserIdWithRetry(numericUserId, 3)
     if not animationSet then
         self.lastSourceUserId = nil
@@ -1153,7 +1159,6 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
 
     if applyToken ~= self.applyToken then return false end
 
-    local switchedTarget = self.lastSourceUserId and self.lastSourceUserId ~= numericUserId
     if switchedTarget then
         self:restoreOwnAnimationsHard(character)
         flushAnimationState(character)
