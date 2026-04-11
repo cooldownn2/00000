@@ -29,12 +29,12 @@ local IDENTITY_CONTEXT_KEYWORDS = {
     "inspect",
     "profile",
     "hover",
-    "player",
-    "user",
     "target",
     "avatar",
     "card",
     "identity",
+    "viewer",
+    "subject",
 }
 
 local function normalizeLower(raw)
@@ -55,7 +55,7 @@ local function isLikelyIdentityContext(instance)
 
     while cursor and depth < 6 do
         local nodeName = normalizeLower(cursor.Name)
-        if nodeName ~= "" then
+        if nodeName ~= "" and nodeName ~= "playergui" then
             for i = 1, #IDENTITY_CONTEXT_KEYWORDS do
                 if nodeName:find(IDENTITY_CONTEXT_KEYWORDS[i], 1, true) then
                     return true
@@ -493,10 +493,11 @@ function UISpoofer:applyToInstance(instance)
     local okAttrs, attrs = pcall(function() return instance:GetAttributes() end)
     if okAttrs and type(attrs) == "table" then
         for attrName, attrValue in pairs(attrs) do
+            local attrKey = normalizeLower(attrName)
             local attrIsUserIdCarrier = isLikelyUserIdKey(attrName)
-                or (identityContext and isGenericIdentityKey(attrName) and normalizeLower(attrName) == "id")
+                or (identityContext and attrKey == "id")
             local attrIsNameCarrier = isLikelyNameKey(attrName)
-                or (identityContext and (normalizeLower(attrName) == "name" or normalizeLower(attrName) == "display" or normalizeLower(attrName) == "displayname"))
+                or (identityContext and (attrKey == "name" or attrKey == "display" or attrKey == "displayname"))
 
             if attrIsUserIdCarrier then
                 watchAttributes = true
