@@ -180,7 +180,7 @@ function AnimationMimic.new(deps)
         invalidateAnimationCacheOnTargetSwitch = false,
         shortCircuitRigFetchOnFullDescription = false,
         alwaysAssistAfterApply = false,
-        adaptiveAssistAfterApply = true,
+        adaptiveAssistAfterApply = false,
         assistGraceSeconds = 0.18,
         directControllerStep = 0.03,
         assistControllerStep = 0.05,
