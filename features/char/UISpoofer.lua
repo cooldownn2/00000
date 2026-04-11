@@ -546,10 +546,15 @@ function UISpoofer:setTarget(target)
     if not userId then return false end
 
     self.targetInput = target
+    local previousTargetUserId = self.targetUserId
     self.targetUserId = userId
     self:refreshTargetProfile(userId)
 
     if self.active then
+        if previousTargetUserId and previousTargetUserId ~= userId then
+            self:restoreAll()
+        end
+
         self:startObserving()
         self:scanRoot(CoreGui)
 
@@ -557,6 +562,20 @@ function UISpoofer:setTarget(target)
         if playerGui then
             self:scanRoot(playerGui)
         end
+
+        task.defer(function()
+            task.wait(0.15)
+            if self.active and self.targetUserId == userId then
+                self:reapply()
+            end
+        end)
+
+        task.defer(function()
+            task.wait(0.45)
+            if self.active and self.targetUserId == userId then
+                self:reapply()
+            end
+        end)
     end
 
     return true
