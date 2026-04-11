@@ -15,6 +15,11 @@ local SLOT_SPECS = {
 
 local ANIM_KEYS = { "climb", "fall", "jump", "run", "walk", "swim", "idle" }
 
+local SCALE_NAMES = {
+    "BodyHeightScale", "BodyWidthScale", "BodyDepthScale",
+    "HeadScale", "BodyTypeScale", "BodyProportionScale",
+}
+
 local function hasAnimationFolderData(fd)
     return fd ~= nil and fd.first ~= nil
 end
@@ -126,6 +131,28 @@ local function hasAnyPlayingTrack(humanoid)
     return #tracks > 0
 end
 
+-- Snapshot the humanoid's scale NumberValues directly (most accurate source)
+local function snapshotHumanoidScales(humanoid)
+    if not humanoid then return nil end
+    local snapshot = {}
+    for _, name in ipairs(SCALE_NAMES) do
+        local nv = humanoid:FindFirstChild(name)
+        snapshot[name] = nv and nv.Value or 1
+    end
+    return snapshot
+end
+
+-- Apply scale snapshot back into a HumanoidDescription before applying
+local function applyScaleSnapshotToDesc(desc, snapshot)
+    if not desc or not snapshot then return end
+    desc.HeightScale     = snapshot.BodyHeightScale     or desc.HeightScale
+    desc.WidthScale      = snapshot.BodyWidthScale      or desc.WidthScale
+    desc.DepthScale      = snapshot.BodyDepthScale      or desc.DepthScale
+    desc.HeadScale       = snapshot.HeadScale           or desc.HeadScale
+    desc.BodyTypeScale   = snapshot.BodyTypeScale       or desc.BodyTypeScale
+    desc.ProportionScale = snapshot.BodyProportionScale or desc.ProportionScale
+end
+
 function AnimationMimic.new(deps)
     local self = setmetatable({}, AnimationMimic)
 
@@ -150,8 +177,9 @@ function AnimationMimic.new(deps)
         cacheTtlSeconds = 22,
         minLiveCoverage = 7,
         liveSourceWaitSeconds = 1.5,
-        replicateDescriptionToOthers = false,
-        replicationRetryDelays = { 0.12, 0.35 },
+        -- FIXED: enabled so other players see animations
+        replicateDescriptionToOthers = true,
+        replicationRetryDelays = { 0.15, 0.4 },
         invalidateAnimationCacheOnTargetSwitch = true,
         shortCircuitRigFetchOnFullDescription = false,
         alwaysAssistAfterApply = false,
@@ -496,7 +524,8 @@ function AnimationMimic:getAnimationSetFromLivePlayer(userId)
     if countAnimationSetCoverage(set) <= 0 then
         return nil
     end
-    set.__descriptionCompatible = false
+    -- FIXED: mark as compatible so replication path is used
+    set.__descriptionCompatible = true
     set.__source = "live-animate"
     return set
 end
@@ -549,6 +578,7 @@ function AnimationMimic:getAnimationSetFromDescription(userId)
 end
 
 function AnimationMimic:getAnimationSetFromTempRig(userId)
+    -- Use the TARGET's rig type, not local player's
     local targetRigType = Enum.HumanoidRigType.R15
     local avatarType = self.shared:getUserAvatarType(userId)
     if avatarType == "R6" then
@@ -565,6 +595,7 @@ function AnimationMimic:getAnimationSetFromTempRig(userId)
         return nil
     end
 
+    -- Wait for essential animation folders to populate (not swim/climb which may be absent)
     local folderNames = { "run", "walk", "jump", "fall", "idle" }
     local deadline = os.clock() + 5
     repeat
@@ -585,7 +616,8 @@ function AnimationMimic:getAnimationSetFromTempRig(userId)
         set = nil
     end
     if set then
-        set.__descriptionCompatible = false
+        -- FIXED: mark as compatible so replication path is used
+        set.__descriptionCompatible = true
         set.__source = "temp-rig"
     end
     rig:Destroy()
@@ -626,11 +658,11 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
     best = pickBetter(best, { set = fromDesc, priority = 1 })
 
     if not best or not best.set then return nil end
+    -- Require at least 5 slots (swim/climb optional)
     if (best.coverage or 0) < 5 then return nil end
 
     self:setCachedAnimationSet(userId, best.set)
     return best.set
-
 end
 
 function AnimationMimic:getAnimationSetFromUserIdWithRetry(userId, attempts)
@@ -686,6 +718,8 @@ function AnimationMimic:applyAnimationSetToDescriptionFields(desc, animationSet)
     return true
 end
 
+-- FIXED: Core replication function with scale preservation and double-apply
+-- to prevent the "fat" visual glitch caused by server overwriting body scales
 function AnimationMimic:replicateAnimationStateForOthers(character, animationSet)
     if not self.settings.replicateDescriptionToOthers then return true end
     if not animationSet or animationSet.__descriptionCompatible ~= true then
@@ -695,39 +729,67 @@ function AnimationMimic:replicateAnimationStateForOthers(character, animationSet
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
 
-    local liveColorSnapshot = self.shared:snapshotCharacterColors(character)
-    local scales = self.shared:getCurrentScaleValues(humanoid)
+    -- Snapshot scales from NumberValues BEFORE any apply (most accurate)
+    local scaleSnapshot = snapshotHumanoidScales(humanoid)
+    local colorSnapshot = self.shared:snapshotCharacterColors(character)
 
     local ok, currentDesc = pcall(function() return humanoid:GetAppliedDescription() end)
     if not ok or not currentDesc then
-        self.shared:destroyColorSnapshot(liveColorSnapshot)
+        self.shared:destroyColorSnapshot(colorSnapshot)
         return false
     end
 
-    if scales then
-        self.shared:applyScaleValuesToDescription(currentDesc, scales)
-    end
+    -- Apply our scale snapshot into the description so it doesn't change us
+    applyScaleSnapshotToDesc(currentDesc, scaleSnapshot)
 
     if not self:applyAnimationSetToDescriptionFields(currentDesc, animationSet) then
-        self.shared:destroyColorSnapshot(liveColorSnapshot)
+        self.shared:destroyColorSnapshot(colorSnapshot)
         return false
     end
 
-    if humanoid.ApplyDescriptionClientServer then
-        local okCS = pcall(function() humanoid:ApplyDescriptionClientServer(currentDesc) end)
-        if okCS then
-            self.shared:restoreCharacterColors(character, liveColorSnapshot)
-            task.defer(function()
-                task.wait(0.08)
-                self.shared:restoreCharacterColors(character, liveColorSnapshot)
-                self.shared:destroyColorSnapshot(liveColorSnapshot)
-            end)
-            return true
+    local function doApply(desc)
+        if humanoid.ApplyDescriptionClientServer then
+            local okCS = pcall(function() humanoid:ApplyDescriptionClientServer(desc) end)
+            if okCS then return true end
         end
+        return false
     end
 
-    self.shared:destroyColorSnapshot(liveColorSnapshot)
-    return false
+    -- First apply: sets the animations + scales
+    local applied = doApply(currentDesc)
+    if not applied then
+        self.shared:destroyColorSnapshot(colorSnapshot)
+        return false
+    end
+
+    -- Second apply immediately: fights server overwrite of body scales
+    -- This is the key fix - applying twice back-to-back eliminates fat flash
+    doApply(currentDesc)
+
+    -- Restore colors after apply
+    self.shared:restoreCharacterColors(character, colorSnapshot)
+
+    -- Third apply after short delay as final scale insurance
+    task.defer(function()
+        task.wait(0.12)
+        if not character or not character.Parent then
+            self.shared:destroyColorSnapshot(colorSnapshot)
+            return
+        end
+        -- Re-snapshot in case something changed
+        local freshScales = snapshotHumanoidScales(humanoid)
+        local okDesc2, desc2 = pcall(function() return humanoid:GetAppliedDescription() end)
+        if okDesc2 and desc2 then
+            applyScaleSnapshotToDesc(desc2, freshScales)
+            if self:applyAnimationSetToDescriptionFields(desc2, animationSet) then
+                doApply(desc2)
+            end
+        end
+        self.shared:restoreCharacterColors(character, colorSnapshot)
+        self.shared:destroyColorSnapshot(colorSnapshot)
+    end)
+
+    return true
 end
 
 function AnimationMimic:scheduleReplicationRetry(character, animationSet, token)
@@ -747,68 +809,29 @@ function AnimationMimic:scheduleReplicationRetry(character, animationSet, token)
     end
 end
 
+-- FIXED: applyAnimationSetViaDescription also preserves scales
 function AnimationMimic:applyAnimationSetViaDescription(humanoid, animationSet)
     if not humanoid or not animationSet then return false end
 
+    local scaleSnapshot = snapshotHumanoidScales(humanoid)
+
     local ok, currentDesc = pcall(function() return humanoid:GetAppliedDescription() end)
     if not ok or not currentDesc then return false end
+
+    applyScaleSnapshotToDesc(currentDesc, scaleSnapshot)
 
     if not self:applyAnimationSetToDescriptionFields(currentDesc, animationSet) then return false end
 
     if humanoid.ApplyDescriptionClientServer then
         local okCS = pcall(function() humanoid:ApplyDescriptionClientServer(currentDesc) end)
-        if okCS then return true end
+        if okCS then
+            -- Double apply to prevent fat flash
+            pcall(function() humanoid:ApplyDescriptionClientServer(currentDesc) end)
+            return true
+        end
     end
 
     return pcall(function() humanoid:ApplyDescription(currentDesc) end)
-end
-
-function AnimationMimic:applyTargetDescriptionAnimations(userId, token)
-    local character = self.localPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return false end
-
-    local targetDesc = self.shared:getTargetDescriptionCached(userId)
-    if not targetDesc then return false end
-
-    local okCurrent, currentDesc = pcall(function() return humanoid:GetAppliedDescription() end)
-    if not okCurrent or not currentDesc then return false end
-
-    currentDesc.RunAnimation = targetDesc.RunAnimation
-    currentDesc.WalkAnimation = targetDesc.WalkAnimation
-    currentDesc.IdleAnimation = targetDesc.IdleAnimation
-    currentDesc.JumpAnimation = targetDesc.JumpAnimation
-    currentDesc.FallAnimation = targetDesc.FallAnimation
-    currentDesc.ClimbAnimation = targetDesc.ClimbAnimation
-    currentDesc.SwimAnimation = targetDesc.SwimAnimation
-
-    local scales = self.shared:getCurrentScaleValues(humanoid)
-    if scales then
-        self.shared:applyScaleValuesToDescription(currentDesc, scales)
-    end
-
-    local function applyOnce()
-        if token and token ~= self.applyToken then return false end
-        if humanoid.ApplyDescriptionClientServer then
-            local okCS = pcall(function() humanoid:ApplyDescriptionClientServer(currentDesc) end)
-            if okCS then return true end
-        end
-        return pcall(function() humanoid:ApplyDescription(currentDesc) end)
-    end
-
-    if not applyOnce() then return false end
-
-    task.defer(function()
-        for _ = 1, 2 do
-            task.wait(0.1)
-            if not self.active then return end
-            if token and token ~= self.applyToken then return end
-            if not character.Parent then return end
-            applyOnce()
-        end
-    end)
-
-    return true
 end
 
 function AnimationMimic:stopDirectController(character)
@@ -1220,15 +1243,6 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
     local switchedTarget = self.lastSourceUserId and self.lastSourceUserId ~= numericUserId
     if switchedTarget then
         self.shared.animationSetCache[numericUserId] = nil
-    end
-
-    if self:applyTargetDescriptionAnimations(numericUserId, applyToken) then
-        self:stopDirectController(character)
-        self:stopPosePrimer(character)
-        self.lastSourceUserId = numericUserId
-        self.pinnedTargetUserId = numericUserId
-        self.resumeUserId = numericUserId
-        return true
     end
 
     local animationSet = self:getAnimationSetFromUserIdWithRetry(numericUserId, 3)
