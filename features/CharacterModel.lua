@@ -33,6 +33,49 @@ local RESPAWN_POST_REAPPLY_ANIM_DELAY = 1.30
 local ENV_STATE_KEY = "__SauceCharacterModelState"
 local GETGENV_FN = rawget(_G, "getgenv")
 
+local function getSpooferEnabled()
+    if not Settings then return false end
+
+    local avatarEnabled = Settings.AvatarSpooferEnabled
+    local legacyEnabled = Settings.CharacterModelEnabled
+
+    if avatarEnabled == nil and legacyEnabled == nil then
+        return false
+    end
+
+    return avatarEnabled == true or legacyEnabled == true
+end
+
+local function getSpooferUserTarget()
+    if not Settings then return "" end
+
+    local target = Settings.AvatarSpooferUser
+    if target == nil or tostring(target):gsub("^%s+", ""):gsub("%s+$", "") == "" then
+        target = Settings.CharacterModelUserId
+    end
+
+    if target == nil then return "" end
+
+    local text = tostring(target)
+    text = text:gsub("^%s+", "")
+    text = text:gsub("%s+$", "")
+    return text
+end
+
+local function getApplyRespawnEnabled()
+    if not Settings then return true end
+
+    local avatarApplyRespawn = Settings.AvatarSpooferApplyRespawn
+    local legacyApplyRespawn = Settings.CharacterModelApplyRespawn
+
+    -- Preserve previous behavior for legacy configs when no flag is set.
+    if avatarApplyRespawn == nil and legacyApplyRespawn == nil then
+        return true
+    end
+
+    return avatarApplyRespawn == true or legacyApplyRespawn == true
+end
+
 local function normalizeTarget(raw)
     if raw == nil then return "" end
     local text = tostring(raw)
@@ -159,6 +202,8 @@ local function installEnvApi()
         if targetState == "" then return false end
 
         if Settings then
+            Settings.AvatarSpooferUser = targetState
+            Settings.AvatarSpooferEnabled = true
             Settings.CharacterModelUserId = targetState
             Settings.CharacterModelEnabled = true
         end
@@ -191,6 +236,15 @@ local function installEnvApi()
 
     env.CharacterModel = {
         SetTarget = setTargetAny,
+        Reapply = function()
+            return reapplyAll()
+        end,
+        Cleanup = fullCleanup,
+    }
+
+    env.AvatarSpoofer = {
+        SetTarget = setTargetAny,
+        SetUser = setTargetAny,
         Reapply = function()
             return reapplyAll()
         end,
@@ -239,11 +293,11 @@ local function update()
     if now - lastUpdate < UPDATE_INTERVAL then return end
     lastUpdate = now
 
-    local enabled = Settings.CharacterModelEnabled == true
+    local enabled = getSpooferEnabled()
     setEnabled(enabled)
     if not enabled then return end
 
-    local target = normalizeTarget(Settings.CharacterModelUserId)
+    local target = getSpooferUserTarget()
     if target == "" then return end
 
     if target ~= targetState then
@@ -253,18 +307,20 @@ local function update()
 end
 
 local function onCharacterAdded(char)
-    local shouldEnable = Settings and Settings.CharacterModelEnabled == true
+    local shouldEnable = getSpooferEnabled()
     if shouldEnable and not enabledState then
         setEnabled(true)
     end
 
     if not enabledState then return end
     if not ensureModules() then return end
+    if not getApplyRespawnEnabled() then return end
 
     switchApplyToken = switchApplyToken + 1
     local applyToken = switchApplyToken
 
-    local target = normalizeTarget(targetState ~= "" and targetState or (Settings and Settings.CharacterModelUserId))
+    local configuredTarget = getSpooferUserTarget()
+    local target = normalizeTarget(targetState ~= "" and targetState or configuredTarget)
     if target == "" then
         outfit:onCharacterAdded(char)
         return

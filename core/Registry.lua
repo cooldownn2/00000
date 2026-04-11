@@ -36,7 +36,13 @@ local SettingPaths = {
     AntiTripEnabled             = {"Character", "Anti Trip", "Enabled"},
     PanicGroundEnabled          = {"Character", "Panic Ground", "Enabled"},
     PanicGroundKey              = {"Character", "Panic Ground", "Key"},
+    AvatarSpooferEnabled        = {"Avatar Spoofer", "Enabled"},
+    AvatarSpooferApplyRespawn   = {"Avatar Spoofer", "Apply Respawn"},
+    AvatarSpooferUser           = {"Avatar Spoofer", "User"},
+
+    -- Legacy aliases kept for compatibility with older configs.
     CharacterModelEnabled       = {"Character Model", "Enabled"},
+    CharacterModelApplyRespawn  = {"Character Model", "Apply Respawn"},
     CharacterModelUserId        = {"Character Model", "User ID"},
 
     TriggerbotEnabled           = {"Triggerbot", "Enabled"},

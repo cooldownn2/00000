@@ -99,9 +99,15 @@ local function applyUserConfig(settings, userConfig)
         { {"Speed Modification","Panic Ground","Enabled"}, {"Character","Panic Ground","Enabled"} },
         { {"Speed Modification","Panic Ground","Keybind"}, {"Character","Panic Ground","Key"} },
 
-        -- Character Model
+        -- Character Model (legacy)
         { {"Character Model","Enabled"},                     {"Character Model","Enabled"} },
+        { {"Character Model","Apply Respawn"},               {"Character Model","Apply Respawn"} },
         { {"Character Model","User ID"},                     {"Character Model","User ID"} },
+
+        -- Avatar Spoofer (preferred)
+        { {"Avatar Spoofer","Enabled"},                      {"Avatar Spoofer","Enabled"} },
+        { {"Avatar Spoofer","Apply Respawn"},                {"Avatar Spoofer","Apply Respawn"} },
+        { {"Avatar Spoofer","User"},                         {"Avatar Spoofer","User"} },
         
         -- Hotkeys
         { {"Hotkeys","Enabled"},                             {"Hotkeys","Enabled"} },
@@ -202,12 +208,22 @@ local function validateSettings(Settings)
     expectType("Weapon Modifications.Infinite Range", S.InfiniteRange, "boolean")
     expectType("ForceHit.Enabled", S.ForceHitEnabled, "boolean")
     expectType("ForceHit.Full Damage", S.ForceHitFullDamage, "boolean")
+    expectType("Avatar Spoofer.Enabled", S.AvatarSpooferEnabled, "boolean")
+    expectType("Avatar Spoofer.Apply Respawn", S.AvatarSpooferApplyRespawn, "boolean")
     expectType("Character Model.Enabled", S.CharacterModelEnabled, "boolean")
+    expectType("Character Model.Apply Respawn", S.CharacterModelApplyRespawn, "boolean")
     expectType("ESP.Enabled", S.ESPAllowed, "boolean")
     expectType("Hotkeys.Enabled", S.HotkeysEnabled, "boolean")
     expectEnum("Hotkeys.ToggleStyle", S.HotkeysToggleStyle, {"pill","dot","none"})
     expectEnum("Triggerbot.FOV.Type", S.TriggerbotFOVType, {"Box","Direct"})
     expectEnum("Camlock.FOV.Type", S.CamlockFOVType, {"Box","Direct"})
+
+    if S.AvatarSpooferUser ~= nil then
+        local t = type(S.AvatarSpooferUser)
+        if t ~= "string" and t ~= "number" then
+            vWarn("Avatar Spoofer.User expected string or number, got " .. t)
+        end
+    end
 
     if S.CharacterModelUserId ~= nil then
         local t = type(S.CharacterModelUserId)
