@@ -14,6 +14,7 @@ local SLOT_SPECS = {
 }
 
 local ANIM_KEYS = { "climb", "fall", "jump", "run", "walk", "swim", "idle" }
+local ANIM_KEY_COUNT = #ANIM_KEYS
 
 local SCALE_NAMES = {
     "BodyHeightScale", "BodyWidthScale", "BodyDepthScale",
@@ -653,6 +654,14 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
     if cached then return cached end
 
     local fromLive = self:getAnimationSetFromLivePlayerWithWait(userId, self.settings.liveSourceWaitSeconds)
+
+    -- If live Animate data already has full coverage, it is always the chosen
+    -- source (highest priority at max coverage). Skip heavy fallback fetches.
+    if fromLive and countAnimationSetCoverage(fromLive) >= ANIM_KEY_COUNT then
+        self:setCachedAnimationSet(userId, fromLive)
+        return fromLive
+    end
+
     local fromRig = self:getAnimationSetFromTempRig(userId)
     local fromDesc = self:getAnimationSetFromDescription(userId)
 
@@ -692,11 +701,13 @@ end
 function AnimationMimic:getAnimationSetFromUserIdWithRetry(userId, attempts)
     attempts = attempts or 2
     for i = 1, attempts do
+        if not self.active then return nil end
         local set = self:getAnimationSetFromUserId(userId)
         if set then
             return set
         elseif i < attempts then
             task.wait(0.5)
+            if not self.active then return nil end
         end
     end
     return nil
