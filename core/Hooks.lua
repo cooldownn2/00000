@@ -171,12 +171,18 @@ end
 local function remapUISpooferLocalPlayerIndex(self, key)
     if not LP or not key then return nil end
     if not rawequal(self, LP) then return nil end
-    if not isCoreGuiIdentityCaller() then return nil end
 
     local targetUserId, targetName, targetDisplayName = resolveUISpooferTargetProfile()
     if not targetUserId then return nil end
 
-    if key == "UserId" or key == "CharacterAppearanceId" then
+    -- Safe global fallback: CharacterAppearanceId is inspect/avatar specific.
+    if key == "CharacterAppearanceId" then
+        return targetUserId
+    end
+
+    if not isCoreGuiIdentityCaller() then return nil end
+
+    if key == "UserId" then
         return targetUserId
     end
 
