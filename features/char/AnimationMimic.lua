@@ -564,6 +564,57 @@ function AnimationMimic:getAnimationSetFromDescription(userId)
     }
 end
 
+function AnimationMimic:getAnimationSetFromLiveDescription(userId)
+    local okPlayer, player = pcall(function() return Players:GetPlayerByUserId(userId) end)
+    if not okPlayer or not player then return nil end
+
+    local character = player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return nil end
+
+    local okDesc, desc = pcall(function() return humanoid:GetAppliedDescription() end)
+    if not okDesc or not desc then return nil end
+
+    return {
+        climb = self:makeSingleAnimationData("ClimbAnim", desc.ClimbAnimation),
+        fall = self:makeSingleAnimationData("FallAnim", desc.FallAnimation),
+        jump = self:makeSingleAnimationData("JumpAnim", desc.JumpAnimation),
+        run = self:makeSingleAnimationData("RunAnim", desc.RunAnimation),
+        walk = self:makeSingleAnimationData("WalkAnim", desc.WalkAnimation),
+        swim = self:makeSingleAnimationData("Swim", desc.SwimAnimation),
+        idle = self:makeIdleAnimationData(desc.IdleAnimation),
+    }
+end
+
+function AnimationMimic:isLikelyFallbackSet(animationSet)
+    if not animationSet then return false end
+
+    local fallbackByKey = {
+        climb = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.climb),
+        fall = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.fall),
+        jump = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.jump),
+        run = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.run),
+        walk = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.walk),
+        swim = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.swim),
+        idle = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.idle1),
+    }
+
+    local matched = 0
+    local total = 0
+    for _, key in ipairs(ANIM_KEYS) do
+        local folderData = animationSet[key]
+        if folderData and folderData.first then
+            total = total + 1
+            local firstId = self.shared:normalizeAnimationId(folderData.first)
+            if firstId and fallbackByKey[key] and firstId == fallbackByKey[key] then
+                matched = matched + 1
+            end
+        end
+    end
+
+    return total >= 6 and matched >= 6
+end
+
 function AnimationMimic:getAnimationSetFromTempRig(userId)
     local rigType = getLocalRigType(self.localPlayer)
     local ok, rig = pcall(function() return Players:CreateHumanoidModelFromUserId(userId, rigType) end)
@@ -592,6 +643,7 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
         return fromLive
     end
 
+    local fromLiveDesc = self:getAnimationSetFromLiveDescription(userId)
     local fromDesc = self:getAnimationSetFromDescription(userId)
     local descCoverage = countAnimationSetCoverage(fromDesc)
     local fromRig = nil
@@ -621,9 +673,10 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
     end
 
     local best = nil
-    best = pickBetter(best, { set = fromLive, priority = 3 })
-    best = pickBetter(best, { set = fromRig, priority = 2 })
-    best = pickBetter(best, { set = fromDesc, priority = 1 })
+    best = pickBetter(best, { set = fromLive, priority = 4 })
+    best = pickBetter(best, { set = fromLiveDesc, priority = 3 })
+    best = pickBetter(best, { set = fromDesc, priority = 2 })
+    best = pickBetter(best, { set = fromRig, priority = 1 })
 
     if not best or not best.set then return nil end
 
@@ -632,11 +685,21 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
 end
 
 function AnimationMimic:getAnimationSetFromUserIdWithRetry(userId, attempts)
-    attempts = attempts or 2
+    attempts = attempts or 3
     for i = 1, attempts do
         local set = self:getAnimationSetFromUserId(userId)
-        if set then return set end
-        if i < attempts then task.wait(0.12) end
+        if set then
+            local okPlayer, player = pcall(function() return Players:GetPlayerByUserId(userId) end)
+            local inServer = okPlayer and player ~= nil
+
+            if inServer and i < attempts and self:isLikelyFallbackSet(set) then
+                task.wait(0.2 + (i * 0.08))
+            else
+                return set
+            end
+        elseif i < attempts then
+            task.wait(0.12 + (i * 0.05))
+        end
     end
     return nil
 end

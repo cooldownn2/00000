@@ -20,6 +20,10 @@ local enabledState = false
 local targetState = ""
 local lastUpdate = 0
 local UPDATE_INTERVAL = 0.1
+local switchApplyToken = 0
+
+local STABILIZE_ANIM_DELAY = 0.22
+local STABILIZE_FULL_DELAY = 0.72
 
 local ENV_STATE_KEY = "__SauceCharacterModelState"
 local GETGENV_FN = rawget(_G, "getgenv")
@@ -79,13 +83,36 @@ local function switchTargetSafe(target)
     if not enabledState then return false end
     if target == nil or target == "" then return false end
 
+    switchApplyToken = switchApplyToken + 1
+    local applyToken = switchApplyToken
+
     local outfitOk = outfit:setTarget(target)
 
     task.defer(function()
-        if enabledState then
+        if enabledState and applyToken == switchApplyToken and target == targetState then
             animation:mimicFromTarget(target)
             emote:mimicFromTarget(target)
         end
+    end)
+
+    -- First stabilization pass: re-run animation + emote after outfit/apply settle.
+    task.delay(STABILIZE_ANIM_DELAY, function()
+        if not enabledState then return end
+        if applyToken ~= switchApplyToken then return end
+        if target ~= targetState then return end
+        animation:mimicFromTarget(target)
+        emote:mimicFromTarget(target)
+    end)
+
+    -- Full stabilization pass: mirrors the user's successful "char twice"
+    -- workaround to fix first-apply races without manual reset/rerun.
+    task.delay(STABILIZE_FULL_DELAY, function()
+        if not enabledState then return end
+        if applyToken ~= switchApplyToken then return end
+        if target ~= targetState then return end
+        outfit:reapply()
+        animation:mimicFromTarget(target)
+        emote:mimicFromTarget(target)
     end)
 
     return outfitOk
@@ -232,6 +259,7 @@ end
 local function cleanup()
     enabledState = false
     targetState = ""
+    switchApplyToken = switchApplyToken + 1
 
     if outfit then outfit:cleanup() end
     if animation then animation:cleanup() end
