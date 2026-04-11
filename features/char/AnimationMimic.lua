@@ -168,7 +168,7 @@ function AnimationMimic.new(deps)
         useFallbackWhenMissing = true,
         useDirectTrackFallback = true,
         cacheTtlSeconds = 22,
-        minLiveCoverage = 1,
+        minLiveCoverage = 4,
         replicateDescriptionToOthers = true,
         replicationRetryDelays = { 0.12, 0.35 },
         invalidateAnimationCacheOnTargetSwitch = true,
@@ -587,9 +587,9 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
 
     local fromLive = self:getAnimationSetFromLivePlayer(userId)
     local liveCoverage = countAnimationSetCoverage(fromLive)
-    if liveCoverage >= (self.settings.minLiveCoverage or 1) and liveCoverage > 0 then
-        self:setCachedAnimationSet(userId, fromLive)
-        return fromLive
+    if not (liveCoverage >= (self.settings.minLiveCoverage or 1) and liveCoverage > 0) then
+        fromLive = nil
+        liveCoverage = 0
     end
 
     local fromDesc = self:getAnimationSetFromDescription(userId)
@@ -621,8 +621,8 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
     end
 
     local best = nil
-    best = pickBetter(best, { set = fromLive, priority = 3 })
-    best = pickBetter(best, { set = fromDesc, priority = 2 })
+    best = pickBetter(best, { set = fromDesc, priority = 3 })
+    best = pickBetter(best, { set = fromLive, priority = 2 })
     best = pickBetter(best, { set = fromRig, priority = 1 })
 
     if not best or not best.set then return nil end
