@@ -181,35 +181,12 @@ local function remapUISpooferLocalPlayerIndex(self, key)
     if not LP or not key then return nil end
     if not rawequal(self, LP) then return nil end
 
-    local targetUserId, targetName, targetDisplayName = resolveUISpooferTargetProfile()
+    local targetUserId = resolveUISpooferTargetUserId()
     if not targetUserId then return nil end
 
     -- Safe global fallback: CharacterAppearanceId is inspect/avatar specific.
     if key == "CharacterAppearanceId" then
         return targetUserId
-    end
-
-    local isCoreCaller = isCoreGuiIdentityCaller()
-
-    if key == "UserId" then
-        -- If we can't identify callsite script on this executor, allow non-internal
-        -- callers so CoreGui inspect flows still get remapped.
-        if isCoreCaller or type(GETCALLINGSCRIPT_FN) ~= "function" then
-            if not isInternalCaller() then
-                return targetUserId
-            end
-        end
-        return nil
-    end
-
-    if not isCoreCaller then return nil end
-
-    if key == "Name" and targetName and targetName ~= "" then
-        return targetName
-    end
-
-    if key == "DisplayName" and targetDisplayName and targetDisplayName ~= "" then
-        return targetDisplayName
     end
 
     return nil

@@ -29,16 +29,18 @@ local IDENTITY_CONTEXT_KEYWORDS = {
     "inspect",
     "profile",
     "hover",
-    "people",
-    "playerlist",
-    "ingamemenu",
-    "social",
     "target",
     "avatar",
     "card",
     "identity",
     "viewer",
     "subject",
+}
+local PEOPLE_CONTEXT_KEYWORDS = {
+    "people",
+    "playerlist",
+    "ingamemenu",
+    "social",
 }
 
 local function normalizeLower(raw)
@@ -69,6 +71,73 @@ local function isLikelyIdentityContext(instance)
 
         cursor = cursor.Parent
         depth = depth + 1
+    end
+
+    return false
+end
+
+local function isLikelyPeopleContext(instance)
+    local cursor = instance
+    local depth = 0
+
+    while cursor and depth < 12 do
+        local nodeName = normalizeLower(cursor.Name)
+        if nodeName ~= "" and nodeName ~= "playergui" then
+            for i = 1, #PEOPLE_CONTEXT_KEYWORDS do
+                if nodeName:find(PEOPLE_CONTEXT_KEYWORDS[i], 1, true) then
+                    return true
+                end
+            end
+        end
+
+        cursor = cursor.Parent
+        depth = depth + 1
+    end
+
+    return false
+end
+
+local function findPeopleRowFromTaggedText(textInstance)
+    local cursor = textInstance
+    local depth = 0
+
+    while cursor and depth < 10 do
+        if cursor:IsA("GuiObject") then
+            local parent = cursor.Parent
+            if parent then
+                local hasListLayout = parent:FindFirstChildOfClass("UIListLayout") ~= nil
+                local parentName = normalizeLower(parent.Name)
+                if hasListLayout
+                    or parentName:find("list", 1, true)
+                    or parentName:find("people", 1, true)
+                    or parentName:find("player", 1, true) then
+                    return cursor
+                end
+            end
+        end
+
+        cursor = cursor.Parent
+        depth = depth + 1
+    end
+
+    if textInstance.Parent and textInstance.Parent:IsA("GuiObject") then
+        return textInstance.Parent
+    end
+    return nil
+end
+
+local function isLocalPeopleText(rawText, localName, localDisplay)
+    if type(rawText) ~= "string" or rawText == "" then return false end
+
+    local text = rawText:gsub("^%s+", ""):gsub("%s+$", "")
+    if text == "" then return false end
+
+    if text == localName or text == localDisplay then
+        return true
+    end
+
+    if text == ("@" .. localName) or text == ("@" .. localDisplay) then
+        return true
     end
 
     return false
@@ -212,6 +281,8 @@ function UISpoofer.new(deps)
     self.observedRoots = {}
     self.watchedByInstance = setmetatable({}, { __mode = "k" })
     self.originalByInstance = setmetatable({}, { __mode = "k" })
+    self.syntheticPeopleBySource = setmetatable({}, { __mode = "k" })
+    self.syntheticSyncScheduled = false
 
     return self
 end
@@ -226,6 +297,7 @@ function UISpoofer:disconnectAll()
     end
     self.observedRoots = {}
     self.watchedByInstance = setmetatable({}, { __mode = "k" })
+    self.syntheticSyncScheduled = false
 end
 
 function UISpoofer:rememberOriginal(instance, key, value)
@@ -364,6 +436,213 @@ function UISpoofer:getTargetPlayerInstance()
     end)
     if ok then return player end
     return nil
+end
+
+function UISpoofer:findRightmostPeopleButton(row)
+    if not row then return nil end
+
+    local best = nil
+    local bestScore = nil
+
+    local function scoreButton(button)
+        local pos = button.AbsolutePosition
+        local size = button.AbsoluteSize
+        return (pos.X * 10000) + pos.Y - (math.abs(size.X - size.Y) * 10) - size.X
+    end
+
+    if row:IsA("GuiButton") and row.Visible then
+        best = row
+        bestScore = scoreButton(row)
+    end
+
+    local ok, descendants = pcall(function() return row:GetDescendants() end)
+    if ok and descendants then
+        for _, inst in ipairs(descendants) do
+            if inst:IsA("GuiButton") and inst.Visible then
+                local score = scoreButton(inst)
+                if bestScore == nil or score > bestScore then
+                    best = inst
+                    bestScore = score
+                end
+            end
+        end
+    end
+
+    return best
+end
+
+function UISpoofer:applySyntheticPeopleRowVisuals(row)
+    if not row then return end
+
+    local localName = self.localPlayer and self.localPlayer.Name or ""
+    local localDisplay = self.localPlayer and self.localPlayer.DisplayName or localName
+    local targetName = self.targetName or tostring(self.targetUserId or "")
+    local targetDisplay = self.targetDisplayName or targetName
+
+    local function applyText(instance)
+        if not instance or not TEXT_CLASS_SET[instance.ClassName] then return end
+
+        local current = instance.Text
+        local rewritten = self:rewriteText(current)
+        if not rewritten then
+            local trimmed = tostring(current or ""):gsub("^%s+", ""):gsub("%s+$", "")
+            if trimmed == localName or trimmed == localDisplay then
+                rewritten = targetDisplay
+            elseif trimmed == ("@" .. localName) or trimmed == ("@" .. localDisplay) then
+                rewritten = "@" .. targetName
+            end
+        end
+
+        if rewritten and rewritten ~= current then
+            pcall(function() instance.Text = rewritten end)
+        end
+    end
+
+    local function applyImage(instance)
+        if not instance or not IMAGE_CLASS_SET[instance.ClassName] then return end
+
+        local current = instance.Image
+        local rewritten = self:rewriteImage(current)
+        if rewritten and rewritten ~= current then
+            pcall(function() instance.Image = rewritten end)
+        end
+    end
+
+    applyText(row)
+    applyImage(row)
+
+    local leftMostAvatarImage = nil
+    local leftMostX = nil
+
+    local ok, descendants = pcall(function() return row:GetDescendants() end)
+    if ok and descendants then
+        for _, inst in ipairs(descendants) do
+            applyText(inst)
+            applyImage(inst)
+
+            if IMAGE_CLASS_SET[inst.ClassName] then
+                local pos = inst.AbsolutePosition
+                local size = inst.AbsoluteSize
+                if size.X >= 20 and size.Y >= 20 then
+                    if leftMostX == nil or pos.X < leftMostX then
+                        leftMostX = pos.X
+                        leftMostAvatarImage = inst
+                    end
+                end
+            end
+        end
+    end
+
+    if leftMostAvatarImage and self.targetHeadshot and leftMostAvatarImage.Image ~= self.targetHeadshot then
+        pcall(function() leftMostAvatarImage.Image = self.targetHeadshot end)
+    end
+end
+
+function UISpoofer:clearSyntheticPeopleRows()
+    for sourceRow, syntheticRow in pairs(self.syntheticPeopleBySource) do
+        if syntheticRow and syntheticRow.Parent then
+            pcall(function() syntheticRow:Destroy() end)
+        end
+        self.syntheticPeopleBySource[sourceRow] = nil
+    end
+
+    self.syntheticPeopleBySource = setmetatable({}, { __mode = "k" })
+    self.syntheticSyncScheduled = false
+end
+
+function UISpoofer:syncSyntheticPeopleRows()
+    if not self.active or not self.targetUserId then
+        self:clearSyntheticPeopleRows()
+        return
+    end
+
+    local localName = self.localPlayer and self.localPlayer.Name or ""
+    local localDisplay = self.localPlayer and self.localPlayer.DisplayName or localName
+    if localName == "" then return end
+
+    local sourceRows = {}
+
+    local ok, descendants = pcall(function() return CoreGui:GetDescendants() end)
+    if not ok or not descendants then return end
+
+    for _, inst in ipairs(descendants) do
+        if TEXT_CLASS_SET[inst.ClassName]
+            and isLikelyPeopleContext(inst)
+            and isLocalPeopleText(inst.Text, localName, localDisplay) then
+            local sourceRow = findPeopleRowFromTaggedText(inst)
+            if sourceRow and sourceRow.Parent and sourceRow.Name ~= "UISpooferSyntheticRow" then
+                sourceRows[sourceRow] = true
+            end
+        end
+    end
+
+    for sourceRow, syntheticRow in pairs(self.syntheticPeopleBySource) do
+        if not sourceRows[sourceRow] or not sourceRow or not sourceRow.Parent then
+            if syntheticRow and syntheticRow.Parent then
+                pcall(function() syntheticRow:Destroy() end)
+            end
+            self.syntheticPeopleBySource[sourceRow] = nil
+        end
+    end
+
+    for sourceRow in pairs(sourceRows) do
+        local syntheticRow = self.syntheticPeopleBySource[sourceRow]
+
+        if not syntheticRow or not syntheticRow.Parent then
+            local okClone, cloned = pcall(function() return sourceRow:Clone() end)
+            if okClone and cloned then
+                syntheticRow = cloned
+                syntheticRow.Name = "UISpooferSyntheticRow"
+
+                local okCloneDesc, cloneDesc = pcall(function() return syntheticRow:GetDescendants() end)
+                if okCloneDesc and cloneDesc then
+                    for _, inst in ipairs(cloneDesc) do
+                        if inst:IsA("LocalScript") or inst:IsA("Script") or inst:IsA("ModuleScript") then
+                            pcall(function() inst:Destroy() end)
+                        end
+                    end
+                end
+
+                pcall(function() syntheticRow.Parent = sourceRow.Parent end)
+                self.syntheticPeopleBySource[sourceRow] = syntheticRow
+
+                local sourceButton = self:findRightmostPeopleButton(sourceRow)
+                local syntheticButton = self:findRightmostPeopleButton(syntheticRow)
+                if sourceButton and syntheticButton then
+                    local okConn, conn = pcall(function()
+                        return syntheticButton.Activated:Connect(function()
+                            if not self.active then return end
+                            pcall(function() sourceButton:Activate() end)
+                        end)
+                    end)
+                    if okConn and conn then
+                        self.connections[#self.connections + 1] = conn
+                    end
+                end
+            end
+        end
+
+        if syntheticRow and syntheticRow.Parent then
+            pcall(function()
+                syntheticRow.LayoutOrder = (tonumber(sourceRow.LayoutOrder) or 0) - 1
+            end)
+            self:applySyntheticPeopleRowVisuals(syntheticRow)
+        end
+    end
+end
+
+function UISpoofer:requestSyntheticPeopleSync()
+    if self.syntheticSyncScheduled then return end
+    self.syntheticSyncScheduled = true
+
+    task.defer(function()
+        self.syntheticSyncScheduled = false
+        if not self.active or not self.targetUserId then
+            self:clearSyntheticPeopleRows()
+            return
+        end
+        self:syncSyntheticPeopleRows()
+    end)
 end
 
 function UISpoofer:registerInstanceObservers(instance, watchAttributes)
@@ -617,6 +896,7 @@ function UISpoofer:observeRoot(root)
             task.defer(function()
                 if not self.active then return end
                 self:applyToInstance(inst)
+                self:requestSyntheticPeopleSync()
             end)
         end)
     end)
@@ -653,6 +933,8 @@ function UISpoofer:startObserving()
             self.connections[#self.connections + 1] = conn
         end
     end
+
+    self:requestSyntheticPeopleSync()
 end
 
 function UISpoofer:refreshTargetProfile(userId)
@@ -715,6 +997,7 @@ function UISpoofer:setTarget(target)
     if self.active then
         if previousTargetUserId and previousTargetUserId ~= userId then
             self:restoreAll()
+            self:clearSyntheticPeopleRows()
         end
 
         self:startObserving()
@@ -724,6 +1007,8 @@ function UISpoofer:setTarget(target)
         if playerGui then
             self:scanRoot(playerGui)
         end
+
+        self:requestSyntheticPeopleSync()
 
         task.defer(function()
             task.wait(0.15)
@@ -758,6 +1043,8 @@ function UISpoofer:reapply()
         self:scanRoot(playerGui)
     end
 
+    self:requestSyntheticPeopleSync()
+
     return true
 end
 
@@ -781,12 +1068,14 @@ function UISpoofer:setEnabled(enabled)
     if not enabled then
         self:disconnectAll()
         self:restoreAll()
+        self:clearSyntheticPeopleRows()
         return
     end
 
     if self.targetUserId then
         self:startObserving()
         self:reapply()
+        self:requestSyntheticPeopleSync()
     end
 end
 
@@ -801,6 +1090,7 @@ function UISpoofer:cleanup()
 
     self:disconnectAll()
     self:restoreAll()
+    self:clearSyntheticPeopleRows()
 end
 
 return UISpoofer
