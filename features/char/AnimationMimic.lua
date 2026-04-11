@@ -200,6 +200,7 @@ function AnimationMimic.new(deps)
         replicateMinIntervalSeconds            = 0.45,
         forceReplicateOnTargetSwitch           = true,
         forceReplicateOnRestore                = true,
+        replicateRetryDelays                   = { 0.12, 0.30 },
     }
 
     self.fallbackNumericIds = {
@@ -830,6 +831,43 @@ function AnimationMimic:replicateAnimationStateForOthers(character, animationSet
     return false
 end
 
+function AnimationMimic:requestReplicateResync(character, animationSet, options)
+    options = options or {}
+    if not character or not animationSet then return false end
+
+    local startToken = self.applyToken
+    local retryDelays = options.retryDelays or self.settings.replicateRetryDelays or { 0.12, 0.30 }
+    local forceFirst = options.force == true
+
+    local function tryReplicate(forceFlag)
+        if not self.active then return false end
+        if startToken ~= self.applyToken then return false end
+        if not character.Parent then return false end
+
+        local prevForce = self._forceReplicateThisApply
+        self._forceReplicateThisApply = forceFlag == true
+        local ok = self:replicateAnimationStateForOthers(character, animationSet)
+        self._forceReplicateThisApply = prevForce
+        return ok
+    end
+
+    if tryReplicate(forceFirst) then
+        return true
+    end
+
+    task.defer(function()
+        for i = 1, #retryDelays do
+            local delaySeconds = retryDelays[i]
+            task.wait(delaySeconds)
+            if tryReplicate(true) then
+                return
+            end
+        end
+    end)
+
+    return false
+end
+
 -- FIX B (accessories/scale): applyAnimationSetViaDescription was calling
 -- ApplyDescription without snapshotting body scale or colors first.
 -- ApplyDescription resets all scale fields on the description to their stored
@@ -1197,8 +1235,19 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
             signature = hashAnimationSet(animationSet),
             timestamp = os.clock(),
         }
+
+        -- Some avatar package transitions can still appear stale for observers
+        -- after a single network apply; force one reconciliation pass.
+        if self._forceReplicateThisApply == true then
+            self:requestReplicateResync(character, animationSet, {
+                force = true,
+                retryDelays = { 0.18 },
+            })
+        end
     else
-        self:replicateAnimationStateForOthers(character, animationSet)
+        self:requestReplicateResync(character, animationSet, {
+            force = self._forceReplicateThisApply == true,
+        })
     end
     self:startRecoveryWatcher(character, animationSet)
 
@@ -1278,8 +1327,17 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
             signature = hashAnimationSet(ownSet),
             timestamp = os.clock(),
         }
+
+        if self._forceReplicateThisApply == true then
+            self:requestReplicateResync(character, ownSet, {
+                force = true,
+                retryDelays = { 0.18 },
+            })
+        end
     else
-        self:replicateAnimationStateForOthers(character, ownSet)
+        self:requestReplicateResync(character, ownSet, {
+            force = self._forceReplicateThisApply == true,
+        })
     end
     self._forceReplicateThisApply = false
     self:startRecoveryWatcher(character, ownSet)
