@@ -108,6 +108,10 @@ local function applyUserConfig(settings, userConfig)
         { {"Avatar Spoofer","Enabled"},                      {"Avatar Spoofer","Enabled"} },
         { {"Avatar Spoofer","Apply Respawn"},                {"Avatar Spoofer","Apply Respawn"} },
         { {"Avatar Spoofer","User"},                         {"Avatar Spoofer","User"} },
+
+        -- UI Spoofer
+        { {"UI Spoofer","Enabled"},                          {"UI Spoofer","Enabled"} },
+        { {"UI Spoofer","User"},                             {"UI Spoofer","User"} },
         
         -- Hotkeys
         { {"Hotkeys","Enabled"},                             {"Hotkeys","Enabled"} },
@@ -210,6 +214,7 @@ local function validateSettings(Settings)
     expectType("ForceHit.Full Damage", S.ForceHitFullDamage, "boolean")
     expectType("Avatar Spoofer.Enabled", S.AvatarSpooferEnabled, "boolean")
     expectType("Avatar Spoofer.Apply Respawn", S.AvatarSpooferApplyRespawn, "boolean")
+    expectType("UI Spoofer.Enabled", S.UISpooferEnabled, "boolean")
     expectType("Character Model.Enabled", S.CharacterModelEnabled, "boolean")
     expectType("Character Model.Apply Respawn", S.CharacterModelApplyRespawn, "boolean")
     expectType("ESP.Enabled", S.ESPAllowed, "boolean")
@@ -222,6 +227,13 @@ local function validateSettings(Settings)
         local t = type(S.AvatarSpooferUser)
         if t ~= "string" and t ~= "number" then
             vWarn("Avatar Spoofer.User expected string or number, got " .. t)
+        end
+    end
+
+    if S.UISpooferUser ~= nil then
+        local t = type(S.UISpooferUser)
+        if t ~= "string" and t ~= "number" then
+            vWarn("UI Spoofer.User expected string or number, got " .. t)
         end
     end
 

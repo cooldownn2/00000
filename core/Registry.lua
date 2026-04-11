@@ -39,6 +39,8 @@ local SettingPaths = {
     AvatarSpooferEnabled        = {"Avatar Spoofer", "Enabled"},
     AvatarSpooferApplyRespawn   = {"Avatar Spoofer", "Apply Respawn"},
     AvatarSpooferUser           = {"Avatar Spoofer", "User"},
+    UISpooferEnabled            = {"UI Spoofer", "Enabled"},
+    UISpooferUser               = {"UI Spoofer", "User"},
 
     -- Legacy aliases kept for compatibility with older configs.
     CharacterModelEnabled       = {"Character Model", "Enabled"},

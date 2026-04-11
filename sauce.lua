@@ -31,6 +31,7 @@ local CharCommon = load("features/char/Common")
 local CharOutfit = load("features/char/OutfitMimic")
 local CharAnimation = load("features/char/AnimationMimic")
 local CharEmote = load("features/char/EmoteMimic")
+local CharUISpoofer = load("features/char/UISpoofer")
 local AimAssist  = load("features/AimAssist")
 local Triggerbot = load("features/Triggerbot")
 local FOVBoxes   = load("features/FOVBoxes")
@@ -295,6 +296,7 @@ CharacterModel.init(mergeDeps({
     CharOutfit = CharOutfit,
     CharAnimation = CharAnimation,
     CharEmote = CharEmote,
+    CharUISpoofer = CharUISpoofer,
 }))
 CharacterModel.update()
 
