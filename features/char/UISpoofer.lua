@@ -589,7 +589,6 @@ function UISpoofer:reapply()
     if not self.active then return false end
     if not self.targetUserId then return false end
 
-    self:startObserving()
     self:scanRoot(CoreGui)
 
     local playerGui = self.localPlayer and self.localPlayer:FindFirstChildOfClass("PlayerGui")
