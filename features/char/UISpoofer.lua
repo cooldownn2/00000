@@ -284,6 +284,16 @@ function UISpoofer.new(deps)
     self.syntheticPeopleBySource = setmetatable({}, { __mode = "k" })
     self.syntheticSyncScheduled = false
 
+    -- Remove stale rows left by previous runs that may not have cleaned up.
+    local ok, descendants = pcall(function() return CoreGui:GetDescendants() end)
+    if ok and descendants then
+        for _, inst in ipairs(descendants) do
+            if inst.Name == "UISpooferSyntheticRow" and inst:IsA("GuiObject") then
+                pcall(function() inst:Destroy() end)
+            end
+        end
+    end
+
     return self
 end
 
