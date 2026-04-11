@@ -418,7 +418,7 @@ function AnimationMimic:unstickPoseAfterApply(character, animationSet)
             return
         end
 
-        local started = self:startDirectController(character, animationSet, { assistMode = true })
+        local started = self:startDirectController(character, self:getGuaranteedFallbackSet(), { assistMode = true })
         if not started then
             self:startDirectController(character, self:getGuaranteedFallbackSet(), { assistMode = true })
         end
@@ -448,7 +448,7 @@ function AnimationMimic:scheduleAssistIfNeeded(character, animationSet)
             return
         end
 
-        local started = self:ensureAssistController(character, animationSet)
+        local started = self:ensureAssistController(character, self:getGuaranteedFallbackSet())
         if not started then
             self:ensureAssistController(character, self:getGuaranteedFallbackSet())
         end
@@ -718,45 +718,19 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
         return fromLive
     end
 
-    local fromLiveDesc = self:getAnimationSetFromLiveDescription(userId)
     local fromDesc = self:getAnimationSetFromDescription(userId)
-    local descCoverage = countAnimationSetCoverage(fromDesc)
-    local fromRig = nil
-
-    -- Description can already provide complete slot coverage; avoid creating
-    -- a temp rig when we already have every animation bucket resolved.
-    local shouldShortCircuit = self.settings.shortCircuitRigFetchOnFullDescription == true
-        and descCoverage >= #ANIM_KEYS
-    if not shouldShortCircuit then
-        fromRig = self:getAnimationSetFromTempRig(userId)
+    if fromDesc and countAnimationSetCoverage(fromDesc) > 0 then
+        self:setCachedAnimationSet(userId, fromDesc)
+        return fromDesc
     end
 
-    local function pickBetter(currentBest, candidate)
-        if not candidate then return currentBest end
-        local coverage = countAnimationSetCoverage(candidate.set)
-        if coverage <= 0 then return currentBest end
-        if not currentBest then
-            return { set = candidate.set, coverage = coverage, priority = candidate.priority }
-        end
-        if coverage > currentBest.coverage then
-            return { set = candidate.set, coverage = coverage, priority = candidate.priority }
-        end
-        if coverage == currentBest.coverage and candidate.priority > currentBest.priority then
-            return { set = candidate.set, coverage = coverage, priority = candidate.priority }
-        end
-        return currentBest
+    local fromRig = self:getAnimationSetFromTempRig(userId)
+    if fromRig and countAnimationSetCoverage(fromRig) > 0 then
+        self:setCachedAnimationSet(userId, fromRig)
+        return fromRig
     end
 
-    local best = nil
-    best = pickBetter(best, { set = fromLiveDesc, priority = 4 })
-    best = pickBetter(best, { set = fromLive, priority = 3 })
-    best = pickBetter(best, { set = fromDesc, priority = 2 })
-    best = pickBetter(best, { set = fromRig, priority = 1 })
-
-    if not best or not best.set then return nil end
-
-    self:setCachedAnimationSet(userId, best.set)
-    return best.set
+    return nil
 end
 
 function AnimationMimic:getAnimationSetFromUserIdWithRetry(userId, attempts)
@@ -764,14 +738,7 @@ function AnimationMimic:getAnimationSetFromUserIdWithRetry(userId, attempts)
     for i = 1, attempts do
         local set = self:getAnimationSetFromUserId(userId)
         if set then
-            local okPlayer, player = pcall(function() return Players:GetPlayerByUserId(userId) end)
-            local inServer = okPlayer and player ~= nil
-
-            if inServer and i < attempts and self:isLikelyFallbackSet(set) then
-                task.wait(0.2 + (i * 0.08))
-            else
-                return set
-            end
+            return set
         elseif i < attempts then
             task.wait(0.12 + (i * 0.05))
         end
@@ -1173,12 +1140,11 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     local animate = character:FindFirstChild("Animate")
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
-    local preferDescriptionApply = animationSet.__descriptionCompatible == true
 
     hardResetAnimator(humanoid)
 
     local applied = 0
-    if animate and not preferDescriptionApply then
+    if animate then
         for _, spec in ipairs(SLOT_SPECS) do
             if self:applySlotFromSet(character, animate, animationSet, spec.folder, spec.fallback, true) then
                 applied = applied + 1
@@ -1200,8 +1166,7 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
             self:stopPosePrimer(character)
         else
             local fallbackSet = self:getGuaranteedFallbackSet()
-            local directSet = preferDescriptionApply and fallbackSet or animationSet
-            if not self:startDirectController(character, directSet) then return false end
+            if not self:startDirectController(character, fallbackSet) then return false end
         end
     end
 
@@ -1238,12 +1203,11 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
     local animate = character:FindFirstChild("Animate")
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
-    local preferDescriptionApply = ownSet.__descriptionCompatible == true
 
     hardResetAnimator(humanoid)
 
     local applied = 0
-    if animate and not preferDescriptionApply then
+    if animate then
         for _, spec in ipairs(SLOT_SPECS) do
             if self:applySlotFromSet(character, animate, ownSet, spec.folder, spec.fallback, false) then
                 applied = applied + 1
@@ -1265,8 +1229,7 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
         else
             if not self.active then return false end
             local fallbackSet = self:getGuaranteedFallbackSet()
-            local directSet = preferDescriptionApply and fallbackSet or ownSet
-            if not self:startDirectController(character, directSet) then return false end
+            if not self:startDirectController(character, fallbackSet) then return false end
         end
     end
 
