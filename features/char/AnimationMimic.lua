@@ -26,12 +26,6 @@ local SLOT_SPECS = {
 
 local ANIM_KEYS = { "climb", "fall", "jump", "run", "walk", "swim", "idle" }
 
-local BLOCKED_ANIMATION_NUMERIC_IDS = {
-    [10921160088] = false,
-    [10921150788] = false,
-    [10921154678] = false,
-}
-
 local function getFirstAnimationInFolder(folder)
     if not folder then return nil end
     for _, child in ipairs(folder:GetChildren()) do
@@ -207,7 +201,6 @@ end
 
 function AnimationMimic:isDescriptionAnimationAssetIdValid(numericId)
     if not numericId or numericId <= 0 then return false end
-    if BLOCKED_ANIMATION_NUMERIC_IDS[numericId] then return false end
     if self.safeDescriptionAnimationIds[numericId] then return true end
     -- Trust description-provided IDs unless explicitly blocked.
     return true
@@ -521,10 +514,6 @@ end
 
 function AnimationMimic:sanitizeResolvedAnimationId(rawId, fallbackRawId)
     local cleaned = self.shared:normalizeAnimationId(rawId)
-    local numeric = self.shared:numericIdFromContentId(cleaned)
-    if numeric and BLOCKED_ANIMATION_NUMERIC_IDS[numeric] then
-        return self.shared:normalizeAnimationId(fallbackRawId)
-    end
     return cleaned or self.shared:normalizeAnimationId(fallbackRawId)
 end
 
@@ -550,39 +539,6 @@ function AnimationMimic:makeIdleAnimationData(rawIdleId)
         ordered = { cleaned, cleaned },
         first = cleaned,
     }
-end
-
-function AnimationMimic:cloneFolderData(folderData)
-    if not folderData then return nil end
-    local out = { byName = {}, ordered = {}, first = folderData.first }
-    for name, id in pairs(folderData.byName or {}) do
-        out.byName[name] = id
-    end
-    for i, id in ipairs(folderData.ordered or {}) do
-        out.ordered[i] = id
-    end
-    if not out.first then
-        out.first = out.ordered[1]
-    end
-    return out
-end
-
-function AnimationMimic:enrichJumpFromDescription(baseSet, descSet)
-    if not baseSet or not descSet then return baseSet end
-
-    local fallbackJump = self.shared:normalizeAnimationId(R15_FALLBACK_ANIMATIONS.jump)
-    local baseJump = self:resolveIdFromFolderData(baseSet.jump, "JumpAnim", 1)
-    local descJump = self:resolveIdFromFolderData(descSet.jump, "JumpAnim", 1)
-
-    if not descJump or descJump == fallbackJump then
-        return baseSet
-    end
-
-    if not baseJump or baseJump == fallbackJump then
-        baseSet.jump = self:cloneFolderData(descSet.jump)
-    end
-
-    return baseSet
 end
 
 function AnimationMimic:getCachedAnimationSet(userId)
@@ -667,31 +623,6 @@ function AnimationMimic:getAnimationSetFromDescription(userId)
     return set
 end
 
-function AnimationMimic:getAnimationSetFromLiveDescription(userId)
-    local okPlayer, player = pcall(function() return Players:GetPlayerByUserId(userId) end)
-    if not okPlayer or not player then return nil end
-
-    local character = player.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return nil end
-
-    local okDesc, desc = pcall(function() return humanoid:GetAppliedDescription() end)
-    if not okDesc or not desc then return nil end
-
-    local set = {
-        climb = self:makeSingleAnimationData("ClimbAnim", desc.ClimbAnimation),
-        fall = self:makeSingleAnimationData("FallAnim", desc.FallAnimation),
-        jump = self:makeSingleAnimationData("JumpAnim", desc.JumpAnimation),
-        run = self:makeSingleAnimationData("RunAnim", desc.RunAnimation),
-        walk = self:makeSingleAnimationData("WalkAnim", desc.WalkAnimation),
-        swim = self:makeSingleAnimationData("Swim", desc.SwimAnimation),
-        idle = self:makeIdleAnimationData(desc.IdleAnimation),
-    }
-    set.__descriptionCompatible = true
-    set.__source = "live-description"
-    return set
-end
-
 function AnimationMimic:isLikelyFallbackSet(animationSet)
     if not animationSet then return false end
 
@@ -744,10 +675,7 @@ end
 
 function AnimationMimic:getAnimationSetFromUserId(userId)
     local cached = self:getCachedAnimationSet(userId)
-    if cached then
-        local cachedDesc = self:getAnimationSetFromDescription(userId)
-        return self:enrichJumpFromDescription(cached, cachedDesc)
-    end
+    if cached then return cached end
 
     local fromLive = self:getAnimationSetFromLivePlayerWithWait(userId, self.settings.liveSourceWaitSeconds)
     local fromRig = self:getAnimationSetFromTempRig(userId)
@@ -780,9 +708,8 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
 
     if not best or not best.set then return nil end
 
-    local finalSet = self:enrichJumpFromDescription(best.set, fromDesc)
-    self:setCachedAnimationSet(userId, finalSet)
-    return finalSet
+    self:setCachedAnimationSet(userId, best.set)
+    return best.set
 
 end
 
@@ -1342,7 +1269,7 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
     if switchedTarget then
         self:restoreOwnAnimationsHard(character)
         flushAnimationState(character)
-        scrubTracksForDuration(character, 0.06)
+        scrubTracksForDuration(character, 0.18)
         if applyToken ~= self.applyToken then return false end
     end
 
