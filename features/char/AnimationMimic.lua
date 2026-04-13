@@ -189,6 +189,7 @@ function AnimationMimic.new(deps)
     self.settings = {
         useDirectTrackFallback = true,
         forceDirectControllerMode = true,
+        forceDirectControllerForDescriptionSource = false,
         cacheTtlSeconds = 22,
         minLiveCoverage = 7,
         liveSourceWaitSeconds = 1.5,
@@ -770,6 +771,9 @@ function AnimationMimic:getAnimationSetFromTempRig(userId)
     end
 
     local ok, rig = pcall(function() return Players:CreateHumanoidModelFromUserId(userId, targetRigType) end)
+    if not ok or not rig then
+        ok, rig = pcall(function() return Players:CreateHumanoidModelFromUserId(userId) end)
+    end
     if not ok or not rig then return nil end
 
     rig.Name = "AnimationMimicTempRig"
@@ -1399,6 +1403,13 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     if not humanoid then return false end
 
     if self.settings.forceDirectControllerMode == true then
+        local canForceDirect = true
+        if animationSet.__source == "user-description"
+            and self.settings.forceDirectControllerForDescriptionSource ~= true then
+            canForceDirect = false
+        end
+
+        if canForceDirect then
         if animate and animate:IsA("LocalScript") then
             animate.Disabled = true
         end
@@ -1415,6 +1426,7 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
         end
 
         return true
+        end
     end
 
     hardResetAnimator(humanoid)
