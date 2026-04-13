@@ -63,6 +63,10 @@ local function normalizeTarget(raw)
 	return t
 end
 
+local function looksUnresolvedName(name, userId)
+	return tostring(name or "") == tostring(userId or "")
+end
+
 local function isLikelyPeopleContext(inst)
 	local cur, depth = inst, 0
 	while cur and depth < 25 do
@@ -270,6 +274,7 @@ function UISpoofer.new(deps)
 	self.dirty = false
 
 	self.debugSyncStats = nil
+	self.profileFetchToken = 0
 
 	return self
 end
@@ -896,6 +901,9 @@ function UISpoofer:resolveUserId(target)
 end
 
 function UISpoofer:refreshProfile(userId)
+	self.profileFetchToken = self.profileFetchToken + 1
+	local fetchToken = self.profileFetchToken
+
 	self.targetName = tostring(userId)
 	self.targetDisplayName = nil
 	self.targetHeadshot = nil
@@ -943,6 +951,61 @@ function UISpoofer:refreshProfile(userId)
 		return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.AvatarThumbnail, Enum.ThumbnailSize.Size420x420)
 	end)
 	self.targetAvatarThumb = ok5 and av or nil
+
+	if not looksUnresolvedName(self.targetName, userId)
+		and not looksUnresolvedName(self.targetDisplayName, userId) then
+		return
+	end
+
+	task.spawn(function()
+		local delays = { 0.35, 0.75, 1.2, 1.8 }
+		for _, delayTime in ipairs(delays) do
+			task.wait(delayTime)
+			if fetchToken ~= self.profileFetchToken then return end
+			if tonumber(self.targetUserId) ~= tonumber(userId) then return end
+
+			local beforeName = self.targetName
+			local beforeDisplay = self.targetDisplayName
+
+			if looksUnresolvedName(self.targetName, userId) then
+				local ok2, name = pcall(function() return Players:GetNameFromUserIdAsync(userId) end)
+				if ok2 and type(name) == "string" and name ~= "" then self.targetName = name end
+			end
+
+			if self.targetDisplayName == nil or looksUnresolvedName(self.targetDisplayName, userId) then
+				local ok3, info = pcall(function() return UserService:GetUserInfosByUserIdsAsync({ userId }) end)
+				if ok3 and type(info) == "table" then
+					local matched = nil
+					for _, entry in ipairs(info) do
+						if type(entry) == "table" and tonumber(entry.Id) == tonumber(userId) then
+							matched = entry
+							break
+						end
+					end
+					if not matched then matched = info[1] end
+					if type(matched) == "table" then
+						local dn = matched.DisplayName
+						if type(dn) == "string" and dn ~= "" then self.targetDisplayName = dn end
+					end
+				end
+			end
+
+			self.targetDisplayName = self.targetDisplayName or self.targetName
+
+			if self.targetName ~= beforeName or self.targetDisplayName ~= beforeDisplay then
+				if self.enabled then
+					self:ensureLocalIdentitySpoof()
+					self.dirty = true
+					self:requestSync()
+				end
+			end
+
+			if not looksUnresolvedName(self.targetName, userId)
+				and not looksUnresolvedName(self.targetDisplayName, userId) then
+				return
+			end
+		end
+	end)
 end
 
 function UISpoofer:setTarget(target)
