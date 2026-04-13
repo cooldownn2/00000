@@ -29,6 +29,8 @@ local SLOT_NAME_HINTS = {
     idle = { "idle", "animation1", "animation2" },
 }
 
+local PACKAGE_ID_THRESHOLD = 10000000000
+
 local SCALE_NAMES = {
     "BodyHeightScale", "BodyWidthScale", "BodyDepthScale",
     "HeadScale", "BodyTypeScale", "BodyProportionScale",
@@ -186,6 +188,7 @@ function AnimationMimic.new(deps)
 
     self.settings = {
         useDirectTrackFallback = true,
+        forceDirectControllerMode = true,
         cacheTtlSeconds = 22,
         minLiveCoverage = 7,
         liveSourceWaitSeconds = 1.5,
@@ -259,6 +262,7 @@ function AnimationMimic:resolvePlayableAnimationId(rawId, slotName)
 
     local numericId = self.shared:numericIdFromContentId(cleaned)
     if not numericId then return cleaned end
+    local likelyPackageId = numericId >= PACKAGE_ID_THRESHOLD
 
     local cacheKey = tostring(numericId) .. "|" .. tostring(slotName or "")
     if self.resolvedAnimationIdCache[cacheKey] ~= nil then
@@ -334,11 +338,11 @@ function AnimationMimic:resolvePlayableAnimationId(rawId, slotName)
                 self.assetTypeIsAnimationCache[resolvedNumeric] = true
             end
         else
-            resolved = nil
+            resolved = likelyPackageId and nil or cleaned
         end
         pcall(function() assetModel:Destroy() end)
     else
-        resolved = nil
+        resolved = likelyPackageId and nil or cleaned
     end
 
     return finish(resolved)
@@ -1394,6 +1398,25 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
 
+    if self.settings.forceDirectControllerMode == true then
+        if animate and animate:IsA("LocalScript") then
+            animate.Disabled = true
+        end
+
+        self:stopDirectController(character)
+        self:stopPosePrimer(character)
+        hardResetAnimator(humanoid)
+
+        if not self:startDirectController(character, animationSet, { assistMode = false }) then
+            if animate and animate:IsA("LocalScript") then
+                animate.Disabled = false
+            end
+            return false
+        end
+
+        return true
+    end
+
     hardResetAnimator(humanoid)
 
     local applied = 0
@@ -1455,6 +1478,10 @@ function AnimationMimic:restoreOwnAnimationsHard(character)
     local animate = character:FindFirstChild("Animate")
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
+
+    if animate and animate:IsA("LocalScript") then
+        animate.Disabled = false
+    end
 
     hardResetAnimator(humanoid)
 
@@ -1662,6 +1689,10 @@ function AnimationMimic:setEnabled(enabled)
         self.lastSourceUserId = nil
         self.pinnedTargetUserId = nil
         local character = self.localPlayer.Character
+        local animate = character and character:FindFirstChild("Animate")
+        if animate and animate:IsA("LocalScript") then
+            animate.Disabled = false
+        end
         self:stopAllDirectControllers()
         self:stopAllPosePrimers()
         self:resetCharacterAnimations(character)
@@ -1690,6 +1721,10 @@ function AnimationMimic:cleanup()
     self.applyToken = self.applyToken + 1
 
     local character = self.localPlayer.Character
+    local animate = character and character:FindFirstChild("Animate")
+    if animate and animate:IsA("LocalScript") then
+        animate.Disabled = false
+    end
     self:stopAllDirectControllers()
     self:stopAllPosePrimers()
     self:resetCharacterAnimations(character)
