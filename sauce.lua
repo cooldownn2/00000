@@ -276,7 +276,9 @@ Hooks.init(mergeDeps({
     ForceHit       = ForceHit,
 }))
 
-Hooks.install()
+safeCall(function()
+    Hooks.install()
+end, "CleanupFails")
 Visuals.init(mergeDeps({ screenGui = screenGui, ForceHitModule = ForceHit, ESPModule = ESP, BODY_PART_NAMES = BodyParts }))
 
 ForceHit.init(mergeDeps({}))

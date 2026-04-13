@@ -487,7 +487,11 @@ local function buildHooks()
 end
 
 local function install()
-    if GH and GH.shoot ~= hookedShoot then GH.shoot = hookedShoot end
+    if GH then
+        pcall(function()
+            if GH.shoot ~= hookedShoot then GH.shoot = hookedShoot end
+        end)
+    end
 
     local indexOk = tryAssignMetamethod("__index", hookedIndex)
     local namecallOk = tryAssignMetamethod("__namecall", hookedNamecall)
@@ -513,7 +517,11 @@ local function install()
 end
 
 local function uninstall()
-    if GH and GH.shoot == hookedShoot then GH.shoot = oldShoot end
+    if GH then
+        pcall(function()
+            if GH.shoot == hookedShoot then GH.shoot = oldShoot end
+        end)
+    end
     safeCall(function()
         if _assignIndexInstalled or _assignNamecallInstalled then
             setReadOnlySafe(false)
