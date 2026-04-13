@@ -10,6 +10,7 @@ local SettingPaths = {
     TriggerbotKey               = {"Main", "Keybinds", "Triggerbot"},
     CamlockKey                  = {"Main", "Keybinds", "Camlock"},
     SelectionColor              = {"Main", "Selection Color"},
+    SelectionSystem             = {"Main", "Selection System"},
     TargetPart                  = {"Main", "Target Part"},
     ClosestPointScale           = {"Main", "Closest Point Scale"},
     SpreadMod                   = {"Weapon Modifications", "Spread Modifications"},

@@ -10,18 +10,14 @@ local CharCommon
 local CharOutfit
 local CharAnimation
 local CharEmote
-local CharUISpoofer
 
 local shared = nil
 local outfit = nil
 local animation = nil
 local emote = nil
-local uiSpoofer = nil
 
 local enabledState = false
 local targetState = ""
-local uiEnabledState = false
-local uiTargetState = ""
 local lastUpdate = 0
 local UPDATE_INTERVAL = 0.1
 local switchApplyToken = 0
@@ -60,29 +56,6 @@ local function getApplyRespawnEnabled()
     return Settings.AvatarSpooferApplyRespawn == true
 end
 
-local function getUISpooferEnabled()
-    if not Settings then return false end
-    return Settings.UISpooferEnabled == true
-end
-
-local function getUISpooferUserTarget()
-    if not Settings then return "" end
-
-    local target = Settings.UISpooferUser
-    local normalized = ""
-    if target ~= nil then
-        normalized = tostring(target)
-        normalized = normalized:gsub("^%s+", "")
-        normalized = normalized:gsub("%s+$", "")
-    end
-    if normalized ~= "" then
-        return normalized
-    end
-
-    -- If UI Spoofer user isn't set, follow Avatar Spoofer target.
-    return getSpooferUserTarget()
-end
-
 local function normalizeTarget(raw)
     if raw == nil then return "" end
     local text = tostring(raw)
@@ -92,7 +65,7 @@ local function normalizeTarget(raw)
 end
 
 local function ensureModules()
-    if shared and outfit and animation and emote and (not CharUISpoofer or uiSpoofer) then
+    if shared and outfit and animation and emote then
         return true
     end
 
@@ -114,13 +87,6 @@ local function ensureModules()
         localPlayer = LP,
     })
 
-    if CharUISpoofer then
-        uiSpoofer = CharUISpoofer.new({
-            shared = shared,
-            localPlayer = LP,
-        })
-    end
-
     return true
 end
 
@@ -135,18 +101,6 @@ local function setEnabled(enabled)
     outfit:setEnabled(enabled)
     animation:setEnabled(enabled)
     emote:setEnabled(enabled)
-end
-
-local function setUIEnabled(enabled)
-    enabled = enabled == true
-    if uiEnabledState == enabled then return end
-
-    uiEnabledState = enabled
-
-    if not ensureModules() then return end
-    if uiSpoofer then
-        uiSpoofer:setEnabled(enabled)
-    end
 end
 
 local function switchTargetSafe(target)
@@ -201,9 +155,6 @@ local function reapplyAll()
         ok = animation:reapply() or ok
         ok = emote:reapply() or ok
     end
-    if uiEnabledState and uiSpoofer then
-        ok = uiSpoofer:reapply() or ok
-    end
     return ok
 end
 
@@ -238,26 +189,6 @@ local function installEnvApi()
         setEnabled(true)
 
         return switchTargetSafe(targetState)
-    end
-
-    local function setUITargetAny(target)
-        if type(target) == "number" then
-            target = tostring(math.floor(target))
-        end
-
-        local normalized = normalizeTarget(target)
-        if normalized == "" then return false end
-
-        if Settings then
-            Settings.UISpooferUser = normalized
-            Settings.UISpooferEnabled = true
-        end
-
-        uiTargetState = normalized
-        setUIEnabled(true)
-        if not ensureModules() then return false end
-
-        return uiSpoofer and uiSpoofer:setTarget(normalized) or false
     end
 
     local function setOutfitOnly(target)
@@ -295,16 +226,6 @@ local function installEnvApi()
         SetUser = setTargetAny,
         Reapply = function()
             return reapplyAll()
-        end,
-        Cleanup = fullCleanup,
-    }
-
-    env.UISpoofer = {
-        SetTarget = setUITargetAny,
-        SetUser = setUITargetAny,
-        Reapply = function()
-            if not ensureModules() then return false end
-            return uiSpoofer and uiSpoofer:reapply() or false
         end,
         Cleanup = fullCleanup,
     }
@@ -361,29 +282,9 @@ local function update()
             switchTargetSafe(targetState)
         end
     end
-
-    local uiEnabled = getUISpooferEnabled()
-    setUIEnabled(uiEnabled)
-
-    if uiEnabled then
-        local uiTarget = getUISpooferUserTarget()
-        if uiTarget ~= "" and uiTarget ~= uiTargetState then
-            uiTargetState = uiTarget
-            if ensureModules() and uiSpoofer then
-                uiSpoofer:setTarget(uiTargetState)
-            end
-        end
-    end
 end
 
 local function onCharacterAdded(char)
-    if getUISpooferEnabled() then
-        setUIEnabled(true)
-        if ensureModules() and uiSpoofer then
-            uiSpoofer:onCharacterAdded(char)
-        end
-    end
-
     local shouldEnable = getSpooferEnabled()
     if shouldEnable and not enabledState then
         setEnabled(true)
@@ -437,19 +338,15 @@ end
 local function cleanup()
     enabledState = false
     targetState = ""
-    uiEnabledState = false
-    uiTargetState = ""
     switchApplyToken = switchApplyToken + 1
 
     if outfit then outfit:cleanup() end
     if animation then animation:cleanup() end
     if emote then emote:cleanup() end
-    if uiSpoofer then uiSpoofer:cleanup() end
 
     outfit = nil
     animation = nil
     emote = nil
-    uiSpoofer = nil
 
     if shared then shared:destroy() end
     shared = nil
@@ -464,7 +361,6 @@ local function init(deps)
     CharOutfit = deps.CharOutfit
     CharAnimation = deps.CharAnimation
     CharEmote = deps.CharEmote
-    CharUISpoofer = deps.CharUISpoofer
 
     installEnvApi()
 end

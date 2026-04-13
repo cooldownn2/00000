@@ -99,14 +99,14 @@ local function applyUserConfig(settings, userConfig)
         { {"Speed Modification","Panic Ground","Enabled"}, {"Character","Panic Ground","Enabled"} },
         { {"Speed Modification","Panic Ground","Keybind"}, {"Character","Panic Ground","Key"} },
 
-        -- Avatar Spoofer (preferred)
-        { {"Avatar Spoofer","Enabled"},                      {"Avatar Spoofer","Enabled"} },
-        { {"Avatar Spoofer","Apply Respawn"},                {"Avatar Spoofer","Apply Respawn"} },
-        { {"Avatar Spoofer","User"},                         {"Avatar Spoofer","User"} },
+        -- Avatar Spoofer
+        { {"Character Spoofing","Avatar Spoofer","Enabled"}, {"Avatar Spoofer","Enabled"} },
+        { {"Character Spoofing","Avatar Spoofer","Apply Respawn"}, {"Avatar Spoofer","Apply Respawn"} },
+        { {"Character Spoofing","Avatar Spoofer","User"}, {"Avatar Spoofer","User"} },
 
         -- UI Spoofer
-        { {"UI Spoofer","Enabled"},                          {"UI Spoofer","Enabled"} },
-        { {"UI Spoofer","User"},                             {"UI Spoofer","User"} },
+        { {"Character Spoofing","UI Spoofer","Enabled"},   {"UI Spoofer","Enabled"} },
+        { {"Character Spoofing","UI Spoofer","User"},      {"UI Spoofer","User"} },
         
         -- Hotkeys
         { {"Hotkeys","Enabled"},                             {"Hotkeys","Enabled"} },

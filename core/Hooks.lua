@@ -11,10 +11,6 @@ local hookedShoot, hookedNamecall, hookedIndex
 local gameStyle
 local random = math.random
 local HUGE = math.huge
-local UI_SPOOFER_RESOLVE_TTL = 1
-local _uiSpooferLastResolvedAt = 0
-local _uiSpooferLastInput = nil
-local _uiSpooferLastResolvedUserId = nil
 local GETGENV_FN = rawget(_G, "getgenv")
 local RUNTIME_ENV = (type(GETGENV_FN) == "function" and GETGENV_FN()) or _G
 local SETREADONLY_FN = rawget(RUNTIME_ENV, "setreadonly") or rawget(_G, "setreadonly")
@@ -40,182 +36,6 @@ end
 
 local function isValidHitInstance(value)
     return typeof(value) == "Instance" and value.Parent ~= nil
-end
-
-local function normalizeText(value)
-    local text = tostring(value or "")
-    text = text:gsub("^%s+", "")
-    text = text:gsub("%s+$", "")
-    return text
-end
-
-local function getUISpooferTargetInput()
-    if not Settings then return "" end
-
-    local target = normalizeText(Settings.UISpooferUser)
-    if target ~= "" then return target end
-
-    target = normalizeText(Settings.AvatarSpooferUser)
-    if target ~= "" then return target end
-
-    return ""
-end
-
-local function resolveUISpooferTargetUserId()
-    if not Settings or not Players then return nil end
-    if Settings.UISpooferEnabled ~= true then
-        _uiSpooferLastInput = nil
-        _uiSpooferLastResolvedUserId = nil
-        _uiSpooferLastResolvedAt = 0
-        return nil
-    end
-
-    local input = getUISpooferTargetInput()
-    if input == "" then return nil end
-
-    local now = os.clock()
-    if input == _uiSpooferLastInput
-        and _uiSpooferLastResolvedUserId
-        and (now - _uiSpooferLastResolvedAt) < UI_SPOOFER_RESOLVE_TTL then
-        return _uiSpooferLastResolvedUserId
-    end
-
-    local resolvedUserId = nil
-    local numeric = tonumber(input)
-    if numeric then
-        resolvedUserId = math.floor(numeric)
-    else
-        local ok, lookedUp = pcall(function()
-            return Players:GetUserIdFromNameAsync(input)
-        end)
-        if ok and type(lookedUp) == "number" then
-            resolvedUserId = math.floor(lookedUp)
-        end
-    end
-
-    _uiSpooferLastInput = input
-    _uiSpooferLastResolvedAt = now
-    _uiSpooferLastResolvedUserId = resolvedUserId
-    return resolvedUserId
-end
-
-local function remapUISpooferLocalPlayerIndex(self, key)
-    if not LP or not key then return nil end
-    if not rawequal(self, LP) then return nil end
-
-    local targetUserId = resolveUISpooferTargetUserId()
-    if not targetUserId then return nil end
-
-    -- Safe global fallback: CharacterAppearanceId is inspect/avatar specific.
-    if key == "CharacterAppearanceId" then
-        return targetUserId
-    end
-
-    return nil
-end
-
-local function remapUISpooferAvatarMethodArgs(self, method, ...)
-    if not Players or not LP or not rawequal(self, Players) then return nil end
-
-    if method ~= "GetCharacterAppearanceInfoAsync"
-        and method ~= "GetCharacterAppearanceAsync"
-        and method ~= "GetHumanoidDescriptionFromUserId"
-        and method ~= "GetNameFromUserIdAsync"
-        and method ~= "GetUserThumbnailAsync" then
-        return nil
-    end
-
-    local targetUserId = resolveUISpooferTargetUserId()
-    if not targetUserId then return nil end
-
-    local localUserId = tonumber(LP.UserId)
-    if not localUserId then return nil end
-
-    local args = {...}
-    local requestedUserId = tonumber(args[1])
-    if not requestedUserId then return nil end
-
-    if math.floor(requestedUserId) ~= math.floor(localUserId) then
-        return nil
-    end
-
-    args[1] = targetUserId
-    return args
-end
-
-local function rewriteUISpooferUrl(rawUrl, localUserId, targetUserId)
-    if type(rawUrl) ~= "string" or rawUrl == "" then return nil end
-
-    local lowerUrl = string.lower(rawUrl)
-    local hasIdentityRoute = lowerUrl:find("avatar", 1, true) ~= nil
-        or lowerUrl:find("users", 1, true) ~= nil
-        or lowerUrl:find("inventory", 1, true) ~= nil
-        or lowerUrl:find("catalog", 1, true) ~= nil
-    if not hasIdentityRoute then
-        return nil
-    end
-
-    local localIdText = tostring(localUserId)
-    local targetIdText = tostring(targetUserId)
-    local rewritten = rawUrl
-    local changed = false
-
-    local v1, c1 = rewritten:gsub("([?&][uU][sS][eE][rR][iI][dD]=)" .. localIdText, "%1" .. targetIdText)
-    if c1 > 0 then rewritten = v1; changed = true end
-
-    local v2, c2 = rewritten:gsub("([?&][uU][sS][eE][rR][iI][dD][sS]=)" .. localIdText, "%1" .. targetIdText)
-    if c2 > 0 then rewritten = v2; changed = true end
-
-    local v3, c3 = rewritten:gsub("([/][uU][sS][eE][rR][sS][/-])" .. localIdText .. "([/?#&])", "%1" .. targetIdText .. "%2")
-    if c3 > 0 then rewritten = v3; changed = true end
-
-    local v4, c4 = rewritten:gsub("([/][uU][sS][eE][rR][sS][/-])" .. localIdText .. "$", "%1" .. targetIdText)
-    if c4 > 0 then rewritten = v4; changed = true end
-
-    if changed then return rewritten end
-    return nil
-end
-
-local function remapUISpooferHttpApiArgs(self, method, ...)
-    if not LP or not method then return nil end
-    if method ~= "GetAsync" and method ~= "PostAsync" and method ~= "RequestAsync" then return nil end
-
-    local className = ""
-    pcall(function() className = tostring(self.ClassName or "") end)
-    className = string.lower(className)
-    if className ~= "httprbxapiservice" then
-        return nil
-    end
-
-    local targetUserId = resolveUISpooferTargetUserId()
-    if not targetUserId then return nil end
-
-    local localUserId = tonumber(LP.UserId)
-    if not localUserId or localUserId == targetUserId then return nil end
-
-    local args = {...}
-    if method == "RequestAsync" and type(args[1]) == "table" then
-        local request = args[1]
-        local url = request.Url
-        local rewritten = rewriteUISpooferUrl(url, localUserId, targetUserId)
-        if rewritten and rewritten ~= url then
-            local requestCopy = {}
-            for k, v in pairs(request) do requestCopy[k] = v end
-            requestCopy.Url = rewritten
-            args[1] = requestCopy
-            return args
-        end
-        return nil
-    end
-
-    local url = args[1]
-    local rewritten = rewriteUISpooferUrl(url, localUserId, targetUserId)
-    if rewritten and rewritten ~= url then
-        args[1] = rewritten
-        return args
-    end
-
-    return nil
 end
 
 local function cloneArray(arr)
@@ -402,11 +222,6 @@ local function buildHooks()
             end
         end
 
-        local remappedIdentity = remapUISpooferLocalPlayerIndex(self, key)
-        if remappedIdentity ~= nil then
-            return remappedIdentity
-        end
-
         return oldIndex(self, key)
     end
 
@@ -422,16 +237,6 @@ local function buildHooks()
         end
         if not method then
             return oldNamecall(self, ...)
-        end
-
-        local remappedHttpArgs = remapUISpooferHttpApiArgs(self, method, ...)
-        if remappedHttpArgs then
-            return oldNamecall(self, table.unpack(remappedHttpArgs))
-        end
-
-        local remappedAvatarArgs = remapUISpooferAvatarMethodArgs(self, method, ...)
-        if remappedAvatarArgs then
-            return oldNamecall(self, table.unpack(remappedAvatarArgs))
         end
 
         if method ~= "FireServer" or not rawequal(self, MainEvent) then
