@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local InsertService = game:GetService("InsertService")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local AnimationMimic = {}
 AnimationMimic.__index = AnimationMimic
@@ -179,6 +180,7 @@ function AnimationMimic.new(deps)
     self.applyToken = 0
     self.resolvedAnimationIdCache = {}
     self.pendingAnimationResolve = {}
+    self.assetTypeIsAnimationCache = {}
 
     self.settings = {
         useDirectTrackFallback = true,
@@ -255,7 +257,6 @@ function AnimationMimic:resolvePlayableAnimationId(rawId, slotName)
 
     local numericId = self.shared:numericIdFromContentId(cleaned)
     if not numericId then return cleaned end
-    local likelyPackageId = numericId >= 10000000000
 
     local cacheKey = tostring(numericId) .. "|" .. tostring(slotName or "")
     if self.resolvedAnimationIdCache[cacheKey] ~= nil then
@@ -276,6 +277,30 @@ function AnimationMimic:resolvePlayableAnimationId(rawId, slotName)
 
     self.pendingAnimationResolve[cacheKey] = true
 
+    local cachedAssetType = self.assetTypeIsAnimationCache[numericId]
+    if cachedAssetType == true then
+        self.resolvedAnimationIdCache[cacheKey] = cleaned
+        self.pendingAnimationResolve[cacheKey] = nil
+        return cleaned
+    end
+
+    if cachedAssetType == nil then
+        local okInfo, info = pcall(function()
+            return MarketplaceService:GetProductInfo(numericId)
+        end)
+        if okInfo and type(info) == "table" then
+            local assetTypeId = tonumber(info.AssetTypeId)
+            local animTypeId = Enum.AssetType.Animation.Value
+            local isAnim = assetTypeId ~= nil and assetTypeId == animTypeId
+            self.assetTypeIsAnimationCache[numericId] = isAnim
+            if isAnim then
+                self.resolvedAnimationIdCache[cacheKey] = cleaned
+                self.pendingAnimationResolve[cacheKey] = nil
+                return cleaned
+            end
+        end
+    end
+
     local resolved = cleaned
     local okAsset, assetModel = pcall(function()
         return InsertService:LoadAsset(numericId)
@@ -284,11 +309,15 @@ function AnimationMimic:resolvePlayableAnimationId(rawId, slotName)
         local chosen = self:findBestAnimationInAsset(assetModel, slotName)
         if chosen and chosen.AnimationId and chosen.AnimationId ~= "" then
             resolved = self.shared:normalizeAnimationId(chosen.AnimationId) or cleaned
-        elseif likelyPackageId then
+            local resolvedNumeric = self.shared:numericIdFromContentId(resolved)
+            if resolvedNumeric then
+                self.assetTypeIsAnimationCache[resolvedNumeric] = true
+            end
+        else
             resolved = nil
         end
         pcall(function() assetModel:Destroy() end)
-    elseif likelyPackageId then
+    else
         resolved = nil
     end
 
@@ -573,7 +602,7 @@ function AnimationMimic:extractFolderAnimationData(animate, folderName)
     local data = { byName = {}, ordered = {}, first = nil }
     for _, child in ipairs(folder:GetChildren()) do
         if child:IsA("Animation") then
-            local id = self.shared:normalizeAnimationId(child.AnimationId)
+            local id = self:sanitizeResolvedAnimationId(child.AnimationId, nil, folderName)
             if id then
                 if not data.first then data.first = id end
                 data.byName[child.Name] = id
