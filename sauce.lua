@@ -50,6 +50,7 @@ local settings   = Config.settings
 local Settings   = Config.Settings
 
 local activeProfile = GameProfiles.resolve(game.PlaceId, game.GameId, GENV.SauceProfilePlaceId)
+local hasKnownProfile = activeProfile ~= nil
 if activeProfile then
     GameProfiles.apply(settings, activeProfile)
 end
@@ -64,31 +65,13 @@ ConfigBridge.validateSettings(Settings)
 -- can be deferred and made conditional on which game we're running in.
 local gameStyle = activeProfile and activeProfile.Style or nil
 
-local function detectGameStyle()
-    local mainRemotes = RS:FindFirstChild("MainRemotes")
-    if mainRemotes and mainRemotes:FindFirstChild("MainRemoteEvent") then
-        return "zeehood"
-    end
-
-    local modules = RS:FindFirstChild("Modules")
-    if RS:FindFirstChild("MainEvent") and modules and modules:FindFirstChild("GunHandler") then
-        return "dashood"
-    end
-
-    return nil
-end
-
-if not gameStyle then
-    gameStyle = detectGameStyle()
-end
-
 local MainEvent, GH, oldShoot
 if gameStyle == "zeehood" then
     local mainRemotes = RS:FindFirstChild("MainRemotes") or RS:WaitForChild("MainRemotes", 8)
     MainEvent = mainRemotes and (mainRemotes:FindFirstChild("MainRemoteEvent") or mainRemotes:WaitForChild("MainRemoteEvent", 8)) or nil
     GH        = {}
     oldShoot  = function() end
-else
+elseif hasKnownProfile then
     MainEvent = RS:FindFirstChild("MainEvent") or RS:WaitForChild("MainEvent", 8)
 
     local modules = RS:FindFirstChild("Modules")
@@ -99,6 +82,10 @@ else
 
     GH = (okRequire and type(requiredGH) == "table") and requiredGH or {}
     oldShoot = (type(GH.shoot) == "function") and GH.shoot or function() end
+else
+    MainEvent = nil
+    GH = {}
+    oldShoot = function() end
 end
 
 if type(shared) == "table" then
@@ -312,7 +299,9 @@ Hooks.init(mergeDeps({
 }))
 
 safeCall(function()
-    Hooks.install()
+    if hasKnownProfile then
+        Hooks.install()
+    end
 end, "CleanupFails")
 Visuals.init(mergeDeps({ screenGui = screenGui, ForceHitModule = ForceHit, ESPModule = ESP, BODY_PART_NAMES = BodyParts }))
 

@@ -42,10 +42,6 @@ end
 local function resolve(placeId, universeId, overridePlaceId)
     local id = tonumber(overridePlaceId) or tonumber(placeId)
     if id and KNOWN_PROFILES_BY_PLACE_ID[id] then return KNOWN_PROFILES_BY_PLACE_ID[id] end
-    -- Also check by universe/game ID so the caller can pass either game.PlaceId
-    -- or game.GameId and the correct profile will still be found.
-    local uid = tonumber(universeId)
-    if uid and KNOWN_PROFILES_BY_PLACE_ID[uid] then return KNOWN_PROFILES_BY_PLACE_ID[uid] end
     return nil
 end
 
