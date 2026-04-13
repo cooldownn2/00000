@@ -16,6 +16,12 @@ local KNOWN_PROFILES_BY_PLACE_ID = {
         Style   = "zeehood",
         Patch   = {},
     },
+    [99427474123086] = {
+        Name    = "Zeehood",
+        PlaceId = 99427474123086,
+        Style   = "zeehood",
+        Patch   = {},
+    },
 }
 
 local function deepMerge(dst, src)

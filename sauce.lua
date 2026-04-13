@@ -64,22 +64,57 @@ ConfigBridge.validateSettings(Settings)
 -- can be deferred and made conditional on which game we're running in.
 local gameStyle = activeProfile and activeProfile.Style or nil
 
+local function detectGameStyle()
+    local mainRemotes = RS:FindFirstChild("MainRemotes")
+    if mainRemotes and mainRemotes:FindFirstChild("MainRemoteEvent") then
+        return "zeehood"
+    end
+
+    local modules = RS:FindFirstChild("Modules")
+    if RS:FindFirstChild("MainEvent") and modules and modules:FindFirstChild("GunHandler") then
+        return "dashood"
+    end
+
+    return nil
+end
+
+if not gameStyle then
+    gameStyle = detectGameStyle()
+end
+
 local MainEvent, GH, oldShoot
 if gameStyle == "zeehood" then
-    local mainRemotes = RS:WaitForChild("MainRemotes", 8)
-    MainEvent = mainRemotes and mainRemotes:WaitForChild("MainRemoteEvent", 8) or nil
+    local mainRemotes = RS:FindFirstChild("MainRemotes") or RS:WaitForChild("MainRemotes", 8)
+    MainEvent = mainRemotes and (mainRemotes:FindFirstChild("MainRemoteEvent") or mainRemotes:WaitForChild("MainRemoteEvent", 8)) or nil
     GH        = {}
     oldShoot  = function() end
 else
-    MainEvent = RS:WaitForChild("MainEvent", 8)
-    GH        = require(RS.Modules.GunHandler)
-    oldShoot  = GH.shoot
+    MainEvent = RS:FindFirstChild("MainEvent") or RS:WaitForChild("MainEvent", 8)
+
+    local modules = RS:FindFirstChild("Modules")
+    local gunHandlerModule = modules and modules:FindFirstChild("GunHandler") or nil
+    local okRequire, requiredGH = pcall(function()
+        return gunHandlerModule and require(gunHandlerModule) or nil
+    end)
+
+    GH = (okRequire and type(requiredGH) == "table") and requiredGH or {}
+    oldShoot = (type(GH.shoot) == "function") and GH.shoot or function() end
 end
 
 if type(shared) == "table" then
     shared.SauceActiveProfile = {
         Name = activeProfile and activeProfile.Name or "default",
         PlaceId = activeProfile and activeProfile.PlaceId or game.PlaceId,
+        Style = gameStyle or "unknown",
+        ResolvedByProfile = activeProfile ~= nil,
+    }
+    shared.SauceRuntimeState = {
+        MainEnabled = Settings.Enabled,
+        ESPEnabled = Settings.ESPAllowed,
+        TriggerbotEnabled = Settings.TriggerbotEnabled,
+        CamlockEnabled = Settings.CamlockEnabled,
+        AvatarSpooferEnabled = Settings.AvatarSpooferEnabled,
+        UISpooferEnabled = Settings.UISpooferEnabled,
     }
 end
 
