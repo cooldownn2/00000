@@ -13,7 +13,6 @@ local ANIMATION_FIELDS = {
     "SwimAnimation",
 }
 
-local PACKAGE_ANIMATION_ID_THRESHOLD = 10000000000
 
 local function hasAnyTableEntries(value)
     return type(value) == "table" and next(value) ~= nil
@@ -204,13 +203,7 @@ function EmoteMimic:applyEmotesToHumanoid(humanoid, emoteData)
     self.shared:applyScaleValuesToDescription(currentDesc, scaleSnapshot)
 
     for _, fieldName in ipairs(ANIMATION_FIELDS) do
-        local raw = currentDesc[fieldName]
-        local numeric = tonumber(tostring(raw or ""):match("%d+"))
-        if not numeric or numeric <= 0 or numeric >= PACKAGE_ANIMATION_ID_THRESHOLD then
-            currentDesc[fieldName] = 0
-        else
-            currentDesc[fieldName] = numeric
-        end
+        currentDesc[fieldName] = 0
     end
 
     if humanoid.ApplyDescriptionClientServer then
