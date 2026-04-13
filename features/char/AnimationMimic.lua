@@ -814,7 +814,9 @@ end
 
 function AnimationMimic:getAnimationSetFromUserId(userId)
     local cached = self:getCachedAnimationSet(userId)
-    if cached then return cached end
+    if cached and cached.__source ~= "user-description" then
+        return cached
+    end
 
     local fromLive = self:getAnimationSetFromLivePlayerWithWait(userId, self.settings.liveSourceWaitSeconds)
 
@@ -1410,22 +1412,22 @@ function AnimationMimic:applyAnimationSetToCharacter(character, animationSet)
         end
 
         if canForceDirect then
-        if animate and animate:IsA("LocalScript") then
-            animate.Disabled = true
-        end
-
-        self:stopDirectController(character)
-        self:stopPosePrimer(character)
-        hardResetAnimator(humanoid)
-
-        if not self:startDirectController(character, animationSet, { assistMode = false }) then
             if animate and animate:IsA("LocalScript") then
-                animate.Disabled = false
+                animate.Disabled = true
             end
-            return false
-        end
 
-        return true
+            self:stopDirectController(character)
+            self:stopPosePrimer(character)
+            hardResetAnimator(humanoid)
+
+            if not self:startDirectController(character, animationSet, { assistMode = false }) then
+                if animate and animate:IsA("LocalScript") then
+                    animate.Disabled = false
+                end
+                return false
+            end
+
+            return true
         end
     end
 
