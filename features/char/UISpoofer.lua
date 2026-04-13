@@ -1,1254 +1,1104 @@
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
+local UserService = game:GetService("UserService")
+local GuiService = game:GetService("GuiService")
 
 local UISpoofer = {}
 UISpoofer.__index = UISpoofer
 
-local IMAGE_CLASS_SET = {
-    ImageLabel = true,
-    ImageButton = true,
-}
+local TEXT_CLASS_SET = { TextLabel = true, TextButton = true, TextBox = true }
+local IMAGE_CLASS_SET = { ImageLabel = true, ImageButton = true }
 
-local TEXT_CLASS_SET = {
-    TextLabel = true,
-    TextButton = true,
-    TextBox = true,
-}
+local SYNC_INTERVAL = 2.00
+local FAST_SYNC_INTERVAL = 0.25
+local MENU_FAST_SYNC_DURATION = 0.80
+local FAST_SYNC_DESC_KICK_COOLDOWN = 0.20
+local IDENTITY_SPOOF_REAPPLY_INTERVAL = 1.50
+local HOVER_ELIGIBILITY_CACHE_TTL = 2.00
 
-local NUMERIC_VALUE_CLASS_SET = {
-    IntValue = true,
-    NumberValue = true,
-}
-
-local STRING_VALUE_CLASS_SET = {
-    StringValue = true,
-}
-
-local NIL_SENTINEL = {}
-local IDENTITY_CONTEXT_KEYWORDS = {
-    "inspect",
-    "profile",
-    "hover",
-    "target",
-    "avatar",
-    "card",
-    "identity",
-    "viewer",
-    "subject",
-}
 local PEOPLE_CONTEXT_KEYWORDS = {
-    "people",
-    "playerlist",
-    "ingamemenu",
-    "social",
+	"people", "playerlist", "ingamemenu", "social",
+	"players", "playerlabel", "playerentry", "playerrow",
+	"gamemenu", "coremenu", "menu", "list",
 }
+
+local LEADERBOARD_CONTEXT_KEYWORDS = {
+	"leaderboard", "leaderstats", "scoreboard",
+}
+
+local ESCAPE_MENU_CONTEXT_KEYWORDS = {
+	"ingamemenu", "playermenuscreen", "social", "people", "playermenu",
+}
+
+local GETGENV_FN = rawget(_G, "getgenv")
+
+local function getExploitFunction(name)
+	if type(name) ~= "string" or name == "" then return nil end
+	local fn = rawget(_G, name)
+	if type(fn) == "function" then return fn end
+	if type(GETGENV_FN) == "function" then
+		local ok, env = pcall(function() return GETGENV_FN() end)
+		if ok and type(env) == "table" then
+			local envFn = rawget(env, name)
+			if type(envFn) == "function" then return envFn end
+		end
+	end
+	return nil
+end
+
+local function trimString(raw)
+	return tostring(raw or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
 
 local function normalizeLower(raw)
-    return string.lower(tostring(raw or ""))
+	return string.lower(tostring(raw or ""))
 end
 
-local function isGenericIdentityKey(rawKey)
-    local key = normalizeLower(rawKey)
-    return key == "id"
-        or key == "name"
-        or key == "display"
-        or key == "displayname"
+local function normalizeTarget(raw)
+	local t = tostring(raw or "")
+	t = t:gsub("^@", ""):gsub("^rbx://users/", "")
+	t = t:gsub("^https?://www%.roblox%.com/users/", "")
+	t = t:gsub("/profile.*$", ""):gsub("^%s+", ""):gsub("%s+$", "")
+	return t
 end
 
-local function isLikelyIdentityContext(instance)
-    local cursor = instance
-    local depth = 0
-
-    while cursor and depth < 12 do
-        local nodeName = normalizeLower(cursor.Name)
-        if nodeName ~= "" and nodeName ~= "playergui" then
-            for i = 1, #IDENTITY_CONTEXT_KEYWORDS do
-                if nodeName:find(IDENTITY_CONTEXT_KEYWORDS[i], 1, true) then
-                    return true
-                end
-            end
-        end
-
-        cursor = cursor.Parent
-        depth = depth + 1
-    end
-
-    return false
+local function isLikelyPeopleContext(inst)
+	local cur, depth = inst, 0
+	while cur and depth < 25 do
+		local n = normalizeLower(cur.Name)
+		if n ~= "" and n ~= "playergui" then
+			for _, kw in ipairs(PEOPLE_CONTEXT_KEYWORDS) do
+				if n:find(kw, 1, true) then return true end
+			end
+		end
+		cur = cur.Parent
+		depth = depth + 1
+	end
+	return false
 end
 
-local function isLikelyPeopleContext(instance)
-    local cursor = instance
-    local depth = 0
-
-    while cursor and depth < 12 do
-        local nodeName = normalizeLower(cursor.Name)
-        if nodeName ~= "" and nodeName ~= "playergui" then
-            for i = 1, #PEOPLE_CONTEXT_KEYWORDS do
-                if nodeName:find(PEOPLE_CONTEXT_KEYWORDS[i], 1, true) then
-                    return true
-                end
-            end
-        end
-
-        cursor = cursor.Parent
-        depth = depth + 1
-    end
-
-    return false
+local function isLikelyLeaderboardContext(inst)
+	local cur, depth = inst, 0
+	local boardHit, escapeHit = false, false
+	while cur and depth < 30 do
+		local n = normalizeLower(cur.Name)
+		if n ~= "" and n ~= "playergui" then
+			for _, kw in ipairs(LEADERBOARD_CONTEXT_KEYWORDS) do
+				if n:find(kw, 1, true) then boardHit = true break end
+			end
+			for _, kw in ipairs(ESCAPE_MENU_CONTEXT_KEYWORDS) do
+				if n:find(kw, 1, true) then escapeHit = true break end
+			end
+		end
+		cur = cur.Parent
+		depth = depth + 1
+	end
+	return boardHit and not escapeHit
 end
 
-local function scorePeopleRowCandidate(row)
-    if not row or not row:IsA("GuiObject") then return nil end
-
-    local score = 0
-    local parent = row.Parent
-    if parent and parent:FindFirstChildOfClass("UIListLayout") then
-        score = score + 90
-    end
-
-    local hasButton = row:IsA("GuiButton") or row:FindFirstChildWhichIsA("GuiButton", true) ~= nil
-    local hasText = row:FindFirstChildWhichIsA("TextLabel", true) ~= nil
-        or row:FindFirstChildWhichIsA("TextButton", true) ~= nil
-    local hasImage = row:FindFirstChildWhichIsA("ImageLabel", true) ~= nil
-        or row:FindFirstChildWhichIsA("ImageButton", true) ~= nil
-
-    if hasButton then score = score + 45 end
-    if hasText then score = score + 35 end
-    if hasImage then score = score + 25 end
-
-    local size = row.AbsoluteSize
-    if size.X >= 220 then score = score + 20 end
-    if size.Y >= 36 then score = score + 10 end
-
-    if score <= 0 then return nil end
-    return score
+local function rowHasInspectActionMenu(row)
+	if not row then return false end
+	local ok, descs = pcall(function() return row:GetDescendants() end)
+	if not ok or not descs then return false end
+	local scanned = 0
+	for _, inst in ipairs(descs) do
+		scanned = scanned + 1
+		if scanned > 500 then break end
+		local n = normalizeLower(inst.Name)
+		if n:find("examine", 1, true) or n:find("avatar", 1, true)
+			or n:find("friend", 1, true) or n:find("block", 1, true) or n:find("report", 1, true) then
+			if inst:IsA("GuiButton") or inst:IsA("Frame") then return true end
+		end
+		if TEXT_CLASS_SET[inst.ClassName] and inst.Visible then
+			local t = normalizeLower(trimString(inst.Text))
+			if t:find("examine", 1, true) or t:find("avatar", 1, true)
+				or t:find("friend", 1, true) or t:find("block", 1, true) or t:find("report", 1, true) then
+				return true
+			end
+		end
+	end
+	return false
 end
 
-local function findPeopleRowFromTaggedText(textInstance)
-    local cursor = textInstance
-    local depth = 0
-    local best = nil
-    local bestScore = nil
-
-    while cursor and depth < 10 do
-        if cursor:IsA("GuiObject") then
-            local score = scorePeopleRowCandidate(cursor)
-            if score and (bestScore == nil or score > bestScore) then
-                best = cursor
-                bestScore = score
-            end
-
-            if score and score >= 150 then
-                return cursor
-            end
-        end
-
-        cursor = cursor.Parent
-        depth = depth + 1
-    end
-
-    if best then return best end
-
-    if textInstance.Parent and textInstance.Parent:IsA("GuiObject") then
-        return textInstance.Parent
-    end
-    return nil
+local function isLeaderboardHoverEligible(row)
+	if not row or not row:IsA("GuiObject") then return false end
+	if not isLikelyLeaderboardContext(row) then return false end
+	if row.AbsoluteSize.Y > 72 then return false end
+	if rowHasInspectActionMenu(row) then return false end
+	return true
 end
 
-local function isLocalPeopleText(rawText, localName, localDisplay)
-    if type(rawText) ~= "string" or rawText == "" then return false end
-
-    local text = normalizeLower(rawText:gsub("^%s+", ""):gsub("%s+$", ""))
-    local localNameText = normalizeLower(localName)
-    local localDisplayText = normalizeLower(localDisplay)
-    if text == "" then return false end
-
-    if text == localNameText or text == localDisplayText then
-        return true
-    end
-
-    if text == ("@" .. localNameText) or text == ("@" .. localDisplayText) then
-        return true
-    end
-
-    if localNameText ~= "" and text:find(localNameText, 1, true) then return true end
-    if localDisplayText ~= "" and text:find(localDisplayText, 1, true) then return true end
-
-    return false
+local function scoreRow(row)
+	if not row or not row:IsA("GuiObject") or not row.Visible then return nil end
+	local sz = row.AbsoluteSize
+	if sz.X <= 0 or sz.Y <= 0 or sz.X < 120 or sz.Y < 20 or sz.Y > 200 then return nil end
+	if sz.X * sz.Y > 600000 then return nil end
+	local s = 0
+	local parent = row.Parent
+	if parent and parent:FindFirstChildOfClass("UIListLayout") then s = s + 90 end
+	if row:IsA("GuiButton") or row:FindFirstChildWhichIsA("GuiButton", true) then s = s + 45 end
+	if row:FindFirstChildWhichIsA("TextLabel", true) or row:FindFirstChildWhichIsA("TextButton", true) then s = s + 35 end
+	if row:FindFirstChildWhichIsA("ImageLabel", true) or row:FindFirstChildWhichIsA("ImageButton", true) then s = s + 25 end
+	if sz.X >= 220 then s = s + 20 end
+	if sz.Y >= 36 then s = s + 10 end
+	return s > 0 and s or nil
 end
 
-local function isAvatarThumbnailImage(rawImage)
-    local image = normalizeLower(rawImage)
-    if image == "" then return false end
-
-    if image:find("rbxthumb://", 1, true) then
-        return image:find("type=avatar", 1, true) ~= nil
-            or image:find("type=headshot", 1, true) ~= nil
-            or image:find("type=avatarheadshot", 1, true) ~= nil
-            or image:find("type=avatarbust", 1, true) ~= nil
-    end
-
-    local hasThumbHost = image:find("thumbnails.roblox.com", 1, true) ~= nil
-        or image:find("thumbs.roblox.com", 1, true) ~= nil
-        or image:find("avatar-thumbnail", 1, true) ~= nil
-        or image:find("avatar-headshot", 1, true) ~= nil
-    if not hasThumbHost then
-        return false
-    end
-
-    local hasUserHint = image:find("userid=", 1, true) ~= nil
-        or image:find("userids=", 1, true) ~= nil
-        or image:find("/users/", 1, true) ~= nil
-    local hasAvatarHint = image:find("avatar", 1, true) ~= nil
-        or image:find("headshot", 1, true) ~= nil
-        or image:find("bust", 1, true) ~= nil
-
-    return hasUserHint and hasAvatarHint
+local function rowFromText(textInst)
+	local cur, depth, best, bestScore = textInst, 0, nil, nil
+	while cur and depth < 10 do
+		if cur:IsA("GuiObject") then
+			local s = scoreRow(cur)
+			if s and (not bestScore or s > bestScore) then
+				best = cur
+				bestScore = s
+			end
+			if s and s >= 150 then return cur end
+		end
+		cur = cur.Parent
+		depth = depth + 1
+	end
+	if best then return best end
+	if textInst and textInst.Parent and textInst.Parent:IsA("GuiObject") then return textInst.Parent end
+	return nil
 end
 
-local function isLikelyUserIdKey(rawKey)
-    local key = normalizeLower(rawKey)
-    if key == "" then return false end
-
-    if key == "userid" or key == "playeruserid" or key == "playerid"
-        or key == "targetuserid" or key == "inspectuserid"
-        or key == "selecteduserid" or key == "profileuserid"
-        or key == "subjectuserid" or key == "owneruserid"
-        or key == "hoveruserid" then
-        return true
-    end
-
-    if key:find("user", 1, true) and key:find("id", 1, true) and not key:find("asset", 1, true) then
-        return true
-    end
-
-    if key:find("player", 1, true) and key:find("id", 1, true) then
-        return true
-    end
-
-    return false
+local function findNameLabels(row)
+	if not row then return nil, nil end
+	local labels = {}
+	local ok, descs = pcall(function() return row:GetDescendants() end)
+	if ok and descs then
+		for _, inst in ipairs(descs) do
+			if (inst:IsA("TextLabel") or inst:IsA("TextButton"))
+				and inst.Visible and inst.AbsoluteSize.Y >= 12 and inst.AbsoluteSize.X >= 40 then
+				local lowerText = normalizeLower(trimString(inst.Text))
+				local ownerBtn = inst:FindFirstAncestorWhichIsA("GuiButton")
+				local isAction = lowerText:find("examine", 1, true) or lowerText:find("avatar", 1, true)
+					or lowerText:find("friend", 1, true) or lowerText:find("follow", 1, true)
+					or lowerText:find("report", 1, true) or lowerText:find("block", 1, true)
+				if (not ownerBtn or ownerBtn == row) and not isAction then
+					labels[#labels + 1] = inst
+				end
+			end
+		end
+	end
+	table.sort(labels, function(a, b)
+		local ay, by = a.AbsolutePosition.Y, b.AbsolutePosition.Y
+		if math.abs(ay - by) > 2 then return ay < by end
+		return a.AbsolutePosition.X < b.AbsolutePosition.X
+	end)
+	local dn, un = nil, nil
+	for _, lbl in ipairs(labels) do
+		local n = normalizeLower(lbl.Name)
+		local t = tostring(lbl.Text or "")
+		if not un and (n:find("username", 1, true) or t:sub(1, 1) == "@") then un = lbl
+		elseif not dn and (n:find("display", 1, true) or t:sub(1, 1) ~= "@") then dn = lbl end
+	end
+	return dn or labels[1], un or labels[2]
 end
 
-local function isLikelyNameKey(rawKey)
-    local key = normalizeLower(rawKey)
-    if key == "" then return false end
-
-    if key == "username" or key == "displayname" or key == "playername" or key == "targetname"
-        or key == "inspectname" or key == "hovername" or key == "profilename" then
-        return true
-    end
-
-    if key:find("user", 1, true) and key:find("name", 1, true) then
-        return true
-    end
-
-    if key:find("player", 1, true) and key:find("name", 1, true) then
-        return true
-    end
-
-    if key:find("display", 1, true) and key:find("name", 1, true) then
-        return true
-    end
-
-    return false
-end
-
-local function isLikelyPlayerObjectKey(rawKey)
-    local key = normalizeLower(rawKey)
-    if key == "player" or key == "selectedplayer" or key == "targetplayer" or key == "subjectplayer"
-        or key == "hoveredplayer" or key == "inspectedplayer" then
-        return true
-    end
-    return key:find("player", 1, true) ~= nil and not key:find("template", 1, true)
-end
-
-local function normalizeTargetText(raw)
-    if raw == nil then return "" end
-    local text = tostring(raw)
-    text = text:gsub("^%s+", "")
-    text = text:gsub("%s+$", "")
-    return text
-end
-
-local function replacePlain(text, fromText, toText)
-    if type(text) ~= "string" then return text, false end
-    if type(fromText) ~= "string" or fromText == "" then return text, false end
-    if type(toText) ~= "string" then toText = tostring(toText or "") end
-
-    local cursor = 1
-    local changed = false
-    local out = {}
-
-    while true do
-        local i, j = string.find(text, fromText, cursor, true)
-        if not i then
-            out[#out + 1] = string.sub(text, cursor)
-            break
-        end
-
-        changed = true
-        out[#out + 1] = string.sub(text, cursor, i - 1)
-        out[#out + 1] = toText
-        cursor = j + 1
-    end
-
-    if not changed then return text, false end
-    return table.concat(out), true
+local function isAvatarThumb(img)
+	local lower = normalizeLower(img)
+	if lower == "" then return false end
+	if lower:find("rbxthumb://", 1, true) then
+		return lower:find("type=avatar", 1, true) ~= nil
+			or lower:find("type=headshot", 1, true) ~= nil
+			or lower:find("type=avatarheadshot", 1, true) ~= nil
+			or lower:find("type=avatarbust", 1, true) ~= nil
+	end
+	local hasHost = lower:find("thumbnails.roblox.com", 1, true)
+		or lower:find("thumbs.roblox.com", 1, true)
+		or lower:find("avatar-thumbnail", 1, true)
+		or lower:find("avatar-headshot", 1, true)
+	if not hasHost then return false end
+	local hasUser = lower:find("userid=", 1, true) or lower:find("userids=", 1, true) or lower:find("/users/", 1, true)
+	local hasAvatar = lower:find("avatar", 1, true) or lower:find("headshot", 1, true) or lower:find("bust", 1, true)
+	return hasUser and hasAvatar
 end
 
 function UISpoofer.new(deps)
-    local self = setmetatable({}, UISpoofer)
+	local self = setmetatable({}, UISpoofer)
 
-    self.shared = deps.shared
-    self.localPlayer = deps.localPlayer
+	self.shared = deps and deps.shared or nil
+	self.localPlayer = (deps and deps.localPlayer) or Players.LocalPlayer
+	self.enabled = false
 
-    self.active = false
-    self.targetInput = nil
-    self.targetUserId = nil
-    self.targetName = nil
-    self.targetDisplayName = nil
-    self.targetHeadshot = nil
-    self.targetAvatarThumb = nil
-    self.localUserId = self.localPlayer and self.localPlayer.UserId or nil
+	self.localIdentitySeedName = nil
+	self.localIdentitySeedDisplayName = nil
+	local lp = self.localPlayer
+	if lp then
+		self.localIdentitySeedName = tostring(lp.Name or "")
+		self.localIdentitySeedDisplayName = tostring(lp.DisplayName or "")
+	end
 
-    self.connections = {}
-    self.observedRoots = {}
-    self.watchedByInstance = setmetatable({}, { __mode = "k" })
-    self.originalByInstance = setmetatable({}, { __mode = "k" })
-    self.syntheticPeopleBySource = setmetatable({}, { __mode = "k" })
-    self.syntheticSyncScheduled = false
+	self.targetInput = nil
+	self.targetUserId = nil
+	self.targetName = nil
+	self.targetDisplayName = nil
+	self.targetHeadshot = nil
+	self.targetAvatarThumb = nil
 
-    -- Remove stale rows left by previous runs that may not have cleaned up.
-    local ok, descendants = pcall(function() return CoreGui:GetDescendants() end)
-    if ok and descendants then
-        for _, inst in ipairs(descendants) do
-            if inst.Name == "UISpooferSyntheticRow" and inst:IsA("GuiObject") then
-                pcall(function() inst:Destroy() end)
-            end
-        end
-    end
+	self.identitySpoofOriginalCaptured = false
+	self.identitySpoofOriginalUserId = nil
+	self.identitySpoofOriginalAppearanceId = nil
+	self.identitySpoofOriginalName = nil
+	self.identitySpoofOriginalDisplayName = nil
 
-    return self
+	self.identitySpoofApplied = false
+	self.identitySpoofNameApplied = false
+	self.identitySpoofDisplayNameApplied = false
+	self.identitySpoofTargetUserId = nil
+	self.nextIdentitySpoofReapplyAt = 0
+
+	self.connections = {}
+	self.rowHoverConnections = {}
+
+	self.rowPrimaryLabelByRow = setmetatable({}, { __mode = "k" })
+	self.rowHoverHookedByRow = setmetatable({}, { __mode = "k" })
+	self.rowHoverStateByRow = setmetatable({}, { __mode = "k" })
+	self.rowHoverEligibilityCache = setmetatable({}, { __mode = "k" })
+	self.cachedSourceRows = setmetatable({}, { __mode = "k" })
+
+	self.originalTextByLabel = {}
+	self.originalImageByImage = {}
+
+	self.syncPending = false
+	self.syncRunning = false
+	self.syncRerun = false
+	self.lastSyncAt = 0
+	self.fastSyncUntil = 0
+	self.nextFastSyncKickAt = 0
+	self.dirty = false
+
+	self.debugSyncStats = nil
+
+	return self
+end
+
+function UISpoofer:lp()
+	local p = self.localPlayer
+	if p and p.Parent then return p end
+	p = Players.LocalPlayer
+	if p then self.localPlayer = p end
+	return p
+end
+
+function UISpoofer:getUiSearchRoots()
+	local roots = { CoreGui }
+	local lp = self:lp()
+	local pg = lp and lp:FindFirstChildOfClass("PlayerGui") or nil
+	if pg then roots[#roots + 1] = pg end
+	return roots
+end
+
+function UISpoofer:captureLabelOriginal(lbl)
+	if not lbl or not TEXT_CLASS_SET[lbl.ClassName] then return end
+	if self.originalTextByLabel[lbl] ~= nil then return end
+	local ok, current = pcall(function() return lbl.Text end)
+	if ok then self.originalTextByLabel[lbl] = tostring(current or "") end
+end
+
+function UISpoofer:captureImageOriginal(img)
+	if not img or not IMAGE_CLASS_SET[img.ClassName] then return end
+	if self.originalImageByImage[img] ~= nil then return end
+	local ok, current = pcall(function() return img.Image end)
+	if ok then self.originalImageByImage[img] = tostring(current or "") end
+end
+
+function UISpoofer:restorePatchedRows()
+	for lbl, original in pairs(self.originalTextByLabel) do
+		if lbl and TEXT_CLASS_SET[lbl.ClassName] then pcall(function() lbl.Text = original end) end
+	end
+	for img, original in pairs(self.originalImageByImage) do
+		if img and IMAGE_CLASS_SET[img.ClassName] then pcall(function() img.Image = original end) end
+	end
+	self.originalTextByLabel = {}
+	self.originalImageByImage = {}
+end
+
+function UISpoofer:disconnectRowHoverConnections()
+	for i = #self.rowHoverConnections, 1, -1 do
+		local c = self.rowHoverConnections[i]
+		if c and c.Connected then c:Disconnect() end
+		self.rowHoverConnections[i] = nil
+	end
+end
+
+function UISpoofer:isLeaderboardHoverEligibleCached(row)
+	if not row or not row:IsA("GuiObject") then return false end
+	local now = os.clock()
+	local cached = self.rowHoverEligibilityCache[row]
+	if cached and (now - cached.at) <= HOVER_ELIGIBILITY_CACHE_TTL then
+		return cached.value == true
+	end
+	local value = isLeaderboardHoverEligible(row)
+	self.rowHoverEligibilityCache[row] = { value = value == true, at = now }
+	return value
+end
+
+function UISpoofer:getCachedSourceRows()
+	local rows, count = {}, 0
+	for row in pairs(self.cachedSourceRows) do
+		if row and row.Parent and row:IsA("GuiObject") and row.Visible then
+			local s = scoreRow(row)
+			if s and s >= 70 then
+				rows[row] = true
+				count = count + 1
+			end
+		end
+	end
+	return count > 0 and rows or nil, count
+end
+
+function UISpoofer:getPropertyCompat(inst, prop)
+	if not inst or type(prop) ~= "string" then return nil, false end
+	local getHidden = getExploitFunction("gethiddenproperty")
+	if getHidden then
+		local ok, value = pcall(function() return getHidden(inst, prop) end)
+		if ok then return value, true end
+	end
+	local ok, value = pcall(function() return inst[prop] end)
+	return value, ok
+end
+
+function UISpoofer:setPropertyCompat(inst, prop, value)
+	if not inst or type(prop) ~= "string" then return false end
+	local setHidden = getExploitFunction("sethiddenproperty")
+	if setHidden then
+		local ok = pcall(function() setHidden(inst, prop, value) end)
+		if ok then return true end
+	end
+	local setScriptable = getExploitFunction("setscriptable")
+	if setScriptable then
+		local toggled, prevScriptable = false, nil
+		pcall(function()
+			prevScriptable = setScriptable(inst, prop, true)
+			toggled = true
+		end)
+		local okSet = pcall(function() inst[prop] = value end)
+		if toggled then pcall(function() setScriptable(inst, prop, prevScriptable) end) end
+		if okSet then return true end
+	end
+	local ok = pcall(function() inst[prop] = value end)
+	return ok
+end
+
+function UISpoofer:ensureLocalIdentitySpoof()
+	if not self.enabled or not self.targetUserId then return false end
+	local lp = self:lp()
+	local targetUid = tonumber(self.targetUserId)
+	local targetUsername = tostring(self.targetName or targetUid or "")
+	local targetDisplayName = tostring(self.targetDisplayName or targetUsername)
+	if not lp or not targetUid then return false end
+
+	if not self.identitySpoofOriginalCaptured then
+		local oid, okId = self:getPropertyCompat(lp, "UserId")
+		if okId then self.identitySpoofOriginalUserId = oid end
+		local oap, okAp = self:getPropertyCompat(lp, "CharacterAppearanceId")
+		if okAp then self.identitySpoofOriginalAppearanceId = oap end
+		local on, okN = self:getPropertyCompat(lp, "Name")
+		if okN then self.identitySpoofOriginalName = tostring(on or "") end
+		local odn, okDN = self:getPropertyCompat(lp, "DisplayName")
+		if okDN then self.identitySpoofOriginalDisplayName = tostring(odn or "") end
+		if (not self.localIdentitySeedName or self.localIdentitySeedName == "") and okN then
+			self.localIdentitySeedName = tostring(on or "")
+		end
+		if (not self.localIdentitySeedDisplayName or self.localIdentitySeedDisplayName == "") and okDN then
+			self.localIdentitySeedDisplayName = tostring(odn or "")
+		end
+		self.identitySpoofOriginalCaptured = true
+	end
+
+	local dnWritten = self:setPropertyCompat(lp, "DisplayName", targetDisplayName)
+	local nWritten = self:setPropertyCompat(lp, "Name", targetUsername)
+	local apWritten = self:setPropertyCompat(lp, "CharacterAppearanceId", targetUid)
+	local uidWritten = self:setPropertyCompat(lp, "UserId", targetUid)
+
+	local liveUid, okLiveUid = self:getPropertyCompat(lp, "UserId")
+	local liveAp, okLiveAp = self:getPropertyCompat(lp, "CharacterAppearanceId")
+	local liveName, okLiveName = self:getPropertyCompat(lp, "Name")
+	local liveDN, okLiveDN = self:getPropertyCompat(lp, "DisplayName")
+
+	local uidNum = tonumber(liveUid)
+	local apNum = tonumber(liveAp)
+	local canRead = okLiveUid and okLiveAp
+	local applied = false
+	if canRead then
+		applied = uidNum and apNum and math.floor(uidNum) == targetUid and math.floor(apNum) == targetUid
+	else
+		applied = uidWritten and apWritten
+	end
+
+	local nameApplied = (okLiveName and tostring(liveName or "") == targetUsername) or nWritten
+	local dnApplied = (okLiveDN and tostring(liveDN or "") == targetDisplayName) or dnWritten
+
+	if not applied or not nameApplied or not dnApplied then
+		self:setPropertyCompat(lp, "Name", targetUsername)
+		self:setPropertyCompat(lp, "DisplayName", targetDisplayName)
+		self:setPropertyCompat(lp, "UserId", targetUid)
+		self:setPropertyCompat(lp, "CharacterAppearanceId", targetUid)
+		liveUid, okLiveUid = self:getPropertyCompat(lp, "UserId")
+		liveAp, okLiveAp = self:getPropertyCompat(lp, "CharacterAppearanceId")
+		liveName, okLiveName = self:getPropertyCompat(lp, "Name")
+		liveDN, okLiveDN = self:getPropertyCompat(lp, "DisplayName")
+		uidNum = tonumber(liveUid)
+		apNum = tonumber(liveAp)
+		canRead = okLiveUid and okLiveAp
+		if canRead then
+			applied = uidNum and apNum and math.floor(uidNum) == targetUid and math.floor(apNum) == targetUid
+		end
+		if okLiveName then nameApplied = tostring(liveName or "") == targetUsername end
+		if okLiveDN then dnApplied = tostring(liveDN or "") == targetDisplayName end
+	end
+
+	if applied then
+		self.identitySpoofApplied = true
+		self.identitySpoofTargetUserId = targetUid
+	else
+		self.identitySpoofApplied = false
+		self.identitySpoofTargetUserId = nil
+	end
+	self.identitySpoofNameApplied = nameApplied == true
+	self.identitySpoofDisplayNameApplied = dnApplied == true
+	return applied
+end
+
+function UISpoofer:restoreLocalIdentitySpoof()
+	if not self.identitySpoofOriginalCaptured then return end
+	local lp = self:lp()
+	if lp then
+		if self.identitySpoofOriginalName ~= nil then
+			self:setPropertyCompat(lp, "Name", self.identitySpoofOriginalName)
+		end
+		if self.identitySpoofOriginalDisplayName ~= nil then
+			self:setPropertyCompat(lp, "DisplayName", self.identitySpoofOriginalDisplayName)
+		end
+		if self.identitySpoofOriginalUserId ~= nil then
+			self:setPropertyCompat(lp, "UserId", self.identitySpoofOriginalUserId)
+		end
+		if self.identitySpoofOriginalAppearanceId ~= nil then
+			self:setPropertyCompat(lp, "CharacterAppearanceId", self.identitySpoofOriginalAppearanceId)
+		end
+	end
+	self.identitySpoofApplied = false
+	self.identitySpoofNameApplied = false
+	self.identitySpoofDisplayNameApplied = false
+	self.identitySpoofTargetUserId = nil
+	self.nextIdentitySpoofReapplyAt = 0
+end
+
+function UISpoofer:updateRowPrimaryText(row)
+	local lbl = row and self.rowPrimaryLabelByRow[row] or nil
+	if not lbl or not lbl.Parent or not TEXT_CLASS_SET[lbl.ClassName] then return end
+	local tName = self.targetName or tostring(self.targetUserId or "")
+	local tDisplay = self.targetDisplayName or tName
+	self:captureLabelOriginal(lbl)
+	if not self:isLeaderboardHoverEligibleCached(row) then
+		pcall(function() lbl.Text = tDisplay end)
+		return
+	end
+	local hovering = self.rowHoverStateByRow[row] == true
+	pcall(function() lbl.Text = hovering and tName or tDisplay end)
+end
+
+function UISpoofer:ensureRowHoverBehavior(row)
+	if not row or not row:IsA("GuiObject") then return end
+	if not self:isLeaderboardHoverEligibleCached(row) then
+		self.rowHoverStateByRow[row] = false
+		self:updateRowPrimaryText(row)
+		return
+	end
+	if self.rowHoverHookedByRow[row] then
+		self:updateRowPrimaryText(row)
+		return
+	end
+	local function onEnter()
+		self.rowHoverStateByRow[row] = true
+		self:updateRowPrimaryText(row)
+	end
+	local function onLeave()
+		self.rowHoverStateByRow[row] = false
+		self:updateRowPrimaryText(row)
+	end
+	local ok1, c1 = pcall(function() return row.MouseEnter:Connect(onEnter) end)
+	if ok1 and c1 then self.rowHoverConnections[#self.rowHoverConnections + 1] = c1 end
+	local ok2, c2 = pcall(function() return row.MouseLeave:Connect(onLeave) end)
+	if ok2 and c2 then self.rowHoverConnections[#self.rowHoverConnections + 1] = c2 end
+	self.rowHoverHookedByRow[row] = true
+	self:updateRowPrimaryText(row)
+end
+
+function UISpoofer:applyRowVisuals(row)
+	if not row then return end
+	local tName = self.targetName or tostring(self.targetUserId or "")
+	local tDisplay = self.targetDisplayName or tName
+
+	local dn = row:FindFirstChild("DisplayNameLabel", true) or row:FindFirstChild("DisplayName", true)
+	local un = row:FindFirstChild("UserNameLabel", true)
+		or row:FindFirstChild("NameLabel", true)
+		or row:FindFirstChild("Username", true)
+	if not (dn and TEXT_CLASS_SET[dn.ClassName]) or not (un and TEXT_CLASS_SET[un.ClassName]) then
+		dn, un = findNameLabels(row)
+	end
+
+	local isLeaderboard = self:isLeaderboardHoverEligibleCached(row)
+
+	if isLeaderboard then
+		local primary, secondary = nil, nil
+		local dnOk = dn and TEXT_CLASS_SET[dn.ClassName]
+		local unOk = un and TEXT_CLASS_SET[un.ClassName]
+		if dnOk and unOk then
+			local ok, dnX, unX = pcall(function() return dn.AbsolutePosition.X, un.AbsolutePosition.X end)
+			if ok and unX < dnX then
+				primary = un
+				secondary = dn
+			else
+				primary = dn
+				secondary = un
+			end
+		elseif unOk then primary = un
+		elseif dnOk then primary = dn end
+
+		if primary then
+			self:captureLabelOriginal(primary)
+			self.rowPrimaryLabelByRow[row] = primary
+			self:ensureRowHoverBehavior(row)
+		end
+
+		if secondary and TEXT_CLASS_SET[secondary.ClassName] then
+			local sec = normalizeLower(trimString(secondary.Text))
+			local loD = normalizeLower(tDisplay)
+			local loN = normalizeLower(tName)
+			if sec == loD or sec == loN or sec == "@" .. loN or sec == "@" .. loD then
+				self:captureLabelOriginal(secondary)
+				pcall(function() secondary.Text = "" end)
+			end
+		end
+	else
+		if dn and TEXT_CLASS_SET[dn.ClassName] then
+			self:captureLabelOriginal(dn)
+			pcall(function() dn.Text = tDisplay end)
+		end
+		if un and TEXT_CLASS_SET[un.ClassName] then
+			self:captureLabelOriginal(un)
+			pcall(function() un.Text = "@" .. tName end)
+		end
+	end
+
+	local avatar = row:FindFirstChild("Avatar", true)
+	if not avatar or not IMAGE_CLASS_SET[avatar.ClassName] then
+		local ok, descs = pcall(function() return row:GetDescendants() end)
+		if ok and descs then
+			for _, inst in ipairs(descs) do
+				if IMAGE_CLASS_SET[inst.ClassName] and isAvatarThumb(inst.Image) then
+					avatar = inst
+					break
+				end
+			end
+		end
+	end
+	if avatar and IMAGE_CLASS_SET[avatar.ClassName] then
+		self:captureImageOriginal(avatar)
+		if self.targetAvatarThumb then
+			pcall(function() avatar.Image = self.targetAvatarThumb end)
+		elseif self.targetHeadshot then
+			pcall(function() avatar.Image = self.targetHeadshot end)
+		end
+	end
+end
+
+function UISpoofer:discoverPeopleSourceRows()
+	local lp = self:lp()
+	if not lp then return {}, { sourceCount = 0, ctxHits = 0, fbHits = 0 } end
+
+	local tokenSet = {}
+	local function addToken(raw)
+		local t = normalizeLower(trimString(raw))
+		if t == "" then return end
+		tokenSet[t] = true
+		if t:sub(1, 1) == "@" then tokenSet[t:sub(2)] = true end
+	end
+
+	addToken(self.localIdentitySeedName)
+	addToken(self.localIdentitySeedDisplayName)
+	addToken(self.identitySpoofOriginalName)
+	addToken(self.identitySpoofOriginalDisplayName)
+	if not self.identitySpoofApplied then
+		addToken(lp.Name)
+		addToken(lp.DisplayName)
+	end
+	if not next(tokenSet) then
+		return {}, { sourceCount = 0, ctxHits = 0, fbHits = 0 }
+	end
+
+	local function isLocalText(raw)
+		if type(raw) ~= "string" or raw == "" then return false end
+		local t = normalizeLower(trimString(raw))
+		if tokenSet[t] then return true end
+		return t:sub(1, 1) == "@" and tokenSet[t:sub(2)] == true
+	end
+
+	local candidateByRow = {}
+	local ctxHits, fbHits = 0, 0
+
+	local function addRow(row, isCtx)
+		if not row or not row.Parent then return end
+		local s = scoreRow(row)
+		if not s or s < 70 then return end
+		local info = candidateByRow[row]
+		if not info then
+			info = { score = s, hits = 0, ctxHits = 0, parent = row.Parent }
+			candidateByRow[row] = info
+		end
+		info.hits = info.hits + 1
+		if isCtx then info.ctxHits = info.ctxHits + 1 end
+	end
+
+	for _, root in ipairs(self:getUiSearchRoots()) do
+		local ok, descs = pcall(function() return root:GetDescendants() end)
+		if ok and descs then
+			for _, inst in ipairs(descs) do
+				if TEXT_CLASS_SET[inst.ClassName] and inst.Visible
+					and isLikelyPeopleContext(inst) and isLocalText(inst.Text) then
+					addRow(rowFromText(inst), true)
+					ctxHits = ctxHits + 1
+				end
+			end
+		end
+	end
+
+	if not next(candidateByRow) then
+		for _, root in ipairs(self:getUiSearchRoots()) do
+			local ok, descs = pcall(function() return root:GetDescendants() end)
+			if ok and descs then
+				for _, inst in ipairs(descs) do
+					if TEXT_CLASS_SET[inst.ClassName] and inst.Visible and isLocalText(inst.Text) then
+						addRow(rowFromText(inst), false)
+						fbHits = fbHits + 1
+					end
+				end
+			end
+		end
+	end
+
+	local sourceRows = {}
+	local bestByParent = {}
+	for row, info in pairs(candidateByRow) do
+		local weight = (info.ctxHits * 1000) + (info.hits * 100) + info.score
+		local cur = bestByParent[info.parent]
+		if not cur or weight > cur.weight then
+			bestByParent[info.parent] = { row = row, weight = weight }
+		end
+	end
+	for _, entry in pairs(bestByParent) do sourceRows[entry.row] = true end
+
+	local count = 0
+	for _ in pairs(sourceRows) do count = count + 1 end
+	return sourceRows, { sourceCount = count, ctxHits = ctxHits, fbHits = fbHits }
+end
+
+function UISpoofer:syncPeopleRows(forceDiscover)
+	if not self.enabled or not self.targetUserId then return end
+	local sourceRows = nil
+	if not forceDiscover then
+		local cached = nil
+		cached = select(1, self:getCachedSourceRows())
+		sourceRows = cached
+	end
+	if not sourceRows then
+		local stats = nil
+		sourceRows, stats = self:discoverPeopleSourceRows()
+		self.cachedSourceRows = setmetatable({}, { __mode = "k" })
+		for row in pairs(sourceRows) do self.cachedSourceRows[row] = true end
+		self.debugSyncStats = stats
+	end
+	for row in pairs(sourceRows) do
+		self:applyRowVisuals(row)
+	end
+end
+
+function UISpoofer:clearRows()
+	self:disconnectRowHoverConnections()
+	self:restorePatchedRows()
+	self.rowPrimaryLabelByRow = setmetatable({}, { __mode = "k" })
+	self.rowHoverHookedByRow = setmetatable({}, { __mode = "k" })
+	self.rowHoverStateByRow = setmetatable({}, { __mode = "k" })
+	self.rowHoverEligibilityCache = setmetatable({}, { __mode = "k" })
+	self.cachedSourceRows = setmetatable({}, { __mode = "k" })
+	self.syncPending = false
+	self.syncRerun = false
+end
+
+function UISpoofer:sync()
+	if not self.enabled or not self.targetUserId then
+		self:clearRows()
+		return
+	end
+	local forceDiscover = self.dirty == true or os.clock() < (self.fastSyncUntil or 0)
+	self.lastSyncAt = os.clock()
+	self:syncPeopleRows(forceDiscover)
+	self.dirty = false
+end
+
+function UISpoofer:requestSync()
+	if not self.enabled then return end
+	if self.syncRunning then self.syncRerun = true return end
+	if self.syncPending then return end
+	self.syncPending = true
+	task.spawn(function()
+		if not self.enabled then
+			self.syncPending = false
+			self.syncRerun = false
+			return
+		end
+		self.syncRunning = true
+		local burst = 0
+		repeat
+			self.syncPending = false
+			self.syncRerun = false
+			self:sync()
+			if self.syncRerun then
+				burst = burst + 1
+				if burst >= 3 then
+					self.syncRerun = false
+					break
+				end
+				task.wait(0.05)
+			end
+		until not self.syncRerun or not self.enabled
+		self.syncRunning = false
+	end)
 end
 
 function UISpoofer:disconnectAll()
-    for i = #self.connections, 1, -1 do
-        local conn = self.connections[i]
-        if conn and conn.Connected then
-            conn:Disconnect()
-        end
-        self.connections[i] = nil
-    end
-    self.observedRoots = {}
-    self.watchedByInstance = setmetatable({}, { __mode = "k" })
-    self.syntheticSyncScheduled = false
-end
-
-function UISpoofer:rememberOriginal(instance, key, value)
-    if not instance then return end
-
-    local rec = self.originalByInstance[instance]
-    if not rec then
-        rec = {}
-        self.originalByInstance[instance] = rec
-    end
-
-    if rec[key] == nil then
-        rec[key] = (value == nil) and NIL_SENTINEL or value
-    end
-end
-
-function UISpoofer:rememberOriginalAttribute(instance, attrName, value)
-    if not instance or type(attrName) ~= "string" then return end
-
-    local rec = self.originalByInstance[instance]
-    if not rec then
-        rec = {}
-        self.originalByInstance[instance] = rec
-    end
-
-    if type(rec.Attributes) ~= "table" then
-        rec.Attributes = {}
-    end
-
-    if rec.Attributes[attrName] == nil then
-        rec.Attributes[attrName] = value
-    end
-end
-
-function UISpoofer:restoreAll()
-    for instance, rec in pairs(self.originalByInstance) do
-        if instance and instance.Parent and rec then
-            local className = instance.ClassName
-            if rec.Image ~= nil and IMAGE_CLASS_SET[className] then
-                local value = (rec.Image == NIL_SENTINEL) and nil or rec.Image
-                pcall(function() instance.Image = value end)
-            end
-            if rec.Text ~= nil and TEXT_CLASS_SET[className] then
-                local value = (rec.Text == NIL_SENTINEL) and nil or rec.Text
-                pcall(function() instance.Text = value end)
-            end
-            if rec.Value ~= nil and (NUMERIC_VALUE_CLASS_SET[className] or STRING_VALUE_CLASS_SET[className] or className == "ObjectValue") then
-                local value = (rec.Value == NIL_SENTINEL) and nil or rec.Value
-                pcall(function() instance.Value = value end)
-            end
-            if type(rec.Attributes) == "table" then
-                for attrName, originalValue in pairs(rec.Attributes) do
-                    pcall(function() instance:SetAttribute(attrName, originalValue) end)
-                end
-            end
-        end
-    end
-
-    self.originalByInstance = setmetatable({}, { __mode = "k" })
-end
-
-function UISpoofer:rewriteImage(rawImage)
-    if type(rawImage) ~= "string" or rawImage == "" then return nil end
-    if not self.targetUserId then return nil end
-    if not isAvatarThumbnailImage(rawImage) then return nil end
-
-    local targetId = tostring(self.targetUserId)
-    local rewritten = rawImage
-    local changed = false
-
-    local v1, c1 = rewritten:gsub("([?&][uU][sS][eE][rR][iI][dD]=)%d+", "%1" .. targetId)
-    if c1 > 0 then rewritten = v1; changed = true end
-
-    local v2, c2 = rewritten:gsub("([?&][uU][sS][eE][rR][iI][dD][sS]=)%d+[,%d]*", "%1" .. targetId)
-    if c2 > 0 then rewritten = v2; changed = true end
-
-    if normalizeLower(rawImage):find("rbxthumb://", 1, true) then
-        local v3, c3 = rewritten:gsub("([?&][iI][dD]=)%d+", "%1" .. targetId)
-        if c3 > 0 then rewritten = v3; changed = true end
-    end
-
-    if changed then
-        return rewritten
-    end
-
-    local lowerImage = normalizeLower(rawImage)
-    local isHeadshot = lowerImage:find("headshot", 1, true) ~= nil
-        or lowerImage:find("avatarheadshot", 1, true) ~= nil
-    if isHeadshot and self.targetHeadshot then
-        return self.targetHeadshot
-    end
-
-    local isFullAvatar = lowerImage:find("type=avatar", 1, true) ~= nil
-        or lowerImage:find("avatar-thumbnail", 1, true) ~= nil
-        or lowerImage:find("avatarbust", 1, true) ~= nil
-    if isFullAvatar and self.targetAvatarThumb then
-        return self.targetAvatarThumb
-    end
-
-    return nil
-end
-
-function UISpoofer:rewriteText(rawText)
-    if type(rawText) ~= "string" or rawText == "" then return nil end
-
-    local localName = self.localPlayer and self.localPlayer.Name or ""
-    local localDisplay = self.localPlayer and self.localPlayer.DisplayName or localName
-    local targetName = self.targetName or tostring(self.targetUserId or "")
-    local targetDisplay = self.targetDisplayName or targetName
-
-    if targetName == "" then return nil end
-
-    local text = rawText
-    local changed = false
-
-    local function apply(fromText, toText)
-        local updated, didChange = replacePlain(text, fromText, toText)
-        if didChange then
-            text = updated
-            changed = true
-        end
-    end
-
-    apply("@" .. localName, "@" .. targetName)
-    apply(localDisplay, targetDisplay)
-    apply(localName, targetName)
-
-    if not changed then return nil end
-    return text
-end
-
-function UISpoofer:getTargetPlayerInstance()
-    if not self.targetUserId then return nil end
-    local ok, player = pcall(function()
-        return Players:GetPlayerByUserId(self.targetUserId)
-    end)
-    if ok then return player end
-    return nil
-end
-
-function UISpoofer:findRightmostPeopleButton(row)
-    if not row then return nil end
-
-    local best = nil
-    local bestScore = nil
-
-    local function scoreButton(button)
-        local pos = button.AbsolutePosition
-        local size = button.AbsoluteSize
-        return (pos.X * 10000) + pos.Y - (math.abs(size.X - size.Y) * 10) - size.X
-    end
-
-    if row:IsA("GuiButton") and row.Visible then
-        best = row
-        bestScore = scoreButton(row)
-    end
-
-    local ok, descendants = pcall(function() return row:GetDescendants() end)
-    if ok and descendants then
-        for _, inst in ipairs(descendants) do
-            if inst:IsA("GuiButton") and inst.Visible then
-                local score = scoreButton(inst)
-                if bestScore == nil or score > bestScore then
-                    best = inst
-                    bestScore = score
-                end
-            end
-        end
-    end
-
-    return best
-end
-
-function UISpoofer:tryClonePeopleRow(sourceRow)
-    if not sourceRow then return nil end
-
-    local archivableSnapshot = {}
-    local function markArchivable(inst)
-        if not inst then return end
-        pcall(function()
-            archivableSnapshot[inst] = inst.Archivable
-            inst.Archivable = true
-        end)
-    end
-
-    markArchivable(sourceRow)
-    local okDesc, descendants = pcall(function() return sourceRow:GetDescendants() end)
-    if okDesc and descendants then
-        for _, inst in ipairs(descendants) do
-            markArchivable(inst)
-        end
-    end
-
-    local okClone, cloned = pcall(function() return sourceRow:Clone() end)
-
-    for inst, oldValue in pairs(archivableSnapshot) do
-        pcall(function() inst.Archivable = oldValue end)
-    end
-
-    if okClone and cloned then return cloned end
-    return nil
-end
-
-function UISpoofer:createFallbackPeopleRow(sourceRow)
-    if not sourceRow then return nil end
-
-    local localName = self.localPlayer and self.localPlayer.Name or ""
-    local localDisplay = self.localPlayer and self.localPlayer.DisplayName or localName
-    local sourceButton = self:findRightmostPeopleButton(sourceRow)
-
-    local row = Instance.new("Frame")
-    row.Name = "UISpooferSyntheticRow"
-    row.BackgroundColor3 = sourceRow.BackgroundColor3
-    row.BackgroundTransparency = sourceRow.BackgroundTransparency
-    row.BorderSizePixel = 0
-    row.Size = sourceRow.Size
-    row.LayoutOrder = (tonumber(sourceRow.LayoutOrder) or 0) - 1
-    row.ClipsDescendants = false
-
-    local okCorner, sourceCorner = pcall(function() return sourceRow:FindFirstChildOfClass("UICorner") end)
-    if okCorner and sourceCorner then
-        local clonedCorner = sourceCorner:Clone()
-        clonedCorner.Parent = row
-    else
-        local fallbackCorner = Instance.new("UICorner")
-        fallbackCorner.CornerRadius = UDim.new(0, 8)
-        fallbackCorner.Parent = row
-    end
-
-    local avatar = Instance.new("ImageLabel")
-    avatar.Name = "Avatar"
-    avatar.BackgroundTransparency = 1
-    avatar.Size = UDim2.fromOffset(34, 34)
-    avatar.Position = UDim2.new(0, 10, 0.5, -17)
-    avatar.Image = self.targetHeadshot or ""
-    avatar.Parent = row
-
-    local avatarCorner = Instance.new("UICorner")
-    avatarCorner.CornerRadius = UDim.new(0, 6)
-    avatarCorner.Parent = avatar
-
-    local displayNameLabel = Instance.new("TextLabel")
-    displayNameLabel.Name = "DisplayName"
-    displayNameLabel.BackgroundTransparency = 1
-    displayNameLabel.TextXAlignment = Enum.TextXAlignment.Left
-    displayNameLabel.TextYAlignment = Enum.TextYAlignment.Center
-    displayNameLabel.Font = Enum.Font.GothamSemibold
-    displayNameLabel.TextSize = 23
-    displayNameLabel.TextColor3 = Color3.fromRGB(235, 235, 235)
-    displayNameLabel.Text = localDisplay
-    displayNameLabel.Position = UDim2.new(0, 56, 0, 6)
-    displayNameLabel.Size = UDim2.new(1, -130, 0, 20)
-    displayNameLabel.Parent = row
-
-    local usernameLabel = Instance.new("TextLabel")
-    usernameLabel.Name = "Username"
-    usernameLabel.BackgroundTransparency = 1
-    usernameLabel.TextXAlignment = Enum.TextXAlignment.Left
-    usernameLabel.TextYAlignment = Enum.TextYAlignment.Center
-    usernameLabel.Font = Enum.Font.Gotham
-    usernameLabel.TextSize = 20
-    usernameLabel.TextColor3 = Color3.fromRGB(166, 170, 178)
-    usernameLabel.Text = "@" .. localName
-    usernameLabel.Position = UDim2.new(0, 56, 0, 24)
-    usernameLabel.Size = UDim2.new(1, -130, 0, 18)
-    usernameLabel.Parent = row
-
-    local inspectButton = Instance.new("ImageButton")
-    inspectButton.Name = "InspectButton"
-    inspectButton.AnchorPoint = Vector2.new(1, 0.5)
-    inspectButton.Position = UDim2.new(1, -12, 0.5, 0)
-    inspectButton.Size = UDim2.fromOffset(32, 32)
-    inspectButton.BackgroundTransparency = 1
-    inspectButton.AutoButtonColor = true
-    if sourceButton and sourceButton:IsA("ImageButton") and sourceButton.Image and sourceButton.Image ~= "" then
-        inspectButton.Image = sourceButton.Image
-    end
-    inspectButton.Parent = row
-
-    return row
-end
-
-function UISpoofer:applySyntheticPeopleRowVisuals(row)
-    if not row then return end
-
-    local localName = self.localPlayer and self.localPlayer.Name or ""
-    local localDisplay = self.localPlayer and self.localPlayer.DisplayName or localName
-    local targetName = self.targetName or tostring(self.targetUserId or "")
-    local targetDisplay = self.targetDisplayName or targetName
-
-    local function applyText(instance)
-        if not instance or not TEXT_CLASS_SET[instance.ClassName] then return end
-
-        local current = instance.Text
-        local rewritten = self:rewriteText(current)
-        if not rewritten then
-            local trimmed = tostring(current or ""):gsub("^%s+", ""):gsub("%s+$", "")
-            if trimmed == localName or trimmed == localDisplay then
-                rewritten = targetDisplay
-            elseif trimmed == ("@" .. localName) or trimmed == ("@" .. localDisplay) then
-                rewritten = "@" .. targetName
-            end
-        end
-
-        if rewritten and rewritten ~= current then
-            pcall(function() instance.Text = rewritten end)
-        end
-    end
-
-    local function applyImage(instance)
-        if not instance or not IMAGE_CLASS_SET[instance.ClassName] then return end
-
-        local current = instance.Image
-        local rewritten = self:rewriteImage(current)
-        if rewritten and rewritten ~= current then
-            pcall(function() instance.Image = rewritten end)
-        end
-    end
-
-    applyText(row)
-    applyImage(row)
-
-    local leftMostAvatarImage = nil
-    local leftMostX = nil
-
-    local ok, descendants = pcall(function() return row:GetDescendants() end)
-    if ok and descendants then
-        for _, inst in ipairs(descendants) do
-            applyText(inst)
-            applyImage(inst)
-
-            if IMAGE_CLASS_SET[inst.ClassName] then
-                local pos = inst.AbsolutePosition
-                local size = inst.AbsoluteSize
-                if size.X >= 20 and size.Y >= 20 then
-                    if leftMostX == nil or pos.X < leftMostX then
-                        leftMostX = pos.X
-                        leftMostAvatarImage = inst
-                    end
-                end
-            end
-        end
-    end
-
-    if leftMostAvatarImage and self.targetHeadshot and leftMostAvatarImage.Image ~= self.targetHeadshot then
-        pcall(function() leftMostAvatarImage.Image = self.targetHeadshot end)
-    end
-end
-
-function UISpoofer:clearSyntheticPeopleRows()
-    for sourceRow, syntheticRow in pairs(self.syntheticPeopleBySource) do
-        if syntheticRow and syntheticRow.Parent then
-            pcall(function() syntheticRow:Destroy() end)
-        end
-        self.syntheticPeopleBySource[sourceRow] = nil
-    end
-
-    self.syntheticPeopleBySource = setmetatable({}, { __mode = "k" })
-    self.syntheticSyncScheduled = false
-end
-
-function UISpoofer:syncSyntheticPeopleRows()
-    if not self.active or not self.targetUserId then
-        self:clearSyntheticPeopleRows()
-        return
-    end
-
-    local localName = self.localPlayer and self.localPlayer.Name or ""
-    local localDisplay = self.localPlayer and self.localPlayer.DisplayName or localName
-    if localName == "" then return end
-
-    local sourceRows = {}
-
-    local ok, descendants = pcall(function() return CoreGui:GetDescendants() end)
-    if not ok or not descendants then return end
-
-    for _, inst in ipairs(descendants) do
-        if TEXT_CLASS_SET[inst.ClassName]
-            and isLikelyPeopleContext(inst)
-            and isLocalPeopleText(inst.Text, localName, localDisplay) then
-            local sourceRow = findPeopleRowFromTaggedText(inst)
-            if sourceRow and sourceRow.Parent and sourceRow.Name ~= "UISpooferSyntheticRow" then
-                sourceRows[sourceRow] = true
-            end
-        end
-    end
-
-    for sourceRow, syntheticRow in pairs(self.syntheticPeopleBySource) do
-        if not sourceRows[sourceRow] or not sourceRow or not sourceRow.Parent then
-            if syntheticRow and syntheticRow.Parent then
-                pcall(function() syntheticRow:Destroy() end)
-            end
-            self.syntheticPeopleBySource[sourceRow] = nil
-        end
-    end
-
-    for sourceRow in pairs(sourceRows) do
-        local syntheticRow = self.syntheticPeopleBySource[sourceRow]
-
-        if not syntheticRow or not syntheticRow.Parent then
-            local cloned = self:tryClonePeopleRow(sourceRow)
-            if not cloned then
-                cloned = self:createFallbackPeopleRow(sourceRow)
-            end
-
-            if cloned then
-                syntheticRow = cloned
-                syntheticRow.Name = "UISpooferSyntheticRow"
-                syntheticRow.Visible = true
-
-                local okCloneDesc, cloneDesc = pcall(function() return syntheticRow:GetDescendants() end)
-                if okCloneDesc and cloneDesc then
-                    for _, inst in ipairs(cloneDesc) do
-                        if inst:IsA("LocalScript") or inst:IsA("Script") or inst:IsA("ModuleScript") then
-                            pcall(function() inst:Destroy() end)
-                        end
-                    end
-                end
-
-                pcall(function() syntheticRow.Parent = sourceRow.Parent end)
-                self.syntheticPeopleBySource[sourceRow] = syntheticRow
-
-                local sourceButton = self:findRightmostPeopleButton(sourceRow)
-                local syntheticButton = self:findRightmostPeopleButton(syntheticRow)
-                if sourceButton and syntheticButton then
-                    local okConn, conn = pcall(function()
-                        return syntheticButton.Activated:Connect(function()
-                            if not self.active then return end
-                            pcall(function() sourceButton:Activate() end)
-                        end)
-                    end)
-                    if okConn and conn then
-                        self.connections[#self.connections + 1] = conn
-                    end
-                end
-            end
-        end
-
-        if syntheticRow and syntheticRow.Parent then
-            pcall(function()
-                syntheticRow.LayoutOrder = (tonumber(sourceRow.LayoutOrder) or 0) - 1
-            end)
-            self:applySyntheticPeopleRowVisuals(syntheticRow)
-        end
-    end
-end
-
-function UISpoofer:requestSyntheticPeopleSync()
-    if self.syntheticSyncScheduled then return end
-    self.syntheticSyncScheduled = true
-
-    task.defer(function()
-        self.syntheticSyncScheduled = false
-        if not self.active or not self.targetUserId then
-            self:clearSyntheticPeopleRows()
-            return
-        end
-        self:syncSyntheticPeopleRows()
-    end)
-end
-
-function UISpoofer:registerInstanceObservers(instance, watchAttributes)
-    if not instance or self.watchedByInstance[instance] then return end
-
-    local className = instance.ClassName
-    local watchImage = IMAGE_CLASS_SET[className] == true
-    local watchText = TEXT_CLASS_SET[className] == true
-    local watchValue = NUMERIC_VALUE_CLASS_SET[className] == true
-        or STRING_VALUE_CLASS_SET[className] == true
-        or className == "ObjectValue"
-    local identityContext = isLikelyIdentityContext(instance)
-
-    if not watchImage and not watchText and not watchValue and not watchAttributes then
-        return
-    end
-
-    self.watchedByInstance[instance] = true
-
-    local function scheduleReapply()
-        if not self.active then return end
-        if not instance.Parent then return end
-
-        task.defer(function()
-            if not self.active or not instance.Parent then return end
-            self:applyToInstance(instance)
-        end)
-    end
-
-    if watchImage then
-        local ok, conn = pcall(function()
-            return instance:GetPropertyChangedSignal("Image"):Connect(scheduleReapply)
-        end)
-        if ok and conn then
-            self.connections[#self.connections + 1] = conn
-        end
-    end
-
-    if watchText then
-        local ok, conn = pcall(function()
-            return instance:GetPropertyChangedSignal("Text"):Connect(scheduleReapply)
-        end)
-        if ok and conn then
-            self.connections[#self.connections + 1] = conn
-        end
-    end
-
-    if watchValue then
-        local ok, conn = pcall(function()
-            return instance:GetPropertyChangedSignal("Value"):Connect(scheduleReapply)
-        end)
-        if ok and conn then
-            self.connections[#self.connections + 1] = conn
-        end
-    end
-
-    if watchAttributes then
-        local ok, conn = pcall(function()
-            return instance.AttributeChanged:Connect(function(attrName)
-                if identityContext then
-                    scheduleReapply()
-                    return
-                end
-
-                if isLikelyUserIdKey(attrName)
-                    or isLikelyNameKey(attrName)
-                    or isGenericIdentityKey(attrName) then
-                    scheduleReapply()
-                end
-            end)
-        end)
-        if ok and conn then
-            self.connections[#self.connections + 1] = conn
-        end
-    end
-end
-
-function UISpoofer:applyToInstance(instance)
-    if not self.active or not self.targetUserId then return end
-    if not instance or not instance.Parent then return end
-
-    local className = instance.ClassName
-    local identityContext = isLikelyIdentityContext(instance)
-    local instanceName = normalizeLower(instance.Name)
-    local isUserIdCarrier = isLikelyUserIdKey(instance.Name)
-        or (identityContext and instanceName == "id")
-    local isNameCarrier = isLikelyNameKey(instance.Name)
-        or (identityContext and (instanceName == "name" or instanceName == "display" or instanceName == "displayname"))
-    local watchAttributes = identityContext
-    local localUserId = tonumber(self.localUserId)
-    local targetUserIdText = tostring(self.targetUserId)
-
-    if IMAGE_CLASS_SET[className] then
-        local currentImage = instance.Image
-        local rewritten = self:rewriteImage(currentImage)
-        if rewritten and rewritten ~= currentImage then
-            self:rememberOriginal(instance, "Image", currentImage)
-            pcall(function() instance.Image = rewritten end)
-        end
-    end
-
-    if TEXT_CLASS_SET[className] then
-        local currentText = instance.Text
-        local rewritten = self:rewriteText(currentText)
-        if not rewritten and identityContext and localUserId then
-            local localUserIdText = tostring(localUserId)
-            local replaced, changed = replacePlain(currentText, localUserIdText, targetUserIdText)
-            if changed then
-                rewritten = replaced
-            end
-        end
-        if rewritten and rewritten ~= currentText then
-            self:rememberOriginal(instance, "Text", currentText)
-            pcall(function() instance.Text = rewritten end)
-        end
-    end
-
-    if NUMERIC_VALUE_CLASS_SET[className] then
-        local currentNumeric = tonumber(instance.Value)
-        local currentId = currentNumeric and math.floor(currentNumeric) or nil
-        local shouldRewrite = false
-
-        if currentId then
-            if isUserIdCarrier and currentId ~= self.targetUserId then
-                shouldRewrite = true
-            elseif identityContext and localUserId and currentId == localUserId and currentId ~= self.targetUserId then
-                shouldRewrite = true
-            end
-        end
-
-        if shouldRewrite then
-            self:rememberOriginal(instance, "Value", instance.Value)
-            pcall(function() instance.Value = self.targetUserId end)
-        end
-    end
-
-    if STRING_VALUE_CLASS_SET[className] then
-        local currentString = tostring(instance.Value or "")
-        local currentNumeric = tonumber(currentString)
-        local currentId = currentNumeric and math.floor(currentNumeric) or nil
-        local isContextLocalId = identityContext and localUserId and currentId == localUserId
-
-        if isUserIdCarrier or isContextLocalId then
-            if currentId and currentId ~= self.targetUserId then
-                self:rememberOriginal(instance, "Value", instance.Value)
-                pcall(function() instance.Value = targetUserIdText end)
-            end
-        elseif isNameCarrier then
-            local rewritten = self:rewriteText(currentString)
-            if not rewritten and currentString ~= (self.targetDisplayName or "") and currentString ~= (self.targetName or "") then
-                rewritten = self.targetDisplayName or self.targetName
-            end
-            if rewritten and rewritten ~= currentString then
-                self:rememberOriginal(instance, "Value", instance.Value)
-                pcall(function() instance.Value = rewritten end)
-            end
-        end
-    end
-
-    if className == "ObjectValue" then
-        local shouldRewritePlayerObject = isLikelyPlayerObjectKey(instance.Name)
-            or (identityContext and instance.Value == self.localPlayer)
-
-        local targetPlayer = self:getTargetPlayerInstance()
-        if shouldRewritePlayerObject and targetPlayer and targetPlayer ~= instance.Value then
-            self:rememberOriginal(instance, "Value", instance.Value)
-            pcall(function() instance.Value = targetPlayer end)
-        end
-    end
-
-    local okAttrs, attrs = pcall(function() return instance:GetAttributes() end)
-    if okAttrs and type(attrs) == "table" then
-        for attrName, attrValue in pairs(attrs) do
-            local attrKey = normalizeLower(attrName)
-            local attrIsUserIdCarrier = isLikelyUserIdKey(attrName)
-                or (identityContext and attrKey == "id")
-            local attrIsNameCarrier = isLikelyNameKey(attrName)
-                or (identityContext and (attrKey == "name" or attrKey == "display" or attrKey == "displayname"))
-
-            if attrIsUserIdCarrier then
-                watchAttributes = true
-
-                if type(attrValue) == "number" and math.floor(attrValue) ~= self.targetUserId then
-                    self:rememberOriginalAttribute(instance, attrName, attrValue)
-                    pcall(function() instance:SetAttribute(attrName, self.targetUserId) end)
-                elseif type(attrValue) == "string" then
-                    local attrNumeric = tonumber(attrValue)
-                    if attrNumeric and math.floor(attrNumeric) ~= self.targetUserId then
-                        self:rememberOriginalAttribute(instance, attrName, attrValue)
-                        pcall(function() instance:SetAttribute(attrName, targetUserIdText) end)
-                    end
-                end
-            elseif attrIsNameCarrier then
-                watchAttributes = true
-                if type(attrValue) == "string" then
-                    local rewritten = self:rewriteText(attrValue)
-                    if not rewritten and attrValue ~= (self.targetDisplayName or "") and attrValue ~= (self.targetName or "") then
-                        rewritten = self.targetDisplayName or self.targetName
-                    end
-                    if rewritten and rewritten ~= attrValue then
-                        self:rememberOriginalAttribute(instance, attrName, attrValue)
-                        pcall(function() instance:SetAttribute(attrName, rewritten) end)
-                    end
-                end
-            elseif identityContext then
-                if type(attrValue) == "number" then
-                    local attrNumeric = math.floor(attrValue)
-                    if localUserId and attrNumeric == localUserId and attrNumeric ~= self.targetUserId then
-                        watchAttributes = true
-                        self:rememberOriginalAttribute(instance, attrName, attrValue)
-                        pcall(function() instance:SetAttribute(attrName, self.targetUserId) end)
-                    end
-                elseif type(attrValue) == "string" then
-                    local attrNumeric = tonumber(attrValue)
-                    if localUserId and attrNumeric and math.floor(attrNumeric) == localUserId and math.floor(attrNumeric) ~= self.targetUserId then
-                        watchAttributes = true
-                        self:rememberOriginalAttribute(instance, attrName, attrValue)
-                        pcall(function() instance:SetAttribute(attrName, targetUserIdText) end)
-                    end
-                end
-            end
-        end
-    end
-
-    self:registerInstanceObservers(instance, watchAttributes)
-end
-
-function UISpoofer:scanRoot(root)
-    if not root then return end
-
-    self:applyToInstance(root)
-
-    local ok, descendants = pcall(function() return root:GetDescendants() end)
-    if not ok or not descendants then return end
-
-    for _, inst in ipairs(descendants) do
-        self:applyToInstance(inst)
-    end
-end
-
-function UISpoofer:observeRoot(root)
-    if not root then return end
-    if self.observedRoots[root] then return end
-
-    self.observedRoots[root] = true
-    self:scanRoot(root)
-
-    local ok, conn = pcall(function()
-        return root.DescendantAdded:Connect(function(inst)
-            if not self.active then return end
-            task.defer(function()
-                if not self.active then return end
-                self:applyToInstance(inst)
-                self:requestSyntheticPeopleSync()
-            end)
-        end)
-    end)
-
-    if ok and conn then
-        self.connections[#self.connections + 1] = conn
-    end
-end
-
-function UISpoofer:startObserving()
-    self:disconnectAll()
-
-    self:observeRoot(CoreGui)
-
-    local playerGui = self.localPlayer and self.localPlayer:FindFirstChildOfClass("PlayerGui")
-    if playerGui then
-        self:observeRoot(playerGui)
-    end
-
-    if self.localPlayer then
-        local ok, conn = pcall(function()
-            return self.localPlayer.ChildAdded:Connect(function(child)
-                if not child:IsA("PlayerGui") then return end
-                if not self.active then return end
-
-                task.defer(function()
-                    if not self.active then return end
-                    self:observeRoot(child)
-                end)
-            end)
-        end)
-
-        if ok and conn then
-            self.connections[#self.connections + 1] = conn
-        end
-    end
-
-    self:requestSyntheticPeopleSync()
-end
-
-function UISpoofer:refreshTargetProfile(userId)
-    local targetName = tostring(userId)
-    local okName, lookedUpName = pcall(function()
-        return Players:GetNameFromUserIdAsync(userId)
-    end)
-    if okName and lookedUpName and lookedUpName ~= "" then
-        targetName = lookedUpName
-    end
-
-    local targetDisplayName = targetName
-    local okPlayer, player = pcall(function()
-        return Players:GetPlayerByUserId(userId)
-    end)
-    if okPlayer and player and player.DisplayName and player.DisplayName ~= "" then
-        targetDisplayName = player.DisplayName
-    end
-
-    local headshot = nil
-    local okThumb, content = pcall(function()
-        return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
-    end)
-    if okThumb and type(content) == "string" and content ~= "" then
-        headshot = content
-    end
-
-    local avatarThumb = nil
-    local okAvatarThumb, avatarContent = pcall(function()
-        return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.AvatarThumbnail, Enum.ThumbnailSize.Size420x420)
-    end)
-    if okAvatarThumb and type(avatarContent) == "string" and avatarContent ~= "" then
-        avatarThumb = avatarContent
-    end
-
-    self.targetName = targetName
-    self.targetDisplayName = targetDisplayName
-    self.targetHeadshot = headshot
-    self.targetAvatarThumb = avatarThumb
-end
-
-function UISpoofer:setTarget(target)
-    local normalized = normalizeTargetText(target)
-    if normalized == "" then return false end
-
-    local userId = nil
-    if type(target) == "number" then
-        userId = math.floor(target)
-    else
-        userId = self.shared:resolveUserToId(normalized)
-    end
-
-    if not userId then return false end
-
-    self.targetInput = target
-    local previousTargetUserId = self.targetUserId
-    self.targetUserId = userId
-    self:refreshTargetProfile(userId)
-
-    if self.active then
-        if previousTargetUserId and previousTargetUserId ~= userId then
-            self:restoreAll()
-            self:clearSyntheticPeopleRows()
-        end
-
-        self:startObserving()
-        self:scanRoot(CoreGui)
-
-        local playerGui = self.localPlayer and self.localPlayer:FindFirstChildOfClass("PlayerGui")
-        if playerGui then
-            self:scanRoot(playerGui)
-        end
-
-        self:requestSyntheticPeopleSync()
-
-        task.defer(function()
-            task.wait(0.15)
-            if self.active and self.targetUserId == userId then
-                self:reapply()
-            end
-        end)
-
-        task.defer(function()
-            task.wait(0.45)
-            if self.active and self.targetUserId == userId then
-                self:reapply()
-            end
-        end)
-    end
-
-    return true
-end
-
-function UISpoofer:mimicFromTarget(target)
-    return self:setTarget(target)
-end
-
-function UISpoofer:reapply()
-    if not self.active then return false end
-    if not self.targetUserId then return false end
-
-    self:scanRoot(CoreGui)
-
-    local playerGui = self.localPlayer and self.localPlayer:FindFirstChildOfClass("PlayerGui")
-    if playerGui then
-        self:scanRoot(playerGui)
-    end
-
-    self:requestSyntheticPeopleSync()
-
-    return true
-end
-
-function UISpoofer:onCharacterAdded(_char)
-    if not self.active then return end
-    if not self.targetUserId then return end
-
-    task.defer(function()
-        if self.active then
-            self:reapply()
-        end
-    end)
+	for i = #self.connections, 1, -1 do
+		local c = self.connections[i]
+		if c and c.Connected then c:Disconnect() end
+		self.connections[i] = nil
+	end
+	self.syncPending = false
+	self.syncRunning = false
+	self.syncRerun = false
+	self.lastSyncAt = 0
+	self.fastSyncUntil = 0
+	self.nextFastSyncKickAt = 0
+	self.dirty = false
+	self:restoreLocalIdentitySpoof()
 end
 
 function UISpoofer:setEnabled(enabled)
-    enabled = enabled == true
-    if self.active == enabled then return end
+	enabled = enabled == true
+	if self.enabled == enabled then return end
+	self.enabled = enabled
+	if not enabled then
+		self:disconnectAll()
+		self:clearRows()
+		return
+	end
 
-    self.active = enabled
+	self.lastSyncAt = 0
+	self.fastSyncUntil = 0
+	self.nextFastSyncKickAt = 0
+	self.nextIdentitySpoofReapplyAt = 0
+	self.dirty = false
 
-    if not enabled then
-        self:disconnectAll()
-        self:restoreAll()
-        self:clearSyntheticPeopleRows()
-        return
-    end
+	self:clearRows()
+	if self.targetUserId then self:syncPeopleRows(true) end
+	self:ensureLocalIdentitySpoof()
 
-    if self.targetUserId then
-        self:startObserving()
-        self:reapply()
-        self:requestSyntheticPeopleSync()
-    end
+	local function onDescAdded(inst)
+		if not self.enabled then return end
+		if TEXT_CLASS_SET[inst.ClassName] or IMAGE_CLASS_SET[inst.ClassName]
+			or inst:IsA("Frame") or inst:IsA("ScrollingFrame") then
+			self.dirty = true
+			local now = os.clock()
+			if now < (self.fastSyncUntil or 0) and now >= (self.nextFastSyncKickAt or 0) then
+				self.nextFastSyncKickAt = now + FAST_SYNC_DESC_KICK_COOLDOWN
+				self.lastSyncAt = 0
+				self:requestSync()
+			end
+		end
+	end
+
+	local ok1, c1 = pcall(function() return CoreGui.DescendantAdded:Connect(onDescAdded) end)
+	if ok1 and c1 then self.connections[#self.connections + 1] = c1 end
+
+	local ok2, c2 = pcall(function()
+		return GuiService.MenuOpened:Connect(function()
+			if not self.enabled then return end
+			self.fastSyncUntil = os.clock() + MENU_FAST_SYNC_DURATION
+			self.nextFastSyncKickAt = 0
+			self.lastSyncAt = 0
+			self.dirty = true
+			self:requestSync()
+			for _, d in ipairs({ 0.08, 0.22 }) do
+				task.delay(d, function()
+					if self.enabled and os.clock() < (self.fastSyncUntil or 0) then
+						self.lastSyncAt = 0
+						self.dirty = true
+						self:requestSync()
+					end
+				end)
+			end
+		end)
+	end)
+	if ok2 and c2 then self.connections[#self.connections + 1] = c2 end
+
+	local ok3, c3 = pcall(function()
+		return GuiService.MenuClosed:Connect(function()
+			self.fastSyncUntil = 0
+		end)
+	end)
+	if ok3 and c3 then self.connections[#self.connections + 1] = c3 end
+
+	local lp = self:lp()
+	local pg = lp and lp:FindFirstChildOfClass("PlayerGui") or nil
+	if pg then
+		local ok4, c4 = pcall(function() return pg.DescendantAdded:Connect(onDescAdded) end)
+		if ok4 and c4 then self.connections[#self.connections + 1] = c4 end
+	end
+
+	if lp then
+		local okLP, cLP = pcall(function()
+			return lp.ChildAdded:Connect(function(child)
+				if not self.enabled then return end
+				if not child:IsA("PlayerGui") then return end
+				local okPg, cPg = pcall(function() return child.DescendantAdded:Connect(onDescAdded) end)
+				if okPg and cPg then self.connections[#self.connections + 1] = cPg end
+				self.dirty = true
+				self:requestSync()
+			end)
+		end)
+		if okLP and cLP then self.connections[#self.connections + 1] = cLP end
+	end
+
+	local ok5, c5 = pcall(function()
+		return RunService.Heartbeat:Connect(function()
+			if not self.enabled then return end
+			local now = os.clock()
+			if now >= (self.nextIdentitySpoofReapplyAt or 0) then
+				self.nextIdentitySpoofReapplyAt = now + IDENTITY_SPOOF_REAPPLY_INTERVAL
+				self:ensureLocalIdentitySpoof()
+			end
+			local interval = (now < (self.fastSyncUntil or 0)) and FAST_SYNC_INTERVAL or SYNC_INTERVAL
+			local hasCached = next(self.cachedSourceRows) ~= nil
+			if self.dirty or (hasCached and (now - self.lastSyncAt >= interval)) then
+				self:requestSync()
+			end
+		end)
+	end)
+	if ok5 and c5 then self.connections[#self.connections + 1] = c5 end
+
+	self.dirty = true
+	self:requestSync()
+	for _, d in ipairs({ 0.1, 0.3, 0.7, 1.5 }) do
+		task.delay(d, function()
+			if self.enabled then
+				self.dirty = true
+				self:requestSync()
+			end
+		end)
+	end
+end
+
+function UISpoofer:resolveUserId(target)
+	if self.shared and type(self.shared.resolveUserToId) == "function" then
+		local ok, resolved = pcall(function() return self.shared:resolveUserToId(target) end)
+		if ok and type(resolved) == "number" then
+			return math.floor(resolved)
+		end
+	end
+
+	local n = normalizeTarget(target)
+	if n == "" then return nil end
+	local num = tonumber(n)
+	if num then return math.floor(num) end
+	local ok, uid = pcall(function() return Players:GetUserIdFromNameAsync(n) end)
+	return ok and type(uid) == "number" and math.floor(uid) or nil
+end
+
+function UISpoofer:refreshProfile(userId)
+	self.targetName = tostring(userId)
+	self.targetDisplayName = nil
+	self.targetHeadshot = nil
+	self.targetAvatarThumb = nil
+
+	local ok1, inGame = pcall(function() return Players:GetPlayerByUserId(userId) end)
+	if ok1 and inGame then
+		local pn = tostring(inGame.Name or "")
+		local pd = tostring(inGame.DisplayName or "")
+		if pn ~= "" then self.targetName = pn end
+		if pd ~= "" then self.targetDisplayName = pd end
+	end
+
+	if self.targetName == tostring(userId) then
+		local ok2, name = pcall(function() return Players:GetNameFromUserIdAsync(userId) end)
+		if ok2 and type(name) == "string" and name ~= "" then self.targetName = name end
+	end
+
+	if not self.targetDisplayName then
+		local ok3, info = pcall(function() return UserService:GetUserInfosByUserIdsAsync({ userId }) end)
+		if ok3 and type(info) == "table" then
+			local matched = nil
+			for _, entry in ipairs(info) do
+				if type(entry) == "table" and tonumber(entry.Id) == tonumber(userId) then
+					matched = entry
+					break
+				end
+			end
+			if not matched then matched = info[1] end
+			if type(matched) == "table" then
+				local dn = matched.DisplayName
+				if type(dn) == "string" and dn ~= "" then self.targetDisplayName = dn end
+			end
+		end
+	end
+
+	self.targetDisplayName = self.targetDisplayName or self.targetName
+
+	local ok4, hs = pcall(function()
+		return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+	end)
+	self.targetHeadshot = ok4 and hs or nil
+
+	local ok5, av = pcall(function()
+		return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.AvatarThumbnail, Enum.ThumbnailSize.Size420x420)
+	end)
+	self.targetAvatarThumb = ok5 and av or nil
+end
+
+function UISpoofer:setTarget(target)
+	local uid = self:resolveUserId(target)
+	if not uid then return false end
+
+	local isSwitching = self.targetUserId ~= nil and tonumber(self.targetUserId) ~= tonumber(uid)
+	self.targetInput = target
+
+	if self.enabled and isSwitching then
+		self:clearRows()
+	end
+
+	self.targetUserId = uid
+	self:refreshProfile(uid)
+
+	if self.enabled then
+		self:ensureLocalIdentitySpoof()
+		self.lastSyncAt = 0
+		self.fastSyncUntil = os.clock() + MENU_FAST_SYNC_DURATION
+		self.nextFastSyncKickAt = 0
+		self.dirty = true
+		self:requestSync()
+		for _, d in ipairs({ 0.07, 0.18, 0.36 }) do
+			task.delay(d, function()
+				if self.enabled and tonumber(self.targetUserId) == tonumber(uid) then
+					self.lastSyncAt = 0
+					self.dirty = true
+					self:requestSync()
+				end
+			end)
+		end
+	end
+	return true
+end
+
+function UISpoofer:switchTarget(target)
+	return self:setTarget(target)
+end
+
+function UISpoofer:setTargetByUserId(target)
+	return self:setTarget(target)
+end
+
+function UISpoofer:setTargetByUsername(target)
+	return self:setTarget(target)
+end
+
+function UISpoofer:getTargetInfo()
+	return {
+		userId = self.targetUserId,
+		username = self.targetName,
+		displayName = self.targetDisplayName,
+		hasHeadshot = self.targetHeadshot ~= nil,
+		hasAvatarThumb = self.targetAvatarThumb ~= nil,
+		identitySpoofApplied = self.identitySpoofApplied == true,
+		identitySpoofNameApplied = self.identitySpoofNameApplied == true,
+		identitySpoofDisplayNameApplied = self.identitySpoofDisplayNameApplied == true,
+		identitySpoofTargetUserId = self.identitySpoofTargetUserId,
+		enabled = self.enabled,
+	}
+end
+
+function UISpoofer:getDebugState()
+	local st = self.debugSyncStats or {}
+	return {
+		enabled = self.enabled,
+		targetUserId = self.targetUserId,
+		targetName = self.targetName,
+		targetDisplayName = self.targetDisplayName,
+		hasHeadshot = self.targetHeadshot ~= nil,
+		hasAvatarThumb = self.targetAvatarThumb ~= nil,
+		identitySpoofApplied = self.identitySpoofApplied == true,
+		identitySpoofNameApplied = self.identitySpoofNameApplied == true,
+		identitySpoofDisplayNameApplied = self.identitySpoofDisplayNameApplied == true,
+		identitySpoofTargetUserId = self.identitySpoofTargetUserId,
+		sourceCount = st.sourceCount or 0,
+		ctxHits = st.ctxHits or 0,
+		fbHits = st.fbHits or 0,
+	}
+end
+
+function UISpoofer:reapply()
+	if self.targetUserId then
+		self:refreshProfile(self.targetUserId)
+		if self.enabled then
+			self.lastSyncAt = 0
+			self.fastSyncUntil = os.clock() + MENU_FAST_SYNC_DURATION
+			self.nextFastSyncKickAt = 0
+			self.dirty = true
+			self:ensureLocalIdentitySpoof()
+			self:requestSync()
+		end
+		return true
+	end
+	if self.targetInput ~= nil then
+		return self:setTarget(self.targetInput)
+	end
+	return false
+end
+
+function UISpoofer:onCharacterAdded(_char)
+	if not self.enabled then return end
+	self.nextIdentitySpoofReapplyAt = 0
+	self.lastSyncAt = 0
+	self.fastSyncUntil = os.clock() + MENU_FAST_SYNC_DURATION
+	self.nextFastSyncKickAt = 0
+	self.dirty = true
+	self:ensureLocalIdentitySpoof()
+	self:requestSync()
+	for _, d in ipairs({ 0.1, 0.25, 0.5 }) do
+		task.delay(d, function()
+			if self.enabled then
+				self.nextIdentitySpoofReapplyAt = 0
+				self.dirty = true
+				self:ensureLocalIdentitySpoof()
+				self:requestSync()
+			end
+		end)
+	end
 end
 
 function UISpoofer:cleanup()
-    self.active = false
-    self.targetInput = nil
-    self.targetUserId = nil
-    self.targetName = nil
-    self.targetDisplayName = nil
-    self.targetHeadshot = nil
-    self.targetAvatarThumb = nil
-
-    self:disconnectAll()
-    self:restoreAll()
-    self:clearSyntheticPeopleRows()
+	self.enabled = false
+	self.targetInput = nil
+	self.targetUserId = nil
+	self.targetName = nil
+	self.targetDisplayName = nil
+	self.targetHeadshot = nil
+	self.targetAvatarThumb = nil
+	self.debugSyncStats = nil
+	self:disconnectAll()
+	self:clearRows()
 end
 
 return UISpoofer
