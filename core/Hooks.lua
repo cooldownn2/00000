@@ -20,6 +20,7 @@ local RUNTIME_ENV = (type(GETGENV_FN) == "function" and GETGENV_FN()) or _G
 local SETREADONLY_FN = rawget(RUNTIME_ENV, "setreadonly") or rawget(_G, "setreadonly")
 local GETNAMECALLMETHOD_FN = rawget(RUNTIME_ENV, "getnamecallmethod") or rawget(_G, "getnamecallmethod")
 local HOOKMETAMETHOD_FN = rawget(RUNTIME_ENV, "hookmetamethod") or rawget(_G, "hookmetamethod")
+local DEBUG_HOOK_WARN = rawget(RUNTIME_ENV, "SauceDebugHooks") == true
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
 local ASSIST_MIN_INTERVAL = 0.05
@@ -511,7 +512,7 @@ local function install()
         end)
     end
 
-    if not indexOk or not namecallOk then
+    if (not indexOk or not namecallOk) and DEBUG_HOOK_WARN then
         warn("[Hooks] partial install: __index=" .. tostring(indexOk) .. " __namecall=" .. tostring(namecallOk))
     end
 end
