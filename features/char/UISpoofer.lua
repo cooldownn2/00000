@@ -903,6 +903,9 @@ end
 function UISpoofer:refreshProfile(userId)
 	self.profileFetchToken = self.profileFetchToken + 1
 	local fetchToken = self.profileFetchToken
+	local numericUserId = tonumber(userId)
+	local previousName = self.targetName
+	local previousDisplayName = self.targetDisplayName
 
 	self.targetName = tostring(userId)
 	self.targetDisplayName = nil
@@ -951,6 +954,18 @@ function UISpoofer:refreshProfile(userId)
 		return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.AvatarThumbnail, Enum.ThumbnailSize.Size420x420)
 	end)
 	self.targetAvatarThumb = ok5 and av or nil
+
+	if numericUserId and previousName and previousName ~= ""
+		and looksUnresolvedName(self.targetName, numericUserId)
+		and not looksUnresolvedName(previousName, numericUserId) then
+		self.targetName = previousName
+	end
+	if numericUserId and previousDisplayName and previousDisplayName ~= ""
+		and looksUnresolvedName(self.targetDisplayName, numericUserId)
+		and not looksUnresolvedName(previousDisplayName, numericUserId) then
+		self.targetDisplayName = previousDisplayName
+	end
+	self.targetDisplayName = self.targetDisplayName or self.targetName
 
 	if not looksUnresolvedName(self.targetName, userId)
 		and not looksUnresolvedName(self.targetDisplayName, userId) then
@@ -1090,16 +1105,6 @@ end
 
 function UISpoofer:reapply()
 	if self.targetUserId then
-		local uid = tonumber(self.targetUserId)
-		local needsProfileRefresh = false
-		if not self.targetName or self.targetName == "" then needsProfileRefresh = true end
-		if not self.targetDisplayName or self.targetDisplayName == "" then needsProfileRefresh = true end
-		if uid and (looksUnresolvedName(self.targetName, uid) or looksUnresolvedName(self.targetDisplayName, uid)) then
-			needsProfileRefresh = true
-		end
-		if needsProfileRefresh and uid then
-			self:refreshProfile(uid)
-		end
 		if self.enabled then
 			self.lastSyncAt = 0
 			self.fastSyncUntil = os.clock() + MENU_FAST_SYNC_DURATION
@@ -1115,10 +1120,6 @@ end
 
 function UISpoofer:onCharacterAdded(_char)
 	if not self.enabled then return end
-	local uid = tonumber(self.targetUserId)
-	if uid and (looksUnresolvedName(self.targetName, uid) or looksUnresolvedName(self.targetDisplayName, uid)) then
-		self:refreshProfile(uid)
-	end
 	self.nextIdentitySpoofReapplyAt = 0
 	self.lastSyncAt = 0
 	self.fastSyncUntil = os.clock() + MENU_FAST_SYNC_DURATION
