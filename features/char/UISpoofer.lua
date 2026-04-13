@@ -231,7 +231,6 @@ function UISpoofer.new(deps)
 		self.localIdentitySeedDisplayName = tostring(lp.DisplayName or "")
 	end
 
-	self.targetInput = nil
 	self.targetUserId = nil
 	self.targetName = nil
 	self.targetDisplayName = nil
@@ -952,7 +951,6 @@ function UISpoofer:setTarget(target)
 
 	local wasEnabled = self.enabled == true
 	local isSwitching = self.targetUserId ~= nil and tonumber(self.targetUserId) ~= tonumber(uid)
-	self.targetInput = target
 
 	if wasEnabled and isSwitching then self:setEnabled(false) end
 
@@ -1040,9 +1038,6 @@ function UISpoofer:reapply()
 		end
 		return true
 	end
-	if self.targetInput ~= nil then
-		return self:setTarget(self.targetInput)
-	end
 	return false
 end
 
@@ -1069,7 +1064,6 @@ end
 
 function UISpoofer:cleanup()
 	self.enabled = false
-	self.targetInput = nil
 	self.targetUserId = nil
 	self.targetName = nil
 	self.targetDisplayName = nil
