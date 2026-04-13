@@ -8,9 +8,9 @@ local KNOWN_PROFILES_BY_PLACE_ID = {
         -- Add per-game overrides here when onboarding additional experiences.
         Patch = {},
     },
-    [99427474123086] = {
+    [124091301836840] = {
         Name    = "Zeehood",
-        PlaceId = 99427474123086,
+        PlaceId = 124091301836840,
         -- Different architecture: no GunHandler, uses MainRemotes.MainRemoteEvent,
         -- fires "GunFired" with a table payload instead of positional ShootGun args.
         Style   = "zeehood",

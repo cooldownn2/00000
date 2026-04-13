@@ -99,11 +99,6 @@ local function applyUserConfig(settings, userConfig)
         { {"Speed Modification","Panic Ground","Enabled"}, {"Character","Panic Ground","Enabled"} },
         { {"Speed Modification","Panic Ground","Keybind"}, {"Character","Panic Ground","Key"} },
 
-        -- Character Model (legacy)
-        { {"Character Model","Enabled"},                     {"Character Model","Enabled"} },
-        { {"Character Model","Apply Respawn"},               {"Character Model","Apply Respawn"} },
-        { {"Character Model","User ID"},                     {"Character Model","User ID"} },
-
         -- Avatar Spoofer (preferred)
         { {"Avatar Spoofer","Enabled"},                      {"Avatar Spoofer","Enabled"} },
         { {"Avatar Spoofer","Apply Respawn"},                {"Avatar Spoofer","Apply Respawn"} },
@@ -215,8 +210,6 @@ local function validateSettings(Settings)
     expectType("Avatar Spoofer.Enabled", S.AvatarSpooferEnabled, "boolean")
     expectType("Avatar Spoofer.Apply Respawn", S.AvatarSpooferApplyRespawn, "boolean")
     expectType("UI Spoofer.Enabled", S.UISpooferEnabled, "boolean")
-    expectType("Character Model.Enabled", S.CharacterModelEnabled, "boolean")
-    expectType("Character Model.Apply Respawn", S.CharacterModelApplyRespawn, "boolean")
     expectType("ESP.Enabled", S.ESPAllowed, "boolean")
     expectType("Hotkeys.Enabled", S.HotkeysEnabled, "boolean")
     expectEnum("Hotkeys.ToggleStyle", S.HotkeysToggleStyle, {"pill","dot","none"})
@@ -234,13 +227,6 @@ local function validateSettings(Settings)
         local t = type(S.UISpooferUser)
         if t ~= "string" and t ~= "number" then
             vWarn("UI Spoofer.User expected string or number, got " .. t)
-        end
-    end
-
-    if S.CharacterModelUserId ~= nil then
-        local t = type(S.CharacterModelUserId)
-        if t ~= "string" and t ~= "number" then
-            vWarn("Character Model.User ID expected string or number, got " .. t)
         end
     end
 

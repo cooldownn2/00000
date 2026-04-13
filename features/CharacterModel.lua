@@ -39,25 +39,13 @@ local GETGENV_FN = rawget(_G, "getgenv")
 
 local function getSpooferEnabled()
     if not Settings then return false end
-
-    local avatarEnabled = Settings.AvatarSpooferEnabled
-    local legacyEnabled = Settings.CharacterModelEnabled
-
-    if avatarEnabled == nil and legacyEnabled == nil then
-        return false
-    end
-
-    return avatarEnabled == true or legacyEnabled == true
+    return Settings.AvatarSpooferEnabled == true
 end
 
 local function getSpooferUserTarget()
     if not Settings then return "" end
 
     local target = Settings.AvatarSpooferUser
-    if target == nil or tostring(target):gsub("^%s+", ""):gsub("%s+$", "") == "" then
-        target = Settings.CharacterModelUserId
-    end
-
     if target == nil then return "" end
 
     local text = tostring(target)
@@ -68,16 +56,8 @@ end
 
 local function getApplyRespawnEnabled()
     if not Settings then return true end
-
-    local avatarApplyRespawn = Settings.AvatarSpooferApplyRespawn
-    local legacyApplyRespawn = Settings.CharacterModelApplyRespawn
-
-    -- Preserve previous behavior for legacy configs when no flag is set.
-    if avatarApplyRespawn == nil and legacyApplyRespawn == nil then
-        return true
-    end
-
-    return avatarApplyRespawn == true or legacyApplyRespawn == true
+    if Settings.AvatarSpooferApplyRespawn == nil then return true end
+    return Settings.AvatarSpooferApplyRespawn == true
 end
 
 local function getUISpooferEnabled()
@@ -254,8 +234,6 @@ local function installEnvApi()
         if Settings then
             Settings.AvatarSpooferUser = targetState
             Settings.AvatarSpooferEnabled = true
-            Settings.CharacterModelUserId = targetState
-            Settings.CharacterModelEnabled = true
         end
         setEnabled(true)
 

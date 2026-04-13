@@ -42,11 +42,6 @@ local SettingPaths = {
     UISpooferEnabled            = {"UI Spoofer", "Enabled"},
     UISpooferUser               = {"UI Spoofer", "User"},
 
-    -- Legacy aliases kept for compatibility with older configs.
-    CharacterModelEnabled       = {"Character Model", "Enabled"},
-    CharacterModelApplyRespawn  = {"Character Model", "Apply Respawn"},
-    CharacterModelUserId        = {"Character Model", "User ID"},
-
     TriggerbotEnabled           = {"Triggerbot", "Enabled"},
     TriggerbotVisCheck          = {"Triggerbot", "VisCheck"},
     TriggerbotDistance          = {"Triggerbot", "Distance"},

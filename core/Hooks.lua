@@ -54,7 +54,7 @@ local function getUISpooferTargetInput()
     target = normalizeText(Settings.AvatarSpooferUser)
     if target ~= "" then return target end
 
-    return normalizeText(Settings.CharacterModelUserId)
+    return ""
 end
 
 local function resolveUISpooferTargetUserId()
