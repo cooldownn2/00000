@@ -30,6 +30,16 @@ local SLOT_NAME_HINTS = {
 }
 
 local PACKAGE_ID_THRESHOLD = 10000000000
+local SLOT_ANIMATION_WRAPPER_ASSET_TYPES = {
+    [48] = true, -- ClimbAnimation
+    [49] = true, -- FallAnimation
+    [50] = true, -- IdleAnimation
+    [51] = true, -- IdleAnimationPack variant
+    [52] = true, -- JumpAnimation
+    [53] = true, -- RunAnimation
+    [54] = true, -- SwimAnimation
+    [55] = true, -- WalkAnimation
+}
 
 local SCALE_NAMES = {
     "BodyHeightScale", "BodyWidthScale", "BodyDepthScale",
@@ -184,6 +194,7 @@ function AnimationMimic.new(deps)
     self.resolvedAnimationIdCache = {}
     self.pendingAnimationResolve = {}
     self.assetTypeIsAnimationCache = {}
+    self.assetTypeIdCache = {}
     self.keyframeValidationCache = {}
 
     self.settings = {
@@ -194,7 +205,7 @@ function AnimationMimic.new(deps)
         minLiveCoverage = 7,
         liveSourceWaitSeconds = 1.5,
         replicateDescriptionToOthers = false,
-        useDescriptionAnimationApply = false,
+        useDescriptionAnimationApply = true,
         useDescriptionSetFallback = true,
         replicationRetryDelays = { 0.15, 0.4 },
         invalidateAnimationCacheOnTargetSwitch = true,
@@ -211,6 +222,26 @@ end
 function AnimationMimic:isDescriptionAnimationAssetIdValid(numericId)
     if not numericId or numericId <= 0 then return false end
     return true
+end
+
+function AnimationMimic:getProductAssetTypeId(numericId)
+    if not numericId then return nil end
+
+    local cached = self.assetTypeIdCache[numericId]
+    if cached ~= nil then
+        return cached
+    end
+
+    local okInfo, info = pcall(function()
+        return MarketplaceService:GetProductInfo(numericId)
+    end)
+    if okInfo and type(info) == "table" then
+        local assetTypeId = tonumber(info.AssetTypeId)
+        self.assetTypeIdCache[numericId] = assetTypeId
+        return assetTypeId
+    end
+
+    return nil
 end
 
 function AnimationMimic:getSlotHints(slotName)
@@ -291,6 +322,7 @@ function AnimationMimic:resolvePlayableAnimationId(rawId, slotName)
     end
 
     local cachedAssetType = self.assetTypeIsAnimationCache[numericId]
+    local cachedAssetTypeId = self.assetTypeIdCache[numericId]
     if cachedAssetType == true then
         return finish(cleaned)
     end
@@ -304,6 +336,8 @@ function AnimationMimic:resolvePlayableAnimationId(rawId, slotName)
             local animTypeId = Enum.AssetType.Animation.Value
             local isAnim = assetTypeId ~= nil and assetTypeId == animTypeId
             self.assetTypeIsAnimationCache[numericId] = isAnim
+            self.assetTypeIdCache[numericId] = assetTypeId
+            cachedAssetTypeId = assetTypeId
             if isAnim then
                 return finish(cleaned)
             end
@@ -326,6 +360,34 @@ function AnimationMimic:resolvePlayableAnimationId(rawId, slotName)
         return finish(cleaned)
     end
 
+    local function unwrapFromContainer(container)
+        if not container then return nil end
+        local chosen = self:findBestAnimationInAsset(container, slotName)
+        if chosen and chosen.AnimationId and chosen.AnimationId ~= "" then
+            local unwrapped = self.shared:normalizeAnimationId(chosen.AnimationId)
+            if unwrapped then
+                local n = self.shared:numericIdFromContentId(unwrapped)
+                if n then self.assetTypeIsAnimationCache[n] = true end
+                return unwrapped
+            end
+        end
+        return nil
+    end
+
+    -- Client-friendly unwrap path for slot-wrapper assets.
+    local okObjects, objects = pcall(function()
+        return game:GetObjects("rbxassetid://" .. tostring(numericId))
+    end)
+    if okObjects and type(objects) == "table" then
+        for _, root in ipairs(objects) do
+            local unwrapped = unwrapFromContainer(root)
+            pcall(function() root:Destroy() end)
+            if unwrapped then
+                return finish(unwrapped)
+            end
+        end
+    end
+
     local resolved = cleaned
     local okAsset, assetModel = pcall(function()
         return InsertService:LoadAsset(numericId)
@@ -339,11 +401,13 @@ function AnimationMimic:resolvePlayableAnimationId(rawId, slotName)
                 self.assetTypeIsAnimationCache[resolvedNumeric] = true
             end
         else
-            resolved = likelyPackageId and nil or cleaned
+            local isWrapperType = cachedAssetTypeId ~= nil and SLOT_ANIMATION_WRAPPER_ASSET_TYPES[cachedAssetTypeId] == true
+            resolved = (likelyPackageId or isWrapperType) and nil or cleaned
         end
         pcall(function() assetModel:Destroy() end)
     else
-        resolved = likelyPackageId and nil or cleaned
+        local isWrapperType = cachedAssetTypeId ~= nil and SLOT_ANIMATION_WRAPPER_ASSET_TYPES[cachedAssetTypeId] == true
+        resolved = (likelyPackageId or isWrapperType) and nil or cleaned
     end
 
     return finish(resolved)
@@ -774,6 +838,17 @@ function AnimationMimic:getAnimationSetFromTempRig(userId)
     if not ok or not rig then
         ok, rig = pcall(function() return Players:CreateHumanoidModelFromUserId(userId) end)
     end
+
+    if not ok or not rig then
+        local targetDesc = self.shared:getTargetDescriptionCached(userId)
+        if targetDesc then
+            ok, rig = pcall(function() return Players:CreateHumanoidModelFromDescription(targetDesc, targetRigType) end)
+            if not ok or not rig then
+                ok, rig = pcall(function() return Players:CreateHumanoidModelFromDescription(targetDesc) end)
+            end
+        end
+    end
+
     if not ok or not rig then return nil end
 
     rig.Name = "AnimationMimicTempRig"
@@ -1061,11 +1136,41 @@ function AnimationMimic:applyTargetDescriptionAnimations(userId, token)
     if not okCurrent or not currentDesc then return false end
 
     local function resolveDescFieldToNumeric(rawId, slotName)
+        local rawNumeric = self.shared:numericIdFromContentId(rawId)
+        if not rawNumeric or rawNumeric <= 0 then
+            return nil
+        end
+
         local resolved = self:sanitizeResolvedAnimationId(rawId, nil, slotName)
-        return resolved and self.shared:numericIdFromContentId(resolved) or nil
+        if resolved then
+            local resolvedNumeric = self.shared:numericIdFromContentId(resolved)
+            if resolvedNumeric and resolvedNumeric > 0 then
+                return resolvedNumeric
+            end
+        end
+
+        local assetTypeId = self:getProductAssetTypeId(rawNumeric)
+        if assetTypeId and SLOT_ANIMATION_WRAPPER_ASSET_TYPES[assetTypeId] == true then
+            -- Wrapper IDs are valid for HumanoidDescription fields even when
+            -- they cannot be played as direct Animation.AnimationId values.
+            return rawNumeric
+        end
+
+        return nil
     end
 
     local function copyAnimationFields(into, from)
+        local appliedCount = 0
+
+        local function trySet(fieldName, resolvedNumeric)
+            if resolvedNumeric and self:isDescriptionAnimationAssetIdValid(resolvedNumeric) then
+                into[fieldName] = resolvedNumeric
+                appliedCount = appliedCount + 1
+                return true
+            end
+            return false
+        end
+
         local run = resolveDescFieldToNumeric(from.RunAnimation, "run")
         local walk = resolveDescFieldToNumeric(from.WalkAnimation, "walk")
         local idle = resolveDescFieldToNumeric(from.IdleAnimation, "idle")
@@ -1074,18 +1179,20 @@ function AnimationMimic:applyTargetDescriptionAnimations(userId, token)
         local climb = resolveDescFieldToNumeric(from.ClimbAnimation, "climb")
         local swim = resolveDescFieldToNumeric(from.SwimAnimation, "swim")
 
-        if not (run and walk and idle and jump and fall and climb and swim) then
+        local hasRun = trySet("RunAnimation", run)
+        local hasWalk = trySet("WalkAnimation", walk)
+        local hasIdle = trySet("IdleAnimation", idle)
+        trySet("JumpAnimation", jump)
+        trySet("FallAnimation", fall)
+        trySet("ClimbAnimation", climb)
+        trySet("SwimAnimation", swim)
+
+        -- Require core locomotion coverage; allow optional slots to be missing.
+        if not (hasRun and hasWalk and hasIdle) then
             return false
         end
 
-        into.RunAnimation = run
-        into.WalkAnimation = walk
-        into.IdleAnimation = idle
-        into.JumpAnimation = jump
-        into.FallAnimation = fall
-        into.ClimbAnimation = climb
-        into.SwimAnimation = swim
-        return true
+        return appliedCount >= 5
     end
 
     if not copyAnimationFields(currentDesc, targetDesc) then

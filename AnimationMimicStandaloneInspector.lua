@@ -16,6 +16,16 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local KeyframeSequenceProvider = game:GetService("KeyframeSequenceProvider")
 
 local PACKAGE_ID_THRESHOLD = 10000000000
+local SLOT_WRAPPER_ASSET_TYPES = {
+    [48] = true,
+    [49] = true,
+    [50] = true,
+    [51] = true,
+    [52] = true,
+    [53] = true,
+    [54] = true,
+    [55] = true,
+}
 
 local SLOT_FIELDS = {
     run = "RunAnimation",
@@ -188,6 +198,54 @@ local function loadAssetProbe(numericId, slotName)
     return out
 end
 
+local function getObjectsProbe(numericId, slotName)
+    local out = {
+        ok = false,
+        rootCount = 0,
+        animationCount = 0,
+        pickedAnimationId = nil,
+        pickedAnimationName = nil,
+        pickedParentName = nil,
+        rawError = nil,
+    }
+
+    local ok, objects = pcall(function()
+        return game:GetObjects("rbxassetid://" .. tostring(numericId))
+    end)
+
+    if not ok or type(objects) ~= "table" then
+        out.rawError = tostring(objects)
+        return out
+    end
+
+    out.ok = true
+    out.rootCount = #objects
+
+    for _, root in ipairs(objects) do
+        local allAnimations = {}
+        for _, inst in ipairs(root:GetDescendants()) do
+            if inst:IsA("Animation") then
+                allAnimations[#allAnimations + 1] = inst
+            end
+        end
+
+        out.animationCount = out.animationCount + #allAnimations
+
+        if not out.pickedAnimationId then
+            local picked = findBestAnimationInAsset(root, slotName)
+            if picked then
+                out.pickedAnimationId = normalizeAnimationId(picked.AnimationId)
+                out.pickedAnimationName = picked.Name
+                out.pickedParentName = picked.Parent and picked.Parent.Name or nil
+            end
+        end
+
+        pcall(function() root:Destroy() end)
+    end
+
+    return out
+end
+
 local function resolvePlayableAnimationId(rawId, slotName)
     local cleaned = normalizeAnimationId(rawId)
     local numeric = numericIdFromContentId(cleaned)
@@ -200,6 +258,7 @@ local function resolvePlayableAnimationId(rawId, slotName)
         likelyPackage = likelyPackage,
         productInfo = nil,
         keyframe = nil,
+        getObjects = nil,
         loadAsset = nil,
         resolved = cleaned,
         reason = "cleaned",
@@ -227,6 +286,14 @@ local function resolvePlayableAnimationId(rawId, slotName)
         return result
     end
 
+    local objectsProbe = getObjectsProbe(numeric, slotName)
+    result.getObjects = objectsProbe
+    if objectsProbe.ok and objectsProbe.pickedAnimationId then
+        result.resolved = objectsProbe.pickedAnimationId
+        result.reason = "resolved-from-getobjects"
+        return result
+    end
+
     local assetProbe = loadAssetProbe(numeric, slotName)
     result.loadAsset = assetProbe
 
@@ -236,9 +303,13 @@ local function resolvePlayableAnimationId(rawId, slotName)
         return result
     end
 
-    if likelyPackage then
+    local isWrapperType = result.productInfo
+        and result.productInfo.assetTypeId
+        and SLOT_WRAPPER_ASSET_TYPES[result.productInfo.assetTypeId] == true
+
+    if likelyPackage or isWrapperType then
         result.resolved = nil
-        result.reason = "unresolved-package-id"
+        result.reason = isWrapperType and "unresolved-wrapper-asset" or "unresolved-package-id"
     else
         result.resolved = cleaned
         result.reason = "fallback-nonpackage"
@@ -272,6 +343,7 @@ local function inspectTarget(userId)
         total = 0,
         resolved = 0,
         unresolvedPackage = 0,
+        unresolvedWrapper = 0,
         invalid = 0,
     }
 
@@ -284,6 +356,8 @@ local function inspectTarget(userId)
             summary.resolved = summary.resolved + 1
         elseif outcome.reason == "unresolved-package-id" then
             summary.unresolvedPackage = summary.unresolvedPackage + 1
+        elseif outcome.reason == "unresolved-wrapper-asset" then
+            summary.unresolvedWrapper = summary.unresolvedWrapper + 1
         else
             summary.invalid = summary.invalid + 1
         end
@@ -311,6 +385,15 @@ local function inspectTarget(userId)
             end
         end
 
+        if outcome.getObjects then
+            local g = outcome.getObjects
+            print("GetObjects:", "ok=" .. tostring(g.ok), "roots=" .. tostring(g.rootCount), "animationCount=" .. tostring(g.animationCount))
+            print("GetObjectsPick:", "id=" .. tostring(g.pickedAnimationId), "name=" .. tostring(g.pickedAnimationName), "parent=" .. tostring(g.pickedParentName))
+            if not g.ok and g.rawError then
+                print("GetObjectsError:", tostring(g.rawError))
+            end
+        end
+
         if outcome.loadAsset then
             local a = outcome.loadAsset
             print("LoadAsset:", "ok=" .. tostring(a.ok), "animationCount=" .. tostring(a.animationCount))
@@ -326,6 +409,7 @@ local function inspectTarget(userId)
     print("Total Slots:", summary.total)
     print("Resolved:", summary.resolved)
     print("Unresolved Package IDs:", summary.unresolvedPackage)
+    print("Unresolved Wrapper Assets:", summary.unresolvedWrapper)
     print("Invalid/Other Failures:", summary.invalid)
     print(string.rep("=", 80))
 end
