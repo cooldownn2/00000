@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local InsertService = game:GetService("InsertService")
 
 local AnimationMimic = {}
 AnimationMimic.__index = AnimationMimic
@@ -15,6 +16,16 @@ local SLOT_SPECS = {
 
 local ANIM_KEYS = { "climb", "fall", "jump", "run", "walk", "swim", "idle" }
 local ANIM_KEY_COUNT = #ANIM_KEYS
+
+local SLOT_NAME_HINTS = {
+    climb = { "climb" },
+    fall = { "fall" },
+    jump = { "jump" },
+    run = { "run" },
+    walk = { "walk" },
+    swim = { "swim" },
+    idle = { "idle", "animation1", "animation2" },
+}
 
 local SCALE_NAMES = {
     "BodyHeightScale", "BodyWidthScale", "BodyDepthScale",
@@ -166,6 +177,8 @@ function AnimationMimic.new(deps)
     self.lastSourceUserId = nil
     self.resumeUserId = nil
     self.applyToken = 0
+    self.resolvedAnimationIdCache = {}
+    self.pendingAnimationResolve = {}
 
     self.settings = {
         useDirectTrackFallback = true,
@@ -188,6 +201,93 @@ end
 function AnimationMimic:isDescriptionAnimationAssetIdValid(numericId)
     if not numericId or numericId <= 0 then return false end
     return true
+end
+
+function AnimationMimic:getSlotHints(slotName)
+    return SLOT_NAME_HINTS[slotName] or { tostring(slotName or "") }
+end
+
+function AnimationMimic:findBestAnimationInAsset(assetModel, slotName)
+    if not assetModel then return nil end
+
+    local allAnimations = {}
+    for _, inst in ipairs(assetModel:GetDescendants()) do
+        if inst:IsA("Animation") then
+            allAnimations[#allAnimations + 1] = inst
+        end
+    end
+
+    if #allAnimations == 0 then return nil end
+
+    local hints = self:getSlotHints(slotName)
+
+    local function matchesHint(candidateName)
+        local lower = string.lower(candidateName or "")
+        for _, hint in ipairs(hints) do
+            if hint ~= "" and lower:find(hint, 1, true) then
+                return true
+            end
+        end
+        return false
+    end
+
+    for _, anim in ipairs(allAnimations) do
+        if matchesHint(anim.Name) then
+            return anim
+        end
+    end
+
+    for _, anim in ipairs(allAnimations) do
+        local parentName = anim.Parent and anim.Parent.Name or ""
+        if matchesHint(parentName) then
+            return anim
+        end
+    end
+
+    return allAnimations[1]
+end
+
+function AnimationMimic:resolvePlayableAnimationId(rawId, slotName)
+    local cleaned = self.shared:normalizeAnimationId(rawId)
+    if not cleaned then return nil end
+
+    local numericId = self.shared:numericIdFromContentId(cleaned)
+    if not numericId then return cleaned end
+
+    local cacheKey = tostring(numericId) .. "|" .. tostring(slotName or "")
+    if self.resolvedAnimationIdCache[cacheKey] ~= nil then
+        local cached = self.resolvedAnimationIdCache[cacheKey]
+        return cached ~= false and cached or nil
+    end
+
+    if self.pendingAnimationResolve[cacheKey] then
+        local started = os.clock()
+        while self.pendingAnimationResolve[cacheKey] and os.clock() - started < 2 do
+            task.wait(0.03)
+        end
+        local waited = self.resolvedAnimationIdCache[cacheKey]
+        if waited ~= nil then
+            return waited ~= false and waited or nil
+        end
+    end
+
+    self.pendingAnimationResolve[cacheKey] = true
+
+    local resolved = cleaned
+    local okAsset, assetModel = pcall(function()
+        return InsertService:LoadAsset(numericId)
+    end)
+    if okAsset and assetModel then
+        local chosen = self:findBestAnimationInAsset(assetModel, slotName)
+        if chosen and chosen.AnimationId and chosen.AnimationId ~= "" then
+            resolved = self.shared:normalizeAnimationId(chosen.AnimationId) or cleaned
+        end
+        pcall(function() assetModel:Destroy() end)
+    end
+
+    self.resolvedAnimationIdCache[cacheKey] = resolved or false
+    self.pendingAnimationResolve[cacheKey] = nil
+    return resolved
 end
 
 function AnimationMimic:hasNativePlayingTrack(character)
@@ -269,7 +369,7 @@ function AnimationMimic:ensureIdlePrimer(character, animationSet)
     if not humanoid then return end
     if hasAnyPlayingTrack(humanoid) then return end
 
-    local idleId = self:resolveIdFromFolderData(animationSet and animationSet.idle, "Animation1", 1)
+    local idleId = self:resolveIdFromFolderData(animationSet and animationSet.idle, "Animation1", 1, "idle")
     if not idleId then return end
 
     local existing = self.posePrimerByChar[character]
@@ -491,27 +591,28 @@ function AnimationMimic:buildAnimationSetFromAnimate(animate)
     }
 end
 
-function AnimationMimic:resolveIdFromFolderData(folderData, childName, index)
+function AnimationMimic:resolveIdFromFolderData(folderData, childName, index, slotName)
     local chosen
     if folderData then
         chosen = folderData.byName[childName] or folderData.ordered[index] or folderData.first
     end
-    return self:sanitizeResolvedAnimationId(chosen, nil)
+    return self:sanitizeResolvedAnimationId(chosen, nil, slotName)
 end
 
-function AnimationMimic:sanitizeResolvedAnimationId(rawId, fallbackRawId)
-    local cleaned = self.shared:normalizeAnimationId(rawId)
-    return cleaned or self.shared:normalizeAnimationId(fallbackRawId)
+function AnimationMimic:sanitizeResolvedAnimationId(rawId, fallbackRawId, slotName)
+    local cleaned = self:resolvePlayableAnimationId(rawId, slotName)
+    if cleaned then return cleaned end
+    return self:resolvePlayableAnimationId(fallbackRawId, slotName)
 end
 
-function AnimationMimic:makeSingleAnimationData(name, rawId)
-    local cleaned = self:sanitizeResolvedAnimationId(rawId, nil)
+function AnimationMimic:makeSingleAnimationData(name, rawId, slotName)
+    local cleaned = self:sanitizeResolvedAnimationId(rawId, nil, slotName)
     if not cleaned then return nil end
     return { byName = { [name] = cleaned }, ordered = { cleaned }, first = cleaned }
 end
 
 function AnimationMimic:makeIdleAnimationData(rawIdleId)
-    local cleaned = self:sanitizeResolvedAnimationId(rawIdleId, nil)
+    local cleaned = self:sanitizeResolvedAnimationId(rawIdleId, nil, "idle")
     if not cleaned then return nil end
     return {
         byName = { Animation1 = cleaned, Animation2 = cleaned },
@@ -589,12 +690,12 @@ function AnimationMimic:getAnimationSetFromDescription(userId)
     if not desc then return nil end
 
     local set = {
-        climb = self:makeSingleAnimationData("ClimbAnim", desc.ClimbAnimation),
-        fall = self:makeSingleAnimationData("FallAnim", desc.FallAnimation),
-        jump = self:makeSingleAnimationData("JumpAnim", desc.JumpAnimation),
-        run = self:makeSingleAnimationData("RunAnim", desc.RunAnimation),
-        walk = self:makeSingleAnimationData("WalkAnim", desc.WalkAnimation),
-        swim = self:makeSingleAnimationData("Swim", desc.SwimAnimation),
+        climb = self:makeSingleAnimationData("ClimbAnim", desc.ClimbAnimation, "climb"),
+        fall = self:makeSingleAnimationData("FallAnim", desc.FallAnimation, "fall"),
+        jump = self:makeSingleAnimationData("JumpAnim", desc.JumpAnimation, "jump"),
+        run = self:makeSingleAnimationData("RunAnim", desc.RunAnimation, "run"),
+        walk = self:makeSingleAnimationData("WalkAnim", desc.WalkAnimation, "walk"),
+        swim = self:makeSingleAnimationData("Swim", desc.SwimAnimation, "swim"),
         idle = self:makeIdleAnimationData(desc.IdleAnimation),
     }
     set.__descriptionCompatible = true
@@ -718,7 +819,7 @@ function AnimationMimic:applyAnimationSetToDescriptionFields(desc, animationSet)
 
     local function resolveNumeric(folder, childName, idx)
         return self.shared:numericIdFromContentId(
-            self:resolveIdFromFolderData(animationSet[folder], childName, idx)
+            self:resolveIdFromFolderData(animationSet[folder], childName, idx, folder)
         )
     end
 
@@ -892,17 +993,37 @@ function AnimationMimic:applyTargetDescriptionAnimations(userId, token)
     local okCurrent, currentDesc = pcall(function() return humanoid:GetAppliedDescription() end)
     if not okCurrent or not currentDesc then return false end
 
-    local function copyAnimationFields(into, from)
-        into.RunAnimation = from.RunAnimation
-        into.WalkAnimation = from.WalkAnimation
-        into.IdleAnimation = from.IdleAnimation
-        into.JumpAnimation = from.JumpAnimation
-        into.FallAnimation = from.FallAnimation
-        into.ClimbAnimation = from.ClimbAnimation
-        into.SwimAnimation = from.SwimAnimation
+    local function resolveDescFieldToNumeric(rawId, slotName)
+        local resolved = self:sanitizeResolvedAnimationId(rawId, nil, slotName)
+        return resolved and self.shared:numericIdFromContentId(resolved) or nil
     end
 
-    copyAnimationFields(currentDesc, targetDesc)
+    local function copyAnimationFields(into, from)
+        local run = resolveDescFieldToNumeric(from.RunAnimation, "run")
+        local walk = resolveDescFieldToNumeric(from.WalkAnimation, "walk")
+        local idle = resolveDescFieldToNumeric(from.IdleAnimation, "idle")
+        local jump = resolveDescFieldToNumeric(from.JumpAnimation, "jump")
+        local fall = resolveDescFieldToNumeric(from.FallAnimation, "fall")
+        local climb = resolveDescFieldToNumeric(from.ClimbAnimation, "climb")
+        local swim = resolveDescFieldToNumeric(from.SwimAnimation, "swim")
+
+        if not (run and walk and idle and jump and fall and climb and swim) then
+            return false
+        end
+
+        into.RunAnimation = run
+        into.WalkAnimation = walk
+        into.IdleAnimation = idle
+        into.JumpAnimation = jump
+        into.FallAnimation = fall
+        into.ClimbAnimation = climb
+        into.SwimAnimation = swim
+        return true
+    end
+
+    if not copyAnimationFields(currentDesc, targetDesc) then
+        return false
+    end
     applyScaleSnapshotToDesc(currentDesc, snapshotHumanoidScales(humanoid))
 
     local function doApply(desc)
@@ -925,7 +1046,9 @@ function AnimationMimic:applyTargetDescriptionAnimations(userId, token)
         local okDesc2, desc2 = pcall(function() return humanoid:GetAppliedDescription() end)
         if not okDesc2 or not desc2 then return end
 
-        copyAnimationFields(desc2, targetDesc)
+        if not copyAnimationFields(desc2, targetDesc) then
+            return
+        end
         applyScaleSnapshotToDesc(desc2, snapshotHumanoidScales(humanoid))
         doApply(desc2)
     end)
@@ -937,6 +1060,47 @@ function AnimationMimic:applyTargetDescriptionAnimations(userId, token)
     end
 
     return true
+end
+
+function AnimationMimic:scanTargetAnimations(target)
+    local userId = self.shared:resolveUserToId(target)
+    if not userId then return nil, "invalid-target" end
+
+    local okDesc, desc = pcall(function()
+        return Players:GetHumanoidDescriptionFromUserId(userId)
+    end)
+    if not okDesc or not desc then
+        desc = self.shared:getTargetDescriptionCached(userId)
+    end
+    if not desc then return nil, "description-unavailable" end
+
+    local slots = {
+        { slot = "run", field = "RunAnimation" },
+        { slot = "walk", field = "WalkAnimation" },
+        { slot = "idle", field = "IdleAnimation" },
+        { slot = "jump", field = "JumpAnimation" },
+        { slot = "fall", field = "FallAnimation" },
+        { slot = "climb", field = "ClimbAnimation" },
+        { slot = "swim", field = "SwimAnimation" },
+    }
+
+    local report = {
+        userId = userId,
+        slots = {},
+    }
+
+    for _, info in ipairs(slots) do
+        local raw = desc[info.field]
+        local resolved = self:sanitizeResolvedAnimationId(raw, nil, info.slot)
+        report.slots[info.slot] = {
+            field = info.field,
+            raw = raw,
+            resolved = resolved,
+            resolvedNumeric = resolved and self.shared:numericIdFromContentId(resolved) or nil,
+        }
+    end
+
+    return report, nil
 end
 
 function AnimationMimic:stopDirectController(character)
@@ -1018,7 +1182,7 @@ function AnimationMimic:startDirectController(character, animationSet, opts)
     if not animator then return false end
 
     local function getAnimId(folder, childName, idx)
-        return self:resolveIdFromFolderData(animationSet[folder], childName, idx)
+        return self:resolveIdFromFolderData(animationSet[folder], childName, idx, folder)
     end
 
     local idMap = {
@@ -1155,7 +1319,7 @@ function AnimationMimic:startDirectController(character, animationSet, opts)
     return true
 end
 
-function AnimationMimic:applyFolderDataToFolder(character, folder, folderData, shouldRemember)
+function AnimationMimic:applyFolderDataToFolder(character, folder, folderData, shouldRemember, slotName)
     if not folder then return 0 end
 
     local changed = 0
@@ -1163,7 +1327,7 @@ function AnimationMimic:applyFolderDataToFolder(character, folder, folderData, s
     for _, child in ipairs(folder:GetChildren()) do
         if child:IsA("Animation") then
             idx = idx + 1
-            local resolvedId = self:resolveIdFromFolderData(folderData, child.Name, idx)
+            local resolvedId = self:resolveIdFromFolderData(folderData, child.Name, idx, slotName)
             if resolvedId then
                 if shouldRemember then self:rememberOriginal(character, child) end
                 child.AnimationId = resolvedId
@@ -1179,7 +1343,7 @@ function AnimationMimic:applySlotFromSet(character, animate, animationSet, folde
     local folder = animate:FindFirstChild(folderName)
     local setData = animationSet and animationSet[folderName]
 
-    if self:applyFolderDataToFolder(character, folder, setData, shouldRemember) > 0 then
+    if self:applyFolderDataToFolder(character, folder, setData, shouldRemember, folderName) > 0 then
         return true
     end
 
@@ -1195,7 +1359,7 @@ function AnimationMimic:applyIdleFromSet(character, animate, idleData, shouldRem
     for _, child in ipairs(idleFolder:GetChildren()) do
         if child:IsA("Animation") then
             idx = idx + 1
-            local resolvedIdle = self:resolveIdFromFolderData(idleData, child.Name, idx)
+            local resolvedIdle = self:resolveIdFromFolderData(idleData, child.Name, idx, "idle")
             if resolvedIdle then
                 if shouldRemember then self:rememberOriginal(character, child) end
                 child.AnimationId = resolvedIdle
