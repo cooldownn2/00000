@@ -185,7 +185,9 @@ function AnimationMimic.new(deps)
         cacheTtlSeconds = 22,
         minLiveCoverage = 7,
         liveSourceWaitSeconds = 1.5,
-        replicateDescriptionToOthers = true,
+        replicateDescriptionToOthers = false,
+        useDescriptionAnimationApply = false,
+        useDescriptionSetFallback = false,
         replicationRetryDelays = { 0.15, 0.4 },
         invalidateAnimationCacheOnTargetSwitch = true,
         alwaysAssistAfterApply = false,
@@ -253,6 +255,7 @@ function AnimationMimic:resolvePlayableAnimationId(rawId, slotName)
 
     local numericId = self.shared:numericIdFromContentId(cleaned)
     if not numericId then return cleaned end
+    local likelyPackageId = numericId >= 10000000000
 
     local cacheKey = tostring(numericId) .. "|" .. tostring(slotName or "")
     if self.resolvedAnimationIdCache[cacheKey] ~= nil then
@@ -281,8 +284,12 @@ function AnimationMimic:resolvePlayableAnimationId(rawId, slotName)
         local chosen = self:findBestAnimationInAsset(assetModel, slotName)
         if chosen and chosen.AnimationId and chosen.AnimationId ~= "" then
             resolved = self.shared:normalizeAnimationId(chosen.AnimationId) or cleaned
+        elseif likelyPackageId then
+            resolved = nil
         end
         pcall(function() assetModel:Destroy() end)
+    elseif likelyPackageId then
+        resolved = nil
     end
 
     self.resolvedAnimationIdCache[cacheKey] = resolved or false
@@ -764,7 +771,10 @@ function AnimationMimic:getAnimationSetFromUserId(userId)
     end
 
     local fromRig = self:getAnimationSetFromTempRig(userId)
-    local fromDesc = self:getAnimationSetFromDescription(userId)
+    local fromDesc = nil
+    if self.settings.useDescriptionSetFallback == true then
+        fromDesc = self:getAnimationSetFromDescription(userId)
+    end
 
     local function pickBetter(currentBest, candidate)
         if not candidate then return currentBest end
@@ -1525,7 +1535,10 @@ function AnimationMimic:mimicFromUserId(userId, forceApply)
         if applyToken ~= self.applyToken then return false end
     end
 
-    local directDescriptionApplied = self:applyTargetDescriptionAnimations(numericUserId, applyToken)
+    local directDescriptionApplied = false
+    if self.settings.useDescriptionAnimationApply == true then
+        directDescriptionApplied = self:applyTargetDescriptionAnimations(numericUserId, applyToken)
+    end
     if directDescriptionApplied then
         self.lastSourceUserId = numericUserId
         self.pinnedTargetUserId = numericUserId
