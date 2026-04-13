@@ -152,8 +152,8 @@ local function reapplyAll()
     local ok = false
     if enabledState then
         ok = outfit:reapply() or ok
-        ok = animation:reapply() or ok
         ok = emote:reapply() or ok
+        ok = animation:reapply() or ok
     end
     return ok
 end
@@ -209,33 +209,12 @@ local function installEnvApi()
         return emote:mimicFromTarget(targetState)
     end
 
-    local function scanAnimations(target)
-        if not ensureModules() then return nil, "modules-unavailable" end
-        if not animation or type(animation.scanTargetAnimations) ~= "function" then
-            return nil, "scan-unavailable"
-        end
-
-        local normalized = normalizeTarget(target)
-        if normalized == "" then
-            normalized = normalizeTarget(targetState)
-        end
-        if normalized == "" then
-            normalized = getSpooferUserTarget()
-        end
-        if normalized == "" then
-            return nil, "empty-target"
-        end
-
-        return animation:scanTargetAnimations(normalized)
-    end
-
     local function fullCleanup()
         CharacterModel.cleanup()
     end
 
     env.CharacterModel = {
         SetTarget = setTargetAny,
-        ScanAnimations = scanAnimations,
         Reapply = function()
             return reapplyAll()
         end,
@@ -245,7 +224,6 @@ local function installEnvApi()
     env.AvatarSpoofer = {
         SetTarget = setTargetAny,
         SetUser = setTargetAny,
-        ScanAnimations = scanAnimations,
         Reapply = function()
             return reapplyAll()
         end,

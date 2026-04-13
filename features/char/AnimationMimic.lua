@@ -1072,47 +1072,6 @@ function AnimationMimic:applyTargetDescriptionAnimations(userId, token)
     return true
 end
 
-function AnimationMimic:scanTargetAnimations(target)
-    local userId = self.shared:resolveUserToId(target)
-    if not userId then return nil, "invalid-target" end
-
-    local okDesc, desc = pcall(function()
-        return Players:GetHumanoidDescriptionFromUserId(userId)
-    end)
-    if not okDesc or not desc then
-        desc = self.shared:getTargetDescriptionCached(userId)
-    end
-    if not desc then return nil, "description-unavailable" end
-
-    local slots = {
-        { slot = "run", field = "RunAnimation" },
-        { slot = "walk", field = "WalkAnimation" },
-        { slot = "idle", field = "IdleAnimation" },
-        { slot = "jump", field = "JumpAnimation" },
-        { slot = "fall", field = "FallAnimation" },
-        { slot = "climb", field = "ClimbAnimation" },
-        { slot = "swim", field = "SwimAnimation" },
-    }
-
-    local report = {
-        userId = userId,
-        slots = {},
-    }
-
-    for _, info in ipairs(slots) do
-        local raw = desc[info.field]
-        local resolved = self:sanitizeResolvedAnimationId(raw, nil, info.slot)
-        report.slots[info.slot] = {
-            field = info.field,
-            raw = raw,
-            resolved = resolved,
-            resolvedNumeric = resolved and self.shared:numericIdFromContentId(resolved) or nil,
-        }
-    end
-
-    return report, nil
-end
-
 function AnimationMimic:stopDirectController(character)
     if not character then return end
 

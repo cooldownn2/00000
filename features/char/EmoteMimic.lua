@@ -3,6 +3,18 @@ local Players = game:GetService("Players")
 local EmoteMimic = {}
 EmoteMimic.__index = EmoteMimic
 
+local ANIMATION_FIELDS = {
+    "RunAnimation",
+    "WalkAnimation",
+    "IdleAnimation",
+    "JumpAnimation",
+    "FallAnimation",
+    "ClimbAnimation",
+    "SwimAnimation",
+}
+
+local PACKAGE_ANIMATION_ID_THRESHOLD = 10000000000
+
 local function hasAnyTableEntries(value)
     return type(value) == "table" and next(value) ~= nil
 end
@@ -190,6 +202,16 @@ function EmoteMimic:applyEmotesToHumanoid(humanoid, emoteData)
     end
 
     self.shared:applyScaleValuesToDescription(currentDesc, scaleSnapshot)
+
+    for _, fieldName in ipairs(ANIMATION_FIELDS) do
+        local raw = currentDesc[fieldName]
+        local numeric = tonumber(tostring(raw or ""):match("%d+"))
+        if not numeric or numeric <= 0 or numeric >= PACKAGE_ANIMATION_ID_THRESHOLD then
+            currentDesc[fieldName] = 0
+        else
+            currentDesc[fieldName] = numeric
+        end
+    end
 
     if humanoid.ApplyDescriptionClientServer then
         local okCS = pcall(function() humanoid:ApplyDescriptionClientServer(currentDesc) end)
