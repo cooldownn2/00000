@@ -19,12 +19,15 @@ local GETGENV_FN = rawget(_G, "getgenv")
 local RUNTIME_ENV = (type(GETGENV_FN) == "function" and GETGENV_FN()) or _G
 local SETREADONLY_FN = rawget(RUNTIME_ENV, "setreadonly") or rawget(_G, "setreadonly")
 local GETNAMECALLMETHOD_FN = rawget(RUNTIME_ENV, "getnamecallmethod") or rawget(_G, "getnamecallmethod")
+local HOOKMETAMETHOD_FN = rawget(RUNTIME_ENV, "hookmetamethod") or rawget(_G, "hookmetamethod")
 
 local MOUSE1 = Enum.UserInputType.MouseButton1
 local ASSIST_MIN_INTERVAL = 0.05
 local TAP_TIME_STEP = 1 / 120
 local TAP_TIME_JITTER = 0.0005
 local _lastAssistSendAt = 0
+local _assignIndexInstalled = false
+local _assignNamecallInstalled = false
 
 local function isFiniteNumber(value)
     return type(value) == "number" and value == value and value > -HUGE and value < HUGE
@@ -325,8 +328,20 @@ end
 
 local function setReadOnlySafe(value)
     if type(SETREADONLY_FN) == "function" then
-        SETREADONLY_FN(mt, value)
+        pcall(SETREADONLY_FN, mt, value)
     end
+end
+
+local function tryAssignMetamethod(fieldName, hookFn)
+    local ok = false
+    setReadOnlySafe(false)
+    ok = pcall(function()
+        if mt[fieldName] ~= hookFn then
+            mt[fieldName] = hookFn
+        end
+    end)
+    setReadOnlySafe(true)
+    return ok
 end
 
 local function trySendZeehoodWallbangAssist()
@@ -472,20 +487,42 @@ local function buildHooks()
 end
 
 local function install()
-    if GH.shoot ~= hookedShoot then GH.shoot = hookedShoot end
-    setReadOnlySafe(false)
-    if mt.__index ~= hookedIndex then mt.__index = hookedIndex end
-    if mt.__namecall ~= hookedNamecall then mt.__namecall = hookedNamecall end
-    setReadOnlySafe(true)
+    if GH and GH.shoot ~= hookedShoot then GH.shoot = hookedShoot end
+
+    local indexOk = tryAssignMetamethod("__index", hookedIndex)
+    local namecallOk = tryAssignMetamethod("__namecall", hookedNamecall)
+
+    _assignIndexInstalled = indexOk
+    _assignNamecallInstalled = namecallOk
+
+    if not indexOk and type(HOOKMETAMETHOD_FN) == "function" then
+        indexOk = pcall(function()
+            HOOKMETAMETHOD_FN(game, "__index", hookedIndex)
+        end)
+    end
+
+    if not namecallOk and type(HOOKMETAMETHOD_FN) == "function" then
+        namecallOk = pcall(function()
+            HOOKMETAMETHOD_FN(game, "__namecall", hookedNamecall)
+        end)
+    end
+
+    if not indexOk or not namecallOk then
+        warn("[Hooks] partial install: __index=" .. tostring(indexOk) .. " __namecall=" .. tostring(namecallOk))
+    end
 end
 
 local function uninstall()
-    if GH.shoot == hookedShoot then GH.shoot = oldShoot end
+    if GH and GH.shoot == hookedShoot then GH.shoot = oldShoot end
     safeCall(function()
-        setReadOnlySafe(false)
-        if mt.__index == hookedIndex then mt.__index = oldIndex end
-        if mt.__namecall == hookedNamecall then mt.__namecall = oldNamecall end
-        setReadOnlySafe(true)
+        if _assignIndexInstalled or _assignNamecallInstalled then
+            setReadOnlySafe(false)
+            if _assignIndexInstalled and mt.__index == hookedIndex then mt.__index = oldIndex end
+            if _assignNamecallInstalled and mt.__namecall == hookedNamecall then mt.__namecall = oldNamecall end
+            setReadOnlySafe(true)
+        end
+        _assignIndexInstalled = false
+        _assignNamecallInstalled = false
     end, "CleanupFails")
 end
 
