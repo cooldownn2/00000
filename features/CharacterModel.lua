@@ -78,7 +78,9 @@ local function getUISpooferUserTarget()
     if normalized ~= "" then
         return normalized
     end
-    return ""
+
+    -- If UI Spoofer user isn't set, follow Avatar Spoofer target.
+    return getSpooferUserTarget()
 end
 
 local function normalizeTarget(raw)

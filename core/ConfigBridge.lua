@@ -22,59 +22,6 @@ local function applyUserConfig(settings, userConfig)
         cur[path[#path]] = value
     end
 
-    local function normalizeWeaponValueTable(source)
-        if type(source) ~= "table" then return nil end
-        local out = {}
-        local hasAny = false
-
-        if source["Enabled"] ~= nil then
-            out["Enabled"] = source["Enabled"] == true
-            hasAny = true
-        end
-
-        for weaponName, entry in pairs(source) do
-            if weaponName ~= "Enabled" then
-                if type(entry) == "table" then
-                    local n = tonumber(entry["Value"])
-                    if n ~= nil then
-                        out[weaponName] = n
-                        hasAny = true
-                    end
-                elseif type(entry) == "number" then
-                    out[weaponName] = entry
-                    hasAny = true
-                end
-            end
-        end
-
-        if not hasAny then return nil end
-        return out
-    end
-
-    local function normalizeTapTable(source)
-        if type(source) ~= "table" then return nil end
-
-        local out = {}
-        local globalEnabled = source["Enabled"] == true
-        local hasAny = false
-
-        for weaponName, entry in pairs(source) do
-            if weaponName ~= "Enabled" and type(entry) == "table" then
-                local value = tonumber(entry["Value"])
-                if value ~= nil then
-                    out[weaponName] = {
-                        ["Enabled"] = globalEnabled,
-                        ["Value"] = math.floor(value),
-                    }
-                    hasAny = true
-                end
-            end
-        end
-
-        if not hasAny then return nil end
-        return out
-    end
-
     local configMap = {
         -- Silent Aim
         { {"Silent Aim","Enabled"},                        {"Main","Enabled"} },
@@ -157,21 +104,9 @@ local function applyUserConfig(settings, userConfig)
         { {"Avatar Spoofer","Apply Respawn"},                {"Avatar Spoofer","Apply Respawn"} },
         { {"Avatar Spoofer","User"},                         {"Avatar Spoofer","User"} },
 
-        -- Character Spoofing (new grouped layout)
-        { {"Character Spoofing","Avatar Spoofer","Enabled"},       {"Avatar Spoofer","Enabled"} },
-        { {"Character Spoofing","Avatar Spoofer","Apply Respawn"}, {"Avatar Spoofer","Apply Respawn"} },
-        { {"Character Spoofing","Avatar Spoofer","User"},          {"Avatar Spoofer","User"} },
-
         -- UI Spoofer
         { {"UI Spoofer","Enabled"},                          {"UI Spoofer","Enabled"} },
         { {"UI Spoofer","User"},                             {"UI Spoofer","User"} },
-        { {"Character Spoofing","UI Spoofer","Enabled"},   {"UI Spoofer","Enabled"} },
-        { {"Character Spoofing","UI Spoofer","User"},      {"UI Spoofer","User"} },
-
-        -- Rage Mode (new ForceHit layout)
-        { {"Rage Mode","Enabled"},                           {"Weapon Modifications","ForceHit","Enabled"} },
-        { {"Rage Mode","Full Damage"},                       {"Weapon Modifications","ForceHit","Full Damage"} },
-        { {"Rage Mode","Weapon Distances"},                  {"Weapon Modifications","ForceHit","Weapon Distances"} },
         
         -- Hotkeys
         { {"Hotkeys","Enabled"},                             {"Hotkeys","Enabled"} },
@@ -201,18 +136,6 @@ local function applyUserConfig(settings, userConfig)
     for _, entry in ipairs(configMap) do
         apply(resolve(userConfig, entry[1]), entry[2])
     end
-
-    local spreadChanger = resolve(userConfig, {"Weapon Modifications", "Spread Changer"})
-    local spreadNormalized = normalizeWeaponValueTable(spreadChanger)
-    apply(spreadNormalized, {"Weapon Modifications", "Spread Modifications"})
-
-    local delayChanger = resolve(userConfig, {"Weapon Modifications", "Delay Changer"})
-    local delayNormalized = normalizeWeaponValueTable(delayChanger)
-    apply(delayNormalized, {"Weapon Modifications", "Custom Delays"})
-
-    local tapSection = resolve(userConfig, {"Weapon Modifications", "Tap"})
-    local tapNormalized = normalizeTapTable(tapSection)
-    apply(tapNormalized, {"Weapon Modifications", "Taps"})
 end
 
 local function validateSettings(Settings)

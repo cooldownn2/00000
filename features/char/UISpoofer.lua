@@ -63,10 +63,6 @@ local function normalizeTarget(raw)
 	return t
 end
 
-local function looksUnresolvedName(name, userId)
-	return tostring(name or "") == tostring(userId or "")
-end
-
 local function isLikelyPeopleContext(inst)
 	local cur, depth = inst, 0
 	while cur and depth < 25 do
@@ -224,6 +220,7 @@ end
 function UISpoofer.new(deps)
 	local self = setmetatable({}, UISpoofer)
 
+	self.shared = deps and deps.shared or nil
 	self.localPlayer = (deps and deps.localPlayer) or Players.LocalPlayer
 	self.enabled = false
 
@@ -235,6 +232,7 @@ function UISpoofer.new(deps)
 		self.localIdentitySeedDisplayName = tostring(lp.DisplayName or "")
 	end
 
+	self.targetInput = nil
 	self.targetUserId = nil
 	self.targetName = nil
 	self.targetDisplayName = nil
@@ -274,7 +272,6 @@ function UISpoofer.new(deps)
 	self.dirty = false
 
 	self.debugSyncStats = nil
-	self.profileFetchToken = 0
 
 	return self
 end
@@ -862,6 +859,20 @@ function UISpoofer:setEnabled(enabled)
 		if ok4 and c4 then self.connections[#self.connections + 1] = c4 end
 	end
 
+	if lp then
+		local okLP, cLP = pcall(function()
+			return lp.ChildAdded:Connect(function(child)
+				if not self.enabled then return end
+				if not child:IsA("PlayerGui") then return end
+				local okPg, cPg = pcall(function() return child.DescendantAdded:Connect(onDescAdded) end)
+				if okPg and cPg then self.connections[#self.connections + 1] = cPg end
+				self.dirty = true
+				self:requestSync()
+			end)
+		end)
+		if okLP and cLP then self.connections[#self.connections + 1] = cLP end
+	end
+
 	local ok5, c5 = pcall(function()
 		return RunService.Heartbeat:Connect(function()
 			if not self.enabled then return end
@@ -892,6 +903,13 @@ function UISpoofer:setEnabled(enabled)
 end
 
 function UISpoofer:resolveUserId(target)
+	if self.shared and type(self.shared.resolveUserToId) == "function" then
+		local ok, resolved = pcall(function() return self.shared:resolveUserToId(target) end)
+		if ok and type(resolved) == "number" then
+			return math.floor(resolved)
+		end
+	end
+
 	local n = normalizeTarget(target)
 	if n == "" then return nil end
 	local num = tonumber(n)
@@ -901,12 +919,6 @@ function UISpoofer:resolveUserId(target)
 end
 
 function UISpoofer:refreshProfile(userId)
-	self.profileFetchToken = self.profileFetchToken + 1
-	local fetchToken = self.profileFetchToken
-	local numericUserId = tonumber(userId)
-	local previousName = self.targetName
-	local previousDisplayName = self.targetDisplayName
-
 	self.targetName = tostring(userId)
 	self.targetDisplayName = nil
 	self.targetHeadshot = nil
@@ -954,88 +966,21 @@ function UISpoofer:refreshProfile(userId)
 		return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.AvatarThumbnail, Enum.ThumbnailSize.Size420x420)
 	end)
 	self.targetAvatarThumb = ok5 and av or nil
-
-	if numericUserId and previousName and previousName ~= ""
-		and looksUnresolvedName(self.targetName, numericUserId)
-		and not looksUnresolvedName(previousName, numericUserId) then
-		self.targetName = previousName
-	end
-	if numericUserId and previousDisplayName and previousDisplayName ~= ""
-		and looksUnresolvedName(self.targetDisplayName, numericUserId)
-		and not looksUnresolvedName(previousDisplayName, numericUserId) then
-		self.targetDisplayName = previousDisplayName
-	end
-	self.targetDisplayName = self.targetDisplayName or self.targetName
-
-	if not looksUnresolvedName(self.targetName, userId)
-		and not looksUnresolvedName(self.targetDisplayName, userId) then
-		return
-	end
-
-	task.spawn(function()
-		local delays = { 0.35, 0.75, 1.2, 1.8 }
-		for _, delayTime in ipairs(delays) do
-			task.wait(delayTime)
-			if fetchToken ~= self.profileFetchToken then return end
-			if tonumber(self.targetUserId) ~= tonumber(userId) then return end
-
-			local beforeName = self.targetName
-			local beforeDisplay = self.targetDisplayName
-
-			if looksUnresolvedName(self.targetName, userId) then
-				local ok2, name = pcall(function() return Players:GetNameFromUserIdAsync(userId) end)
-				if ok2 and type(name) == "string" and name ~= "" then self.targetName = name end
-			end
-
-			if self.targetDisplayName == nil or looksUnresolvedName(self.targetDisplayName, userId) then
-				local ok3, info = pcall(function() return UserService:GetUserInfosByUserIdsAsync({ userId }) end)
-				if ok3 and type(info) == "table" then
-					local matched = nil
-					for _, entry in ipairs(info) do
-						if type(entry) == "table" and tonumber(entry.Id) == tonumber(userId) then
-							matched = entry
-							break
-						end
-					end
-					if not matched then matched = info[1] end
-					if type(matched) == "table" then
-						local dn = matched.DisplayName
-						if type(dn) == "string" and dn ~= "" then self.targetDisplayName = dn end
-					end
-				end
-			end
-
-			self.targetDisplayName = self.targetDisplayName or self.targetName
-
-			if self.targetName ~= beforeName or self.targetDisplayName ~= beforeDisplay then
-				if self.enabled then
-					self:ensureLocalIdentitySpoof()
-					self.dirty = true
-					self:requestSync()
-				end
-			end
-
-			if not looksUnresolvedName(self.targetName, userId)
-				and not looksUnresolvedName(self.targetDisplayName, userId) then
-				return
-			end
-		end
-	end)
 end
 
 function UISpoofer:setTarget(target)
 	local uid = self:resolveUserId(target)
 	if not uid then return false end
 
-	local wasEnabled = self.enabled == true
 	local isSwitching = self.targetUserId ~= nil and tonumber(self.targetUserId) ~= tonumber(uid)
+	self.targetInput = target
 
-	if wasEnabled and isSwitching then self:setEnabled(false) end
+	if self.enabled and isSwitching then
+		self:clearRows()
+	end
 
 	self.targetUserId = uid
 	self:refreshProfile(uid)
-
-	if wasEnabled and not self.enabled then self:setEnabled(true) end
 
 	if self.enabled then
 		self:ensureLocalIdentitySpoof()
@@ -1105,6 +1050,7 @@ end
 
 function UISpoofer:reapply()
 	if self.targetUserId then
+		self:refreshProfile(self.targetUserId)
 		if self.enabled then
 			self.lastSyncAt = 0
 			self.fastSyncUntil = os.clock() + MENU_FAST_SYNC_DURATION
@@ -1114,6 +1060,9 @@ function UISpoofer:reapply()
 			self:requestSync()
 		end
 		return true
+	end
+	if self.targetInput ~= nil then
+		return self:setTarget(self.targetInput)
 	end
 	return false
 end
@@ -1141,6 +1090,7 @@ end
 
 function UISpoofer:cleanup()
 	self.enabled = false
+	self.targetInput = nil
 	self.targetUserId = nil
 	self.targetName = nil
 	self.targetDisplayName = nil
