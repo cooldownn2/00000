@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local InsertService = game:GetService("InsertService")
 local MarketplaceService = game:GetService("MarketplaceService")
+local KeyframeSequenceProvider = game:GetService("KeyframeSequenceProvider")
 
 local AnimationMimic = {}
 AnimationMimic.__index = AnimationMimic
@@ -181,6 +182,7 @@ function AnimationMimic.new(deps)
     self.resolvedAnimationIdCache = {}
     self.pendingAnimationResolve = {}
     self.assetTypeIsAnimationCache = {}
+    self.keyframeValidationCache = {}
 
     self.settings = {
         useDirectTrackFallback = true,
@@ -189,7 +191,7 @@ function AnimationMimic.new(deps)
         liveSourceWaitSeconds = 1.5,
         replicateDescriptionToOthers = false,
         useDescriptionAnimationApply = false,
-        useDescriptionSetFallback = false,
+        useDescriptionSetFallback = true,
         replicationRetryDelays = { 0.15, 0.4 },
         invalidateAnimationCacheOnTargetSwitch = true,
         alwaysAssistAfterApply = false,
@@ -277,11 +279,15 @@ function AnimationMimic:resolvePlayableAnimationId(rawId, slotName)
 
     self.pendingAnimationResolve[cacheKey] = true
 
+    local function finish(value)
+        self.resolvedAnimationIdCache[cacheKey] = value or false
+        self.pendingAnimationResolve[cacheKey] = nil
+        return value
+    end
+
     local cachedAssetType = self.assetTypeIsAnimationCache[numericId]
     if cachedAssetType == true then
-        self.resolvedAnimationIdCache[cacheKey] = cleaned
-        self.pendingAnimationResolve[cacheKey] = nil
-        return cleaned
+        return finish(cleaned)
     end
 
     if cachedAssetType == nil then
@@ -294,11 +300,25 @@ function AnimationMimic:resolvePlayableAnimationId(rawId, slotName)
             local isAnim = assetTypeId ~= nil and assetTypeId == animTypeId
             self.assetTypeIsAnimationCache[numericId] = isAnim
             if isAnim then
-                self.resolvedAnimationIdCache[cacheKey] = cleaned
-                self.pendingAnimationResolve[cacheKey] = nil
-                return cleaned
+                return finish(cleaned)
             end
         end
+    end
+
+    local keyframeKnown = self.keyframeValidationCache[numericId]
+    if keyframeKnown == nil then
+        local okSeq, seq = pcall(function()
+            return KeyframeSequenceProvider:GetKeyframeSequenceAsync(cleaned)
+        end)
+        keyframeKnown = okSeq and seq ~= nil
+        if okSeq and seq then
+            pcall(function() seq:Destroy() end)
+        end
+        self.keyframeValidationCache[numericId] = keyframeKnown
+    end
+    if keyframeKnown == true then
+        self.assetTypeIsAnimationCache[numericId] = true
+        return finish(cleaned)
     end
 
     local resolved = cleaned
@@ -321,9 +341,7 @@ function AnimationMimic:resolvePlayableAnimationId(rawId, slotName)
         resolved = nil
     end
 
-    self.resolvedAnimationIdCache[cacheKey] = resolved or false
-    self.pendingAnimationResolve[cacheKey] = nil
-    return resolved
+    return finish(resolved)
 end
 
 function AnimationMimic:hasNativePlayingTrack(character)
