@@ -5,18 +5,41 @@ local RunService = game:GetService("RunService")
 local LP         = Players.LocalPlayer
 local Camera     = workspace.CurrentCamera
 
-local GETGENV_FN = rawget(_G, "getgenv")
 local GETRAWMETATABLE_FN = rawget(_G, "getrawmetatable")
 
-local function getRuntimeEnv()
-    if type(GETGENV_FN) == "function" then
-        local ok, env = pcall(GETGENV_FN)
-        if ok and type(env) == "table" then return env end
+local function resolveRuntimeEnv()
+    local envGet = rawget(_G, "getgenv")
+
+    if type(envGet) ~= "function" then
+        local loadstringFn = rawget(_G, "loadstring")
+        if type(loadstringFn) == "function" then
+            local okChunk, chunk = pcall(loadstringFn, "return getgenv")
+            if okChunk and type(chunk) == "function" then
+                local okFn, resolved = pcall(chunk)
+                if okFn and type(resolved) == "function" then
+                    envGet = resolved
+                end
+            end
+        end
     end
+
+    if type(envGet) == "function" then
+        local ok, env = pcall(envGet)
+        if ok and type(env) == "table" then
+            return env
+        end
+    end
+
     return _G
 end
 
-local GENV = getRuntimeEnv()
+local GENV = resolveRuntimeEnv()
+if GENV.SauceConfig == nil then
+    local sharedTbl = rawget(_G, "shared")
+    if type(sharedTbl) == "table" and type(sharedTbl.SauceConfig) == "table" then
+        GENV.SauceConfig = sharedTbl.SauceConfig
+    end
+end
 if not GENV.SauceConfig then
     error("No config found. Run the table not just the loading string.", 2)
 end
