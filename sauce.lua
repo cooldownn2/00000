@@ -34,14 +34,20 @@ local function resolveRuntimeEnv()
 end
 
 local GENV = resolveRuntimeEnv()
-if GENV.SauceConfig == nil then
-    local sharedTbl = rawget(_G, "shared")
-    if type(sharedTbl) == "table" and type(sharedTbl.SauceConfig) == "table" then
-        GENV.SauceConfig = sharedTbl.SauceConfig
-    end
+local sharedTbl = rawget(_G, "shared")
+local resolvedConfig = GENV.SauceConfig
+if resolvedConfig == nil then
+    resolvedConfig = rawget(_G, "SauceConfig")
 end
-if not GENV.SauceConfig then
-    error("No config found. Run the table not just the loading string.", 2)
+if resolvedConfig == nil and type(sharedTbl) == "table" then
+    resolvedConfig = rawget(sharedTbl, "SauceConfig")
+end
+if type(resolvedConfig) ~= "table" then
+    resolvedConfig = {}
+end
+GENV.SauceConfig = resolvedConfig
+if type(sharedTbl) == "table" and rawget(sharedTbl, "SauceConfig") == nil then
+    sharedTbl.SauceConfig = resolvedConfig
 end
 if GENV.__SilentAimCleanup then
     pcall(GENV.__SilentAimCleanup)
