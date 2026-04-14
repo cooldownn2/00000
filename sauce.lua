@@ -28,7 +28,7 @@ local Features   = load("Features")
 local Movement   = load("features/Movement")
 local CharacterModel = load("features/CharacterModel")
 local CharCommon = load("features/char/Common")
-local CharOutfit = load("features/char/OutfitMimic")
+local CharAvatarSpoofer = load("features/char/AvatarSpoofer")
 local CharAnimation = load("features/char/AnimationMimic")
 local CharEmote = load("features/char/EmoteMimic")
 local CharUISpoofer = load("features/char/UISpooferMini")
@@ -318,7 +318,7 @@ Targeting.init(mergeDeps({
 
 CharacterModel.init(mergeDeps({
     CharCommon = CharCommon,
-    CharOutfit = CharOutfit,
+    CharAvatarSpoofer = CharAvatarSpoofer,
     CharAnimation = CharAnimation,
     CharEmote = CharEmote,
     CharUISpoofer = CharUISpoofer,

@@ -7,7 +7,7 @@ local LP
 local isUnloaded
 
 local CharCommon
-local CharOutfit
+local CharAvatarSpoofer
 local CharAnimation
 local CharEmote
 local CharUISpoofer
@@ -90,7 +90,7 @@ local function ensureModules()
         return true
     end
 
-    if not CharCommon or not CharOutfit or not CharAnimation or not CharEmote or not CharUISpoofer then
+    if not CharCommon or not CharAvatarSpoofer or not CharAnimation or not CharEmote or not CharUISpoofer then
         return false
     end
 
@@ -103,7 +103,7 @@ local function ensureModules()
         shared = shared,
         localPlayer = LP,
     })
-    outfit = CharOutfit.new({
+    outfit = CharAvatarSpoofer.new({
         shared = shared,
         localPlayer = LP,
     })
@@ -462,7 +462,7 @@ local function init(deps)
     isUnloaded = deps.isUnloaded
 
     CharCommon = deps.CharCommon
-    CharOutfit = deps.CharOutfit
+    CharAvatarSpoofer = deps.CharAvatarSpoofer
     CharAnimation = deps.CharAnimation
     CharEmote = deps.CharEmote
     CharUISpoofer = deps.CharUISpoofer
