@@ -1,4 +1,26 @@
 local ConfigBridge = {}
+local GETGENV_FN = rawget(_G, "getgenv")
+
+local function shouldWarnConfig()
+    if rawget(_G, "SauceWarnConfig") == true then return true end
+    if type(GETGENV_FN) == "function" then
+        local ok, env = pcall(GETGENV_FN)
+        if ok and type(env) == "table" then
+            return rawget(env, "SauceWarnConfig") == true
+        end
+    end
+    return false
+end
+
+local function pushConfigWarning(msg)
+    if not shouldWarnConfig() then return end
+    local bucket = rawget(_G, "__SauceConfigWarnings")
+    if type(bucket) ~= "table" then
+        bucket = {}
+        rawset(_G, "__SauceConfigWarnings", bucket)
+    end
+    bucket[#bucket + 1] = "[SauceConfig] " .. tostring(msg)
+end
 
 local function applyUserConfig(settings, userConfig)
     if type(settings) ~= "table" or type(userConfig) ~= "table" then return end
@@ -140,7 +162,7 @@ end
 
 local function validateSettings(Settings)
     local function vWarn(msg)
-        warn("[SauceConfig] " .. msg)
+        pushConfigWarning(msg)
     end
 
     local function expectType(path, value, expected)

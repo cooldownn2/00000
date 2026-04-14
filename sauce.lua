@@ -5,7 +5,18 @@ local RunService = game:GetService("RunService")
 local LP         = Players.LocalPlayer
 local Camera     = workspace.CurrentCamera
 
-local GENV = getgenv and getgenv() or _G
+local GETGENV_FN = rawget(_G, "getgenv")
+local GETRAWMETATABLE_FN = rawget(_G, "getrawmetatable")
+
+local function getRuntimeEnv()
+    if type(GETGENV_FN) == "function" then
+        local ok, env = pcall(GETGENV_FN)
+        if ok and type(env) == "table" then return env end
+    end
+    return _G
+end
+
+local GENV = getRuntimeEnv()
 if not GENV.SauceConfig then
     error("No config found. Run the table not just the loading string.", 2)
 end
@@ -118,9 +129,24 @@ screenGui.ZIndexBehavior   = Enum.ZIndexBehavior.Sibling
 screenGui.Parent           = game:GetService("CoreGui")
 
 local SHOOT_CMD   = gameStyle == "zeehood" and "GunFired" or "ShootGun"
-local mt          = getrawmetatable(game)
+local mt          = (type(GETRAWMETATABLE_FN) == "function" and GETRAWMETATABLE_FN(game)) or getmetatable(game)
 local oldNamecall = mt.__namecall
 local oldIndex    = mt.__index
+
+local DRAWING_LIB = rawget(GENV, "Drawing") or rawget(_G, "Drawing")
+
+local function makeNoopLine()
+    local line = {
+        Visible = false,
+        Color = Color3.fromRGB(0, 255, 255),
+        Thickness = 1,
+        Transparency = 1,
+        From = Vector2.new(0, 0),
+        To = Vector2.new(0, 0),
+    }
+    function line:Remove() end
+    return line
+end
 
 local function cfgEnabled(pathArr, defaultIfMissing)
     local v = Config.getPathValue(settings, pathArr)
@@ -164,7 +190,14 @@ local function getCamlockAimPosition(part)
     return Spread.getCamlockAimPosition(part)
 end
 
-local TargetLine = Drawing.new("Line")
+local TargetLine = nil
+if DRAWING_LIB and type(DRAWING_LIB.new) == "function" then
+    local ok, line = pcall(function() return DRAWING_LIB.new("Line") end)
+    if ok and line then TargetLine = line end
+end
+if not TargetLine then
+    TargetLine = makeNoopLine()
+end
 TargetLine.Visible      = false
 TargetLine.Color        = Settings.LineColor or Color3.fromRGB(0, 255, 255)
 TargetLine.Thickness    = 1

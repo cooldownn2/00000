@@ -2,6 +2,22 @@ local Spread = {}
 
 local RS = game:GetService("ReplicatedStorage")
 
+local GETGENV_FN = rawget(_G, "getgenv")
+local GETCONNECTIONS_FN = rawget(_G, "getconnections")
+local GETUPVALUES_FN = rawget(_G, "getupvalues")
+
+if type(GETGENV_FN) == "function" then
+    local ok, env = pcall(GETGENV_FN)
+    if ok and type(env) == "table" then
+        if type(GETCONNECTIONS_FN) ~= "function" then
+            GETCONNECTIONS_FN = rawget(env, "getconnections")
+        end
+        if type(GETUPVALUES_FN) ~= "function" then
+            GETUPVALUES_FN = rawget(env, "getupvalues")
+        end
+    end
+end
+
 local Settings, LP, ClosestPoint, gameStyle
 local patchedSpreadTables = {}
 local patchedOffsetWeapons = {}
@@ -160,14 +176,14 @@ end
 -- Searches an Activated connection's upvalues for the gun's spread table {X, Y, Z}.
 -- This is the u7 table used by the game's GunClient scripts.
 local function findSpreadTable(tool)
-    if type(getconnections) ~= "function" then return nil end
-    if type(getupvalues) ~= "function" then return nil end
-    local ok, conns = pcall(getconnections, tool.Activated)
+    if type(GETCONNECTIONS_FN) ~= "function" then return nil end
+    if type(GETUPVALUES_FN) ~= "function" then return nil end
+    local ok, conns = pcall(GETCONNECTIONS_FN, tool.Activated)
     if not ok then return nil end
     for _, conn in ipairs(conns) do
         local fn = conn.Function
         if not fn then continue end
-        local upOk, upvals = pcall(getupvalues, fn)
+        local upOk, upvals = pcall(GETUPVALUES_FN, fn)
         if not upOk then continue end
         for _, v in next, upvals do
             if type(v) == "table"

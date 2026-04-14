@@ -1,4 +1,26 @@
 local settings = {}
+local GETGENV_FN = rawget(_G, "getgenv")
+
+local function shouldWarnRegistry()
+    if rawget(_G, "SauceWarnRegistry") == true then return true end
+    if type(GETGENV_FN) == "function" then
+        local ok, env = pcall(GETGENV_FN)
+        if ok and type(env) == "table" then
+            return rawget(env, "SauceWarnRegistry") == true
+        end
+    end
+    return false
+end
+
+local function pushRegistryWarning(msg)
+    if not shouldWarnRegistry() then return end
+    local bucket = rawget(_G, "__SauceRegistryWarnings")
+    if type(bucket) ~= "table" then
+        bucket = {}
+        rawset(_G, "__SauceRegistryWarnings", bucket)
+    end
+    bucket[#bucket + 1] = "[Registry] " .. tostring(msg)
+end
 
 local SettingPaths = {
     TargetAllowed               = {"Main", "Enabled"},
@@ -129,7 +151,7 @@ local Settings = setmetatable({}, {
             setPathValue(settings, path, value)
             return
         end
-        warn("[Registry] Unknown setting key: '" .. tostring(key) .. "' — value was not applied.")
+        pushRegistryWarning("Unknown setting key: '" .. tostring(key) .. "' - value was not applied.")
     end,
 })
 

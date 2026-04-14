@@ -317,8 +317,8 @@ local function install()
         end)
     end
 
-    if (not indexOk or not namecallOk) and DEBUG_HOOK_WARN then
-        warn("[Hooks] partial install: __index=" .. tostring(indexOk) .. " __namecall=" .. tostring(namecallOk))
+    if (not indexOk or not namecallOk) and DEBUG_HOOK_WARN and State and State.Diagnostics then
+        State.Diagnostics.HooksPartialInstall = (State.Diagnostics.HooksPartialInstall or 0) + 1
     end
 end
 

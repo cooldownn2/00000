@@ -1,6 +1,22 @@
 
 local LP = game:GetService("Players").LocalPlayer
 
+local GETGENV_FN = rawget(_G, "getgenv")
+local GETCONNECTIONS_FN = rawget(_G, "getconnections")
+local GETGC_FN = rawget(_G, "getgc")
+
+if type(GETGENV_FN) == "function" then
+	local ok, env = pcall(GETGENV_FN)
+	if ok and type(env) == "table" then
+		if type(GETCONNECTIONS_FN) ~= "function" then
+			GETCONNECTIONS_FN = rawget(env, "getconnections")
+		end
+		if type(GETGC_FN) ~= "function" then
+			GETGC_FN = rawget(env, "getgc")
+		end
+	end
+end
+
 local Settings, isUnloaded
 local connections = {}
 local patchedDelay = {}
@@ -39,7 +55,8 @@ local function scanUpvalues(fn, target)
 end
 
 local function findViaConnections(tool, cd)
-	local ok, conns = pcall(getconnections, tool.Activated)
+	if type(GETCONNECTIONS_FN) ~= "function" then return nil, nil, nil end
+	local ok, conns = pcall(GETCONNECTIONS_FN, tool.Activated)
 	if not ok or not conns then return nil, nil, nil end
 	for _, conn in ipairs(conns) do
 		if conn.Function then
@@ -51,8 +68,8 @@ local function findViaConnections(tool, cd)
 end
 
 local function findViaGC(tool, cd)
-	if not getgc then return nil, nil, nil end
-	local ok, gc = pcall(getgc)
+	if type(GETGC_FN) ~= "function" then return nil, nil, nil end
+	local ok, gc = pcall(GETGC_FN)
 	if not ok or not gc then return nil, nil, nil end
 	for _, obj in ipairs(gc) do
 		if type(obj) ~= "function" then continue end
@@ -71,7 +88,8 @@ local function findViaGC(tool, cd)
 end
 
 local function findViaConfigTable(tool)
-	local ok, conns = pcall(getconnections, tool.Activated)
+	if type(GETCONNECTIONS_FN) ~= "function" then return nil end
+	local ok, conns = pcall(GETCONNECTIONS_FN, tool.Activated)
 	if not ok or not conns then return nil end
 	for _, conn in ipairs(conns) do
 		local fn = conn.Function
@@ -90,7 +108,8 @@ local function findViaConfigTable(tool)
 end
 
 local function findViaRangeConfigTable(tool)
-	local ok, conns = pcall(getconnections, tool.Activated)
+	if type(GETCONNECTIONS_FN) ~= "function" then return nil end
+	local ok, conns = pcall(GETCONNECTIONS_FN, tool.Activated)
 	if not ok or not conns then return nil end
 	for _, conn in ipairs(conns) do
 		local fn = conn.Function
