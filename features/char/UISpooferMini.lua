@@ -77,6 +77,13 @@ local function normalizeTarget(raw)
     return t
 end
 
+local function hasResolvedName(value)
+    if type(value) ~= "string" then return false end
+    local t = trimString(value)
+    if t == "" then return false end
+    return t:match("^%d+$") == nil
+end
+
 local function isLikelyPeopleContext(inst)
     local cur, depth = inst, 0
     while cur and depth < 25 do
@@ -269,6 +276,8 @@ function UISpooferMini.new(localPlayer)
     self.targetDisplayName = nil
     self.targetHeadshot = nil
     self.targetAvatarThumb = nil
+    self.targetProfileResolved = false
+    self.targetRevision = 0
 
     self.identitySpoofOriginalCaptured = false
     self.identitySpoofOriginalUserId = nil
@@ -443,6 +452,9 @@ function UISpooferMini:ensureLocalIdentitySpoof()
 
     local lp = self:lp()
     local targetUid = tonumber(self.targetUserId)
+    if not hasResolvedName(self.targetName) or not hasResolvedName(self.targetDisplayName) then
+        return false
+    end
     local targetUsername = tostring(self.targetName or targetUid or "")
     local targetDisplayName = tostring(self.targetDisplayName or targetUsername)
     if not lp or not targetUid then return false end
@@ -558,8 +570,12 @@ function UISpooferMini:updateRowPrimaryText(row)
     local lbl = row and self.rowPrimaryLabelByRow[row] or nil
     if not lbl or not lbl.Parent or not TEXT_CLASS_SET[lbl.ClassName] then return end
 
-    local tName = self.targetName or tostring(self.targetUserId or "")
-    local tDisplay = self.targetDisplayName or tName
+    if not hasResolvedName(self.targetName) or not hasResolvedName(self.targetDisplayName) then
+        return
+    end
+
+    local tName = self.targetName
+    local tDisplay = self.targetDisplayName
 
     self:captureLabelOriginal(lbl)
     if not self:isLeaderboardHoverEligibleCached(row) then
@@ -608,8 +624,9 @@ end
 function UISpooferMini:applyRowVisuals(row)
     if not row then return end
 
-    local tName = self.targetName or tostring(self.targetUserId or "")
-    local tDisplay = self.targetDisplayName or tName
+    local hasNames = hasResolvedName(self.targetName) and hasResolvedName(self.targetDisplayName)
+    local tName = hasNames and self.targetName or nil
+    local tDisplay = hasNames and self.targetDisplayName or nil
 
     local dn = row:FindFirstChild("DisplayNameLabel", true) or row:FindFirstChild("DisplayName", true)
     local un = row:FindFirstChild("UserNameLabel", true)
@@ -621,7 +638,7 @@ function UISpooferMini:applyRowVisuals(row)
 
     local isLeaderboard = self:isLeaderboardHoverEligibleCached(row)
 
-    if isLeaderboard then
+    if hasNames and isLeaderboard then
         local primary, secondary = nil, nil
         local dnOk = dn and TEXT_CLASS_SET[dn.ClassName]
         local unOk = un and TEXT_CLASS_SET[un.ClassName]
@@ -656,7 +673,7 @@ function UISpooferMini:applyRowVisuals(row)
                 pcall(function() secondary.Text = "" end)
             end
         end
-    else
+    elseif hasNames then
         if dn and TEXT_CLASS_SET[dn.ClassName] then
             self:captureLabelOriginal(dn)
             pcall(function() dn.Text = tDisplay end)
@@ -1009,27 +1026,31 @@ function UISpooferMini:resolveUserId(target)
 end
 
 function UISpooferMini:refreshProfile(userId)
-    self.targetName = tostring(userId)
-    self.targetDisplayName = nil
-    self.targetHeadshot = nil
-    self.targetAvatarThumb = nil
+    local resolvedName = nil
+    local resolvedDisplayName = nil
+    local headshot = nil
+    local avatarThumb = nil
 
     local ok1, inGame = pcall(function() return Players:GetPlayerByUserId(userId) end)
     if ok1 and inGame then
         local pn = tostring(inGame.Name or "")
         local pd = tostring(inGame.DisplayName or "")
-        if pn ~= "" then self.targetName = pn end
-        if pd ~= "" then self.targetDisplayName = pd end
+        if pn ~= "" then resolvedName = pn end
+        if pd ~= "" then resolvedDisplayName = pd end
     end
 
-    if self.targetName == tostring(userId) then
-        local ok2, name = pcall(function() return Players:GetNameFromUserIdAsync(userId) end)
-        if ok2 and type(name) == "string" and name ~= "" then
-            self.targetName = name
+    if not hasResolvedName(resolvedName) then
+        for attempt = 1, 3 do
+            local ok2, name = pcall(function() return Players:GetNameFromUserIdAsync(userId) end)
+            if ok2 and type(name) == "string" and name ~= "" then
+                resolvedName = name
+                break
+            end
+            if attempt < 3 then task.wait(0.07) end
         end
     end
 
-    if not self.targetDisplayName then
+    if not hasResolvedName(resolvedDisplayName) then
         local ok3, info = pcall(function() return UserService:GetUserInfosByUserIdsAsync({ userId }) end)
         if ok3 and type(info) == "table" then
             local matched = nil
@@ -1043,23 +1064,35 @@ function UISpooferMini:refreshProfile(userId)
             if type(matched) == "table" then
                 local dn = matched.DisplayName
                 if type(dn) == "string" and dn ~= "" then
-                    self.targetDisplayName = dn
+                    resolvedDisplayName = dn
+                end
+                local un = matched.Username
+                if not hasResolvedName(resolvedName) and type(un) == "string" and un ~= "" then
+                    resolvedName = un
                 end
             end
         end
     end
 
-    self.targetDisplayName = self.targetDisplayName or self.targetName
+    if hasResolvedName(resolvedName) and not hasResolvedName(resolvedDisplayName) then
+        resolvedDisplayName = resolvedName
+    end
 
     local ok4, hs = pcall(function()
         return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
     end)
-    self.targetHeadshot = ok4 and hs or nil
+    headshot = ok4 and hs or nil
 
     local ok5, av = pcall(function()
         return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.AvatarThumbnail, Enum.ThumbnailSize.Size420x420)
     end)
-    self.targetAvatarThumb = ok5 and av or nil
+    avatarThumb = ok5 and av or nil
+
+    self.targetName = hasResolvedName(resolvedName) and resolvedName or nil
+    self.targetDisplayName = hasResolvedName(resolvedDisplayName) and resolvedDisplayName or nil
+    self.targetProfileResolved = hasResolvedName(self.targetName) and hasResolvedName(self.targetDisplayName)
+    self.targetHeadshot = headshot
+    self.targetAvatarThumb = avatarThumb
 end
 
 function UISpooferMini:setTarget(target)
@@ -1067,6 +1100,8 @@ function UISpooferMini:setTarget(target)
     if not uid then return false end
 
     self.targetInput = target
+    self.targetRevision = self.targetRevision + 1
+    local targetRevision = self.targetRevision
 
     local wasEnabled = self.enabled == true
     local isSwitching = self.targetUserId ~= nil and tonumber(self.targetUserId) ~= tonumber(uid)
@@ -1076,6 +1111,9 @@ function UISpooferMini:setTarget(target)
     end
 
     self.targetUserId = uid
+    self.targetName = nil
+    self.targetDisplayName = nil
+    self.targetProfileResolved = false
     self:refreshProfile(uid)
 
     if wasEnabled and not self.enabled then
@@ -1093,8 +1131,21 @@ function UISpooferMini:setTarget(target)
         self.nextFastSyncKickAt = 0
         self.dirty = true
         self:requestSync()
-        for _, d in ipairs({ 0.07, 0.18, 0.36 }) do
+        for _, d in ipairs({ 0.07, 0.18, 0.36, 0.72 }) do
             task.delay(d, function()
+                if not self.enabled then return end
+                if self.targetRevision ~= targetRevision then return end
+                if tonumber(self.targetUserId) ~= tonumber(uid) then return end
+
+                if not self.targetProfileResolved then
+                    self:refreshProfile(uid)
+                    if shouldSkipIdentitySpoof() then
+                        self:restoreLocalIdentitySpoof()
+                    else
+                        self:ensureLocalIdentitySpoof()
+                    end
+                end
+
                 if self.enabled and tonumber(self.targetUserId) == tonumber(uid) then
                     self.lastSyncAt = 0
                     self.dirty = true
@@ -1190,6 +1241,8 @@ function UISpooferMini:cleanup()
     self.targetDisplayName = nil
     self.targetHeadshot = nil
     self.targetAvatarThumb = nil
+    self.targetProfileResolved = false
+    self.targetRevision = self.targetRevision + 1
 
     self.identitySpoofOriginalCaptured = false
     self.identitySpoofOriginalUserId = nil
