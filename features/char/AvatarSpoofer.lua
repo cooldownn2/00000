@@ -65,7 +65,6 @@ function AvatarSpoofer.new(deps)
     self.localPlayer = deps.localPlayer or Players.LocalPlayer
 
     self.active = true
-    self.applySerial = 0
 
     self.targetInput = nil
     self.targetUserId = nil
@@ -77,10 +76,6 @@ function AvatarSpoofer.new(deps)
     self.snapshots = setmetatable({}, { __mode = "k" })
 
     return self
-end
-
-function AvatarSpoofer:isApplyStillCurrent(token)
-    return self.active and token == self.applySerial
 end
 
 function AvatarSpoofer:fetchDesc(userId)
@@ -111,9 +106,10 @@ function AvatarSpoofer:resolveUserToId(userInput)
 
     local username = text:gsub("^@", "")
     if username == "" then return nil end
+    local usernameLower = string.lower(username)
 
     for _, player in ipairs(Players:GetPlayers()) do
-        if string.lower(player.Name) == string.lower(username) then
+        if string.lower(player.Name) == usernameLower then
             return player.UserId
         end
     end
@@ -272,7 +268,6 @@ function AvatarSpoofer:setEnabled(enabled)
     if self.active == enabled then return end
 
     self.active = enabled
-    self.applySerial = self.applySerial + 1
 
     local char = self.localPlayer and self.localPlayer.Character
 
@@ -293,7 +288,6 @@ end
 
 function AvatarSpoofer:cleanup()
     self.active = false
-    self.applySerial = self.applySerial + 1
 
     local char = self.localPlayer and self.localPlayer.Character
     self:restoreOriginalDescription(char)

@@ -18,6 +18,7 @@ local uiEnabledState = false
 local uiTargetState = ""
 local lastUpdate = 0
 local UPDATE_INTERVAL = 0.1
+local uiIdentityGuardState = nil
 
 local ENV_STATE_KEY = "__SauceCharacterModelState"
 local GETGENV_FN = rawget(_G, "getgenv")
@@ -72,6 +73,12 @@ end
 
 local function applyUiIdentityGuard()
     local skipIdentitySpoof = enabledState == true
+
+    if uiIdentityGuardState == skipIdentitySpoof then
+        return
+    end
+    uiIdentityGuardState = skipIdentitySpoof
+
     rawset(_G, "SauceDisableUISpooferIdentity", skipIdentitySpoof)
 
     if type(GETGENV_FN) == "function" then
@@ -339,13 +346,8 @@ local function cleanup()
     if avatar then avatar:cleanup() end
     if uiSpoofer then uiSpoofer:cleanup() end
 
-    rawset(_G, "SauceDisableUISpooferIdentity", false)
-    if type(GETGENV_FN) == "function" then
-        local ok, env = pcall(GETGENV_FN)
-        if ok and type(env) == "table" then
-            rawset(env, "SauceDisableUISpooferIdentity", false)
-        end
-    end
+    uiIdentityGuardState = nil
+    applyUiIdentityGuard()
 
     avatar = nil
     uiSpoofer = nil
