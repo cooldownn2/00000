@@ -1,11 +1,4 @@
-local GETGENV_FN = rawget(_G, "getgenv")
-local DrawingLib = rawget(_G, "Drawing")
-if not DrawingLib and type(GETGENV_FN) == "function" then
-    local ok, env = pcall(GETGENV_FN)
-    if ok and type(env) == "table" then
-        DrawingLib = rawget(env, "Drawing")
-    end
-end
+local DrawingLib = rawget(_G, "Drawing") or Drawing
 
 -- Localize frequently called globals — avoids _ENV table lookup every frame
 local exp   = math.exp
