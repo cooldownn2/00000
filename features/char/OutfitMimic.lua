@@ -345,6 +345,7 @@ function OutfitMimic.new(deps)
 
     self.active = true
     self.applySerial = 0
+    self.targetInput = nil
     self.targetUserId = nil
     self.currentUserId = nil
 
@@ -926,6 +927,8 @@ end
 
 function OutfitMimic:setTarget(target)
     local uid = nil
+    self.targetInput = target
+
     if type(target) == "number" then
         uid = math.floor(target)
     else
@@ -933,6 +936,9 @@ function OutfitMimic:setTarget(target)
     end
 
     if not uid then return false end
+    if self.currentUserId and uid ~= self.currentUserId then
+        self.currentUserId = nil
+    end
     if uid == self.currentUserId and self.localPlayer.Character and self.localPlayer.Character.Parent then
         return true
     end
@@ -941,7 +947,16 @@ function OutfitMimic:setTarget(target)
 end
 
 function OutfitMimic:reapply()
-    local uid = self.currentUserId or self.targetUserId
+    local uid = nil
+    if self.targetInput ~= nil then
+        if type(self.targetInput) == "number" then
+            uid = math.floor(self.targetInput)
+        else
+            uid = self.shared:resolveUserToId(self.targetInput)
+        end
+    end
+
+    uid = uid or self.currentUserId or self.targetUserId
     if not uid then return false end
     return self:apply(uid)
 end
@@ -951,7 +966,16 @@ function OutfitMimic:onCharacterAdded(char)
 
     self:disconnectAppearanceHooks()
 
-    local uid = self.currentUserId or self.targetUserId
+    local uid = nil
+    if self.targetInput ~= nil then
+        if type(self.targetInput) == "number" then
+            uid = math.floor(self.targetInput)
+        else
+            uid = self.shared:resolveUserToId(self.targetInput)
+        end
+    end
+
+    uid = uid or self.currentUserId or self.targetUserId
     if not uid then return end
 
     local hum = char:WaitForChild("Humanoid", 10)
@@ -981,6 +1005,7 @@ end
 function OutfitMimic:cleanup()
     self.active = false
     self.applySerial = self.applySerial + 1
+    self.targetInput = nil
     self.targetUserId = nil
     self.currentUserId = nil
     self:disconnectAppearanceHooks()
