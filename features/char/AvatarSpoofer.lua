@@ -5,7 +5,6 @@ AvatarSpoofer.__index = AvatarSpoofer
 
 local DESC_TTL_SECONDS = 60
 local INITIAL_APPLY_DELAY = 0.50
-local RESPAWN_RETRY_DELAYS = { 0.2, 0.45, 0.8 }
 
 local SCALE_FIELDS = {
     "HeightScale", "WidthScale", "DepthScale",
@@ -156,8 +155,7 @@ function AvatarSpoofer:restoreOriginalDescription(character)
     return ok
 end
 
-function AvatarSpoofer:applyAppearance(userId, character, applyToken)
-    if applyToken and not self:isApplyStillCurrent(applyToken) then return false end
+function AvatarSpoofer:applyAppearance(userId, character)
     if not character or not character.Parent then return false end
 
     local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -181,10 +179,9 @@ function AvatarSpoofer:applyAppearance(userId, character, applyToken)
     stripAppearance(character)
 
     local applied = applyDesc(humanoid, desc)
-    applyDesc(humanoid, desc)
 
     task.delay(0.12, function()
-        if applyToken and not self:isApplyStillCurrent(applyToken) then return end
+        if not self.active then return end
         if not character.Parent then return end
 
         local hum2 = character:FindFirstChildOfClass("Humanoid")
@@ -209,9 +206,6 @@ function AvatarSpoofer:apply(userId)
     local uid = tonumber(userId)
     if not uid then return false end
 
-    self.applySerial = self.applySerial + 1
-    local applyToken = self.applySerial
-
     self.targetUserId = uid
     self.currentUserId = uid
 
@@ -219,9 +213,9 @@ function AvatarSpoofer:apply(userId)
         self:fetchDesc(uid)
         local char = self.localPlayer and self.localPlayer.Character
         if not char then return end
-        if not self:isApplyStillCurrent(applyToken) then return end
+        if not self.active then return end
         if self.targetUserId ~= uid then return end
-        self:applyAppearance(uid, char, applyToken)
+        self:applyAppearance(uid, char)
     end)
 
     return true
@@ -257,9 +251,6 @@ function AvatarSpoofer:onCharacterAdded(character)
     uid = uid or self.currentUserId or self.targetUserId
     if not uid then return end
 
-    self.applySerial = self.applySerial + 1
-    local applyToken = self.applySerial
-
     self.lastAppliedCharacter = nil
 
     task.spawn(function()
@@ -269,26 +260,10 @@ function AvatarSpoofer:onCharacterAdded(character)
         self:fetchDesc(uid)
         task.wait(INITIAL_APPLY_DELAY)
 
-        if not self:isApplyStillCurrent(applyToken) then return end
+        if not self.active then return end
         if not character.Parent then return end
-
-        if self:applyAppearance(uid, character, applyToken) then
-            return
-        end
-
-        for _, delayTime in ipairs(RESPAWN_RETRY_DELAYS) do
-            if not self:isApplyStillCurrent(applyToken) then return end
-            if not character.Parent then return end
-
-            task.wait(delayTime)
-
-            if not self:isApplyStillCurrent(applyToken) then return end
-            if not character.Parent then return end
-
-            if self:applyAppearance(uid, character, applyToken) then
-                return
-            end
-        end
+        if self.targetUserId ~= uid then return end
+        self:applyAppearance(uid, character)
     end)
 end
 

@@ -33,6 +33,17 @@ local ESCAPE_MENU_CONTEXT_KEYWORDS = {
 
 local GETGENV_FN = rawget(_G, "getgenv")
 
+local function shouldSkipIdentitySpoof()
+    if rawget(_G, "SauceDisableUISpooferIdentity") == true then return true end
+    if type(GETGENV_FN) == "function" then
+        local ok, env = pcall(GETGENV_FN)
+        if ok and type(env) == "table" then
+            return rawget(env, "SauceDisableUISpooferIdentity") == true
+        end
+    end
+    return false
+end
+
 local function getExploitFunction(name)
     if type(name) ~= "string" or name == "" then return nil end
 
@@ -421,6 +432,13 @@ function UISpooferMini:setPropertyCompat(inst, prop, value)
 end
 
 function UISpooferMini:ensureLocalIdentitySpoof()
+    if shouldSkipIdentitySpoof() then
+        if self.identitySpoofApplied then
+            self:restoreLocalIdentitySpoof()
+        end
+        return false
+    end
+
     if not self.enabled or not self.targetUserId then return false end
 
     local lp = self:lp()
@@ -886,7 +904,11 @@ function UISpooferMini:setEnabled(enabled)
 
     self:clearRows()
     if self.targetUserId then self:syncPeopleRows(true) end
-    self:ensureLocalIdentitySpoof()
+    if shouldSkipIdentitySpoof() then
+        self:restoreLocalIdentitySpoof()
+    else
+        self:ensureLocalIdentitySpoof()
+    end
 
     local function onDescAdded(inst)
         if not self.enabled then return end
@@ -947,7 +969,11 @@ function UISpooferMini:setEnabled(enabled)
             local now = os.clock()
             if now >= (self.nextIdentitySpoofReapplyAt or 0) then
                 self.nextIdentitySpoofReapplyAt = now + IDENTITY_SPOOF_REAPPLY_INTERVAL
-                self:ensureLocalIdentitySpoof()
+                if shouldSkipIdentitySpoof() then
+                    self:restoreLocalIdentitySpoof()
+                else
+                    self:ensureLocalIdentitySpoof()
+                end
             end
 
             local interval = (now < (self.fastSyncUntil or 0)) and FAST_SYNC_INTERVAL or SYNC_INTERVAL
@@ -1057,7 +1083,11 @@ function UISpooferMini:setTarget(target)
     end
 
     if self.enabled then
-        self:ensureLocalIdentitySpoof()
+        if shouldSkipIdentitySpoof() then
+            self:restoreLocalIdentitySpoof()
+        else
+            self:ensureLocalIdentitySpoof()
+        end
         self.lastSyncAt = 0
         self.fastSyncUntil = os.clock() + MENU_FAST_SYNC_DURATION
         self.nextFastSyncKickAt = 0

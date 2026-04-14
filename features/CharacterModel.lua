@@ -70,6 +70,18 @@ local function normalizeTarget(raw)
     return text
 end
 
+local function applyUiIdentityGuard()
+    local skipIdentitySpoof = enabledState == true
+    rawset(_G, "SauceDisableUISpooferIdentity", skipIdentitySpoof)
+
+    if type(GETGENV_FN) == "function" then
+        local ok, env = pcall(GETGENV_FN)
+        if ok and type(env) == "table" then
+            rawset(env, "SauceDisableUISpooferIdentity", skipIdentitySpoof)
+        end
+    end
+end
+
 local function ensureModules()
     if avatar and uiSpoofer then
         return true
@@ -96,6 +108,7 @@ local function setEnabled(enabled)
     if not ensureModules() then return end
 
     avatar:setEnabled(enabled)
+    applyUiIdentityGuard()
 end
 
 local function setUISpooferEnabled(enabled)
@@ -259,6 +272,7 @@ local function update()
 
     local enabled = getSpooferEnabled()
     setEnabled(enabled)
+    applyUiIdentityGuard()
 
     if enabled then
         local target = getSpooferUserTarget()
@@ -324,6 +338,14 @@ local function cleanup()
 
     if avatar then avatar:cleanup() end
     if uiSpoofer then uiSpoofer:cleanup() end
+
+    rawset(_G, "SauceDisableUISpooferIdentity", false)
+    if type(GETGENV_FN) == "function" then
+        local ok, env = pcall(GETGENV_FN)
+        if ok and type(env) == "table" then
+            rawset(env, "SauceDisableUISpooferIdentity", false)
+        end
+    end
 
     avatar = nil
     uiSpoofer = nil
