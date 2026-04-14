@@ -441,17 +441,11 @@ function UISpooferMini:setPropertyCompat(inst, prop, value)
 end
 
 function UISpooferMini:ensureLocalIdentitySpoof()
-    if shouldSkipIdentitySpoof() then
-        if self.identitySpoofApplied then
-            self:restoreLocalIdentitySpoof()
-        end
-        return false
-    end
-
     if not self.enabled or not self.targetUserId then return false end
 
     local lp = self:lp()
     local targetUid = tonumber(self.targetUserId)
+    local skipAppearanceSpoof = shouldSkipIdentitySpoof()
     if not hasResolvedName(self.targetName) or not hasResolvedName(self.targetDisplayName) then
         return false
     end
@@ -484,8 +478,20 @@ function UISpooferMini:ensureLocalIdentitySpoof()
 
     local dnWritten = self:setPropertyCompat(lp, "DisplayName", targetDisplayName)
     local nWritten = self:setPropertyCompat(lp, "Name", targetUsername)
-    local apWritten = self:setPropertyCompat(lp, "CharacterAppearanceId", targetUid)
-    local uidWritten = self:setPropertyCompat(lp, "UserId", targetUid)
+    local apWritten = true
+    local uidWritten = true
+
+    if skipAppearanceSpoof then
+        if self.identitySpoofOriginalUserId ~= nil then
+            self:setPropertyCompat(lp, "UserId", self.identitySpoofOriginalUserId)
+        end
+        if self.identitySpoofOriginalAppearanceId ~= nil then
+            self:setPropertyCompat(lp, "CharacterAppearanceId", self.identitySpoofOriginalAppearanceId)
+        end
+    else
+        apWritten = self:setPropertyCompat(lp, "CharacterAppearanceId", targetUid)
+        uidWritten = self:setPropertyCompat(lp, "UserId", targetUid)
+    end
 
     local liveUid, okLiveUid = self:getPropertyCompat(lp, "UserId")
     local liveAp, okLiveAp = self:getPropertyCompat(lp, "CharacterAppearanceId")
@@ -496,21 +502,32 @@ function UISpooferMini:ensureLocalIdentitySpoof()
     local apNum = tonumber(liveAp)
     local canRead = okLiveUid and okLiveAp
 
-    local applied = false
-    if canRead then
-        applied = uidNum and apNum and math.floor(uidNum) == targetUid and math.floor(apNum) == targetUid
+    local coreApplied = false
+    if skipAppearanceSpoof then
+        coreApplied = true
+    elseif canRead then
+        coreApplied = uidNum and apNum and math.floor(uidNum) == targetUid and math.floor(apNum) == targetUid
     else
-        applied = uidWritten and apWritten
+        coreApplied = uidWritten and apWritten
     end
 
     local nameApplied = (okLiveName and tostring(liveName or "") == targetUsername) or nWritten
     local dnApplied = (okLiveDN and tostring(liveDN or "") == targetDisplayName) or dnWritten
 
-    if not applied or not nameApplied or not dnApplied then
+    if not coreApplied or not nameApplied or not dnApplied then
         self:setPropertyCompat(lp, "Name", targetUsername)
         self:setPropertyCompat(lp, "DisplayName", targetDisplayName)
-        self:setPropertyCompat(lp, "UserId", targetUid)
-        self:setPropertyCompat(lp, "CharacterAppearanceId", targetUid)
+        if skipAppearanceSpoof then
+            if self.identitySpoofOriginalUserId ~= nil then
+                self:setPropertyCompat(lp, "UserId", self.identitySpoofOriginalUserId)
+            end
+            if self.identitySpoofOriginalAppearanceId ~= nil then
+                self:setPropertyCompat(lp, "CharacterAppearanceId", self.identitySpoofOriginalAppearanceId)
+            end
+        else
+            self:setPropertyCompat(lp, "UserId", targetUid)
+            self:setPropertyCompat(lp, "CharacterAppearanceId", targetUid)
+        end
 
         liveUid, okLiveUid = self:getPropertyCompat(lp, "UserId")
         liveAp, okLiveAp = self:getPropertyCompat(lp, "CharacterAppearanceId")
@@ -520,14 +537,16 @@ function UISpooferMini:ensureLocalIdentitySpoof()
         uidNum = tonumber(liveUid)
         apNum = tonumber(liveAp)
         canRead = okLiveUid and okLiveAp
-        if canRead then
-            applied = uidNum and apNum and math.floor(uidNum) == targetUid and math.floor(apNum) == targetUid
+        if skipAppearanceSpoof then
+            coreApplied = true
+        elseif canRead then
+            coreApplied = uidNum and apNum and math.floor(uidNum) == targetUid and math.floor(apNum) == targetUid
         end
         if okLiveName then nameApplied = tostring(liveName or "") == targetUsername end
         if okLiveDN then dnApplied = tostring(liveDN or "") == targetDisplayName end
     end
 
-    if applied then
+    if coreApplied and nameApplied and dnApplied then
         self.identitySpoofApplied = true
         self.identitySpoofTargetUserId = targetUid
     else
@@ -537,7 +556,7 @@ function UISpooferMini:ensureLocalIdentitySpoof()
 
     self.identitySpoofNameApplied = nameApplied == true
     self.identitySpoofDisplayNameApplied = dnApplied == true
-    return applied
+    return self.identitySpoofApplied
 end
 
 function UISpooferMini:restoreLocalIdentitySpoof()
@@ -723,7 +742,7 @@ function UISpooferMini:discoverPeopleSourceRows()
     addToken(self.localIdentitySeedDisplayName)
     addToken(self.identitySpoofOriginalName)
     addToken(self.identitySpoofOriginalDisplayName)
-    if not self.identitySpoofApplied then
+    if not self.identitySpoofNameApplied and not self.identitySpoofDisplayNameApplied then
         addToken(lp.Name)
         addToken(lp.DisplayName)
     end
@@ -921,11 +940,7 @@ function UISpooferMini:setEnabled(enabled)
 
     self:clearRows()
     if self.targetUserId then self:syncPeopleRows(true) end
-    if shouldSkipIdentitySpoof() then
-        self:restoreLocalIdentitySpoof()
-    else
-        self:ensureLocalIdentitySpoof()
-    end
+    self:ensureLocalIdentitySpoof()
 
     local function onDescAdded(inst)
         if not self.enabled then return end
@@ -986,11 +1001,7 @@ function UISpooferMini:setEnabled(enabled)
             local now = os.clock()
             if now >= (self.nextIdentitySpoofReapplyAt or 0) then
                 self.nextIdentitySpoofReapplyAt = now + IDENTITY_SPOOF_REAPPLY_INTERVAL
-                if shouldSkipIdentitySpoof() then
-                    self:restoreLocalIdentitySpoof()
-                else
-                    self:ensureLocalIdentitySpoof()
-                end
+                self:ensureLocalIdentitySpoof()
             end
 
             local interval = (now < (self.fastSyncUntil or 0)) and FAST_SYNC_INTERVAL or SYNC_INTERVAL
@@ -1121,11 +1132,7 @@ function UISpooferMini:setTarget(target)
     end
 
     if self.enabled then
-        if shouldSkipIdentitySpoof() then
-            self:restoreLocalIdentitySpoof()
-        else
-            self:ensureLocalIdentitySpoof()
-        end
+        self:ensureLocalIdentitySpoof()
         self.lastSyncAt = 0
         self.fastSyncUntil = os.clock() + MENU_FAST_SYNC_DURATION
         self.nextFastSyncKickAt = 0
@@ -1139,11 +1146,7 @@ function UISpooferMini:setTarget(target)
 
                 if not self.targetProfileResolved then
                     self:refreshProfile(uid)
-                    if shouldSkipIdentitySpoof() then
-                        self:restoreLocalIdentitySpoof()
-                    else
-                        self:ensureLocalIdentitySpoof()
-                    end
+                    self:ensureLocalIdentitySpoof()
                 end
 
                 if self.enabled and tonumber(self.targetUserId) == tonumber(uid) then
