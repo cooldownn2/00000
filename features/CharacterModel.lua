@@ -18,10 +18,6 @@ local uiEnabledState = false
 local uiTargetState = ""
 local lastUpdate = 0
 local UPDATE_INTERVAL = 0.1
-local switchApplyToken = 0
-
-local TARGET_STABILIZE_REAPPLY_DELAY = 0.72
-local RESPAWN_REAPPLY_DELAY = 1.02
 
 local ENV_STATE_KEY = "__SauceCharacterModelState"
 local GETGENV_FN = rawget(_G, "getgenv")
@@ -118,21 +114,7 @@ local function switchTargetSafe(target)
     if not enabledState then return false end
     if target == nil or target == "" then return false end
 
-    switchApplyToken = switchApplyToken + 1
-    local applyToken = switchApplyToken
-
-    local function canApplyForToken()
-        return enabledState and applyToken == switchApplyToken and target == targetState
-    end
-
     local avatarOk = avatar:setTarget(target)
-
-    -- Stabilization pass: one delayed reapply to mirror the old "char twice" safety.
-    task.delay(TARGET_STABILIZE_REAPPLY_DELAY, function()
-        if not canApplyForToken() then return end
-        avatar:reapply()
-    end)
-
     return avatarOk
 end
 
@@ -321,9 +303,6 @@ local function onCharacterAdded(char)
     if not ensureModules() then return end
     if not getApplyRespawnEnabled() then return end
 
-    switchApplyToken = switchApplyToken + 1
-    local applyToken = switchApplyToken
-
     local configuredTarget = getSpooferUserTarget()
     local target = normalizeTarget(targetState ~= "" and targetState or configuredTarget)
     if target == "" then
@@ -335,13 +314,6 @@ local function onCharacterAdded(char)
     end
 
     avatar:onCharacterAdded(char)
-
-    task.delay(RESPAWN_REAPPLY_DELAY, function()
-        if not (enabledState and applyToken == switchApplyToken and target == targetState and char and char.Parent) then
-            return
-        end
-        avatar:reapply()
-    end)
 end
 
 local function cleanup()
@@ -349,7 +321,6 @@ local function cleanup()
     targetState = ""
     uiEnabledState = false
     uiTargetState = ""
-    switchApplyToken = switchApplyToken + 1
 
     if avatar then avatar:cleanup() end
     if uiSpoofer then uiSpoofer:cleanup() end
