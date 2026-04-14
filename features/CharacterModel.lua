@@ -18,10 +18,19 @@ local uiEnabledState = false
 local uiTargetState = ""
 local lastUpdate = 0
 local UPDATE_INTERVAL = 0.1
-local uiIdentityGuardState = nil
 
 local ENV_STATE_KEY = "__SauceCharacterModelState"
 local GETGENV_FN = rawget(_G, "getgenv")
+local LEGACY_ENV_KEYS = {
+    "OutfitCopy",
+    "SwitchTargetSafe",
+    "SetTargetSafe",
+    "CopySetUserId",
+    "CopyReapplyOutfit",
+    "CopyOutfitCleanup",
+    "FullComboCleanup",
+    "CloneFullCleanup",
+}
 
 local function getSpooferEnabled()
     if not Settings then return false end
@@ -71,21 +80,9 @@ local function normalizeTarget(raw)
     return text
 end
 
-local function applyUiIdentityGuard()
-    local skipIdentitySpoof = enabledState == true
-
-    if uiIdentityGuardState == skipIdentitySpoof then
-        return
-    end
-    uiIdentityGuardState = skipIdentitySpoof
-
-    rawset(_G, "SauceDisableUISpooferIdentity", skipIdentitySpoof)
-
-    if type(GETGENV_FN) == "function" then
-        local ok, env = pcall(GETGENV_FN)
-        if ok and type(env) == "table" then
-            rawset(env, "SauceDisableUISpooferIdentity", skipIdentitySpoof)
-        end
+local function clearLegacyEnvApi(env)
+    for i = 1, #LEGACY_ENV_KEYS do
+        env[LEGACY_ENV_KEYS[i]] = nil
     end
 end
 
@@ -115,7 +112,6 @@ local function setEnabled(enabled)
     if not ensureModules() then return end
 
     avatar:setEnabled(enabled)
-    applyUiIdentityGuard()
 end
 
 local function setUISpooferEnabled(enabled)
@@ -179,6 +175,7 @@ local function installEnvApi()
     }
 
     env[ENV_STATE_KEY] = state
+    clearLegacyEnvApi(env)
 
     local function setTargetAny(target)
         if type(target) == "number" then
@@ -193,13 +190,14 @@ local function installEnvApi()
         end
         setEnabled(true)
 
-        return switchTargetSafe(targetState)
-    end
+        if uiEnabledState then
+            if Settings then
+                Settings.UISpooferUser = targetState
+            end
+            switchUITargetSafe(targetState)
+        end
 
-    local function setAvatarOnly(target)
-        if not setTargetAny(target) then return false end
-        if not ensureModules() then return false end
-        return avatar:setTarget(targetState)
+        return switchTargetSafe(targetState)
     end
 
     local function setUiTargetAny(target)
@@ -215,6 +213,12 @@ local function installEnvApi()
         end
 
         setUISpooferEnabled(true)
+        if enabledState then
+            if Settings then
+                Settings.AvatarSpooferUser = normalized
+            end
+            switchTargetSafe(normalized)
+        end
         return switchUITargetSafe(normalized)
     end
 
@@ -239,15 +243,6 @@ local function installEnvApi()
         Cleanup = fullCleanup,
     }
 
-    -- Keep legacy alias for existing scripts while backing it with AvatarSpoofer.
-    env.OutfitCopy = {
-        SetTarget = setAvatarOnly,
-        SetTargetUserId = setAvatarOnly,
-        SetTargetUsername = setAvatarOnly,
-        Reapply = function() return avatar and avatar:reapply() or false end,
-        Cleanup = fullCleanup,
-    }
-
     env.UISpoofer = {
         SetTarget = setUiTargetAny,
         SetUser = setUiTargetAny,
@@ -259,15 +254,6 @@ local function installEnvApi()
         Info = function() return uiSpoofer and uiSpoofer:getTargetInfo() or nil end,
         Cleanup = fullCleanup,
     }
-
-    env.SwitchTargetSafe = setTargetAny
-    env.SetTargetSafe = setTargetAny
-
-    env.CopySetUserId = setAvatarOnly
-    env.CopyReapplyOutfit = function() return avatar and avatar:reapply() or false end
-    env.CopyOutfitCleanup = fullCleanup
-    env.FullComboCleanup = fullCleanup
-    env.CloneFullCleanup = fullCleanup
 end
 
 local function update()
@@ -279,7 +265,6 @@ local function update()
 
     local enabled = getSpooferEnabled()
     setEnabled(enabled)
-    applyUiIdentityGuard()
 
     if enabled then
         local target = getSpooferUserTarget()
@@ -294,6 +279,12 @@ local function update()
 
     if uiEnabled then
         local uiTarget = getUISpooferUserTarget()
+        if enabledState and targetState ~= "" then
+            uiTarget = targetState
+            if normalizeTarget(Settings and Settings.UISpooferUser or "") ~= uiTarget and Settings then
+                Settings.UISpooferUser = uiTarget
+            end
+        end
         if uiTarget ~= "" and uiTarget ~= uiTargetState then
             switchUITargetSafe(uiTarget)
         end
@@ -312,13 +303,6 @@ local function onCharacterAdded(char)
     if shouldUiEnable and not uiEnabledState then
         setUISpooferEnabled(true)
     end
-    if uiEnabledState and uiSpoofer then
-        task.defer(function()
-            if uiEnabledState then
-                uiSpoofer:reapply()
-            end
-        end)
-    end
 
     if not enabledState then return end
     if not ensureModules() then return end
@@ -335,6 +319,14 @@ local function onCharacterAdded(char)
     end
 
     avatar:onCharacterAdded(char)
+
+    if uiEnabledState and uiSpoofer then
+        task.delay(0.70, function()
+            if uiEnabledState then
+                uiSpoofer:reapply()
+            end
+        end)
+    end
 end
 
 local function cleanup()
@@ -346,8 +338,16 @@ local function cleanup()
     if avatar then avatar:cleanup() end
     if uiSpoofer then uiSpoofer:cleanup() end
 
-    uiIdentityGuardState = nil
-    applyUiIdentityGuard()
+    if type(GETGENV_FN) == "function" then
+        local ok, env = pcall(GETGENV_FN)
+        if ok and type(env) == "table" then
+            clearLegacyEnvApi(env)
+            env[ENV_STATE_KEY] = nil
+            env.CharacterModel = nil
+            env.AvatarSpoofer = nil
+            env.UISpoofer = nil
+        end
+    end
 
     avatar = nil
     uiSpoofer = nil
