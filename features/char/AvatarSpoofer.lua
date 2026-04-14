@@ -65,7 +65,6 @@ function AvatarSpoofer.new(deps)
     self.localPlayer = deps.localPlayer or Players.LocalPlayer
 
     self.active = true
-    self.applyRevision = 0
 
     self.targetInput = nil
     self.targetUserId = nil
@@ -152,7 +151,7 @@ function AvatarSpoofer:restoreOriginalDescription(character)
     return ok
 end
 
-function AvatarSpoofer:applyAppearance(userId, character, applyRevision)
+function AvatarSpoofer:applyAppearance(userId, character)
     if not character or not character.Parent then return false end
 
     local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -179,8 +178,6 @@ function AvatarSpoofer:applyAppearance(userId, character, applyRevision)
 
     task.delay(0.12, function()
         if not self.active then return end
-        if applyRevision ~= nil and self.applyRevision ~= applyRevision then return end
-        if self.targetUserId ~= userId then return end
         if not character.Parent then return end
 
         local hum2 = character:FindFirstChildOfClass("Humanoid")
@@ -205,9 +202,6 @@ function AvatarSpoofer:apply(userId)
     local uid = tonumber(userId)
     if not uid then return false end
 
-    self.applyRevision = self.applyRevision + 1
-    local applyRevision = self.applyRevision
-
     self.targetUserId = uid
     self.currentUserId = uid
 
@@ -216,9 +210,8 @@ function AvatarSpoofer:apply(userId)
         local char = self.localPlayer and self.localPlayer.Character
         if not char then return end
         if not self.active then return end
-        if self.applyRevision ~= applyRevision then return end
         if self.targetUserId ~= uid then return end
-        self:applyAppearance(uid, char, applyRevision)
+        self:applyAppearance(uid, char)
     end)
 
     return true
@@ -254,9 +247,6 @@ function AvatarSpoofer:onCharacterAdded(character)
     uid = uid or self.currentUserId or self.targetUserId
     if not uid then return end
 
-    self.applyRevision = self.applyRevision + 1
-    local applyRevision = self.applyRevision
-
     self.lastAppliedCharacter = nil
 
     task.spawn(function()
@@ -267,10 +257,9 @@ function AvatarSpoofer:onCharacterAdded(character)
         task.wait(INITIAL_APPLY_DELAY)
 
         if not self.active then return end
-        if self.applyRevision ~= applyRevision then return end
         if not character.Parent then return end
         if self.targetUserId ~= uid then return end
-        self:applyAppearance(uid, character, applyRevision)
+        self:applyAppearance(uid, character)
     end)
 end
 
@@ -279,7 +268,6 @@ function AvatarSpoofer:setEnabled(enabled)
     if self.active == enabled then return end
 
     self.active = enabled
-    self.applyRevision = self.applyRevision + 1
 
     local char = self.localPlayer and self.localPlayer.Character
 
@@ -300,7 +288,6 @@ end
 
 function AvatarSpoofer:cleanup()
     self.active = false
-    self.applyRevision = self.applyRevision + 1
 
     local char = self.localPlayer and self.localPlayer.Character
     self:restoreOriginalDescription(char)

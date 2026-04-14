@@ -77,13 +77,6 @@ local function normalizeTarget(raw)
     return t
 end
 
-local function hasResolvedName(value)
-    if type(value) ~= "string" then return false end
-    local t = trimString(value)
-    if t == "" then return false end
-    return t:match("^%d+$") == nil
-end
-
 local function isLikelyPeopleContext(inst)
     local cur, depth = inst, 0
     while cur and depth < 25 do
@@ -276,8 +269,6 @@ function UISpooferMini.new(localPlayer)
     self.targetDisplayName = nil
     self.targetHeadshot = nil
     self.targetAvatarThumb = nil
-    self.targetProfileResolved = false
-    self.targetRevision = 0
 
     self.identitySpoofOriginalCaptured = false
     self.identitySpoofOriginalUserId = nil
@@ -441,14 +432,17 @@ function UISpooferMini:setPropertyCompat(inst, prop, value)
 end
 
 function UISpooferMini:ensureLocalIdentitySpoof()
+    if shouldSkipIdentitySpoof() then
+        if self.identitySpoofApplied then
+            self:restoreLocalIdentitySpoof()
+        end
+        return false
+    end
+
     if not self.enabled or not self.targetUserId then return false end
 
     local lp = self:lp()
     local targetUid = tonumber(self.targetUserId)
-    local skipAppearanceSpoof = shouldSkipIdentitySpoof()
-    if not hasResolvedName(self.targetName) or not hasResolvedName(self.targetDisplayName) then
-        return false
-    end
     local targetUsername = tostring(self.targetName or targetUid or "")
     local targetDisplayName = tostring(self.targetDisplayName or targetUsername)
     if not lp or not targetUid then return false end
@@ -478,20 +472,8 @@ function UISpooferMini:ensureLocalIdentitySpoof()
 
     local dnWritten = self:setPropertyCompat(lp, "DisplayName", targetDisplayName)
     local nWritten = self:setPropertyCompat(lp, "Name", targetUsername)
-    local apWritten = true
-    local uidWritten = true
-
-    if skipAppearanceSpoof then
-        if self.identitySpoofOriginalUserId ~= nil then
-            self:setPropertyCompat(lp, "UserId", self.identitySpoofOriginalUserId)
-        end
-        if self.identitySpoofOriginalAppearanceId ~= nil then
-            self:setPropertyCompat(lp, "CharacterAppearanceId", self.identitySpoofOriginalAppearanceId)
-        end
-    else
-        apWritten = self:setPropertyCompat(lp, "CharacterAppearanceId", targetUid)
-        uidWritten = self:setPropertyCompat(lp, "UserId", targetUid)
-    end
+    local apWritten = self:setPropertyCompat(lp, "CharacterAppearanceId", targetUid)
+    local uidWritten = self:setPropertyCompat(lp, "UserId", targetUid)
 
     local liveUid, okLiveUid = self:getPropertyCompat(lp, "UserId")
     local liveAp, okLiveAp = self:getPropertyCompat(lp, "CharacterAppearanceId")
@@ -502,32 +484,21 @@ function UISpooferMini:ensureLocalIdentitySpoof()
     local apNum = tonumber(liveAp)
     local canRead = okLiveUid and okLiveAp
 
-    local coreApplied = false
-    if skipAppearanceSpoof then
-        coreApplied = true
-    elseif canRead then
-        coreApplied = uidNum and apNum and math.floor(uidNum) == targetUid and math.floor(apNum) == targetUid
+    local applied = false
+    if canRead then
+        applied = uidNum and apNum and math.floor(uidNum) == targetUid and math.floor(apNum) == targetUid
     else
-        coreApplied = uidWritten and apWritten
+        applied = uidWritten and apWritten
     end
 
     local nameApplied = (okLiveName and tostring(liveName or "") == targetUsername) or nWritten
     local dnApplied = (okLiveDN and tostring(liveDN or "") == targetDisplayName) or dnWritten
 
-    if not coreApplied or not nameApplied or not dnApplied then
+    if not applied or not nameApplied or not dnApplied then
         self:setPropertyCompat(lp, "Name", targetUsername)
         self:setPropertyCompat(lp, "DisplayName", targetDisplayName)
-        if skipAppearanceSpoof then
-            if self.identitySpoofOriginalUserId ~= nil then
-                self:setPropertyCompat(lp, "UserId", self.identitySpoofOriginalUserId)
-            end
-            if self.identitySpoofOriginalAppearanceId ~= nil then
-                self:setPropertyCompat(lp, "CharacterAppearanceId", self.identitySpoofOriginalAppearanceId)
-            end
-        else
-            self:setPropertyCompat(lp, "UserId", targetUid)
-            self:setPropertyCompat(lp, "CharacterAppearanceId", targetUid)
-        end
+        self:setPropertyCompat(lp, "UserId", targetUid)
+        self:setPropertyCompat(lp, "CharacterAppearanceId", targetUid)
 
         liveUid, okLiveUid = self:getPropertyCompat(lp, "UserId")
         liveAp, okLiveAp = self:getPropertyCompat(lp, "CharacterAppearanceId")
@@ -537,16 +508,14 @@ function UISpooferMini:ensureLocalIdentitySpoof()
         uidNum = tonumber(liveUid)
         apNum = tonumber(liveAp)
         canRead = okLiveUid and okLiveAp
-        if skipAppearanceSpoof then
-            coreApplied = true
-        elseif canRead then
-            coreApplied = uidNum and apNum and math.floor(uidNum) == targetUid and math.floor(apNum) == targetUid
+        if canRead then
+            applied = uidNum and apNum and math.floor(uidNum) == targetUid and math.floor(apNum) == targetUid
         end
         if okLiveName then nameApplied = tostring(liveName or "") == targetUsername end
         if okLiveDN then dnApplied = tostring(liveDN or "") == targetDisplayName end
     end
 
-    if coreApplied and nameApplied and dnApplied then
+    if applied then
         self.identitySpoofApplied = true
         self.identitySpoofTargetUserId = targetUid
     else
@@ -556,7 +525,7 @@ function UISpooferMini:ensureLocalIdentitySpoof()
 
     self.identitySpoofNameApplied = nameApplied == true
     self.identitySpoofDisplayNameApplied = dnApplied == true
-    return self.identitySpoofApplied
+    return applied
 end
 
 function UISpooferMini:restoreLocalIdentitySpoof()
@@ -589,12 +558,8 @@ function UISpooferMini:updateRowPrimaryText(row)
     local lbl = row and self.rowPrimaryLabelByRow[row] or nil
     if not lbl or not lbl.Parent or not TEXT_CLASS_SET[lbl.ClassName] then return end
 
-    if not hasResolvedName(self.targetName) or not hasResolvedName(self.targetDisplayName) then
-        return
-    end
-
-    local tName = self.targetName
-    local tDisplay = self.targetDisplayName
+    local tName = self.targetName or tostring(self.targetUserId or "")
+    local tDisplay = self.targetDisplayName or tName
 
     self:captureLabelOriginal(lbl)
     if not self:isLeaderboardHoverEligibleCached(row) then
@@ -643,9 +608,8 @@ end
 function UISpooferMini:applyRowVisuals(row)
     if not row then return end
 
-    local hasNames = hasResolvedName(self.targetName) and hasResolvedName(self.targetDisplayName)
-    local tName = hasNames and self.targetName or nil
-    local tDisplay = hasNames and self.targetDisplayName or nil
+    local tName = self.targetName or tostring(self.targetUserId or "")
+    local tDisplay = self.targetDisplayName or tName
 
     local dn = row:FindFirstChild("DisplayNameLabel", true) or row:FindFirstChild("DisplayName", true)
     local un = row:FindFirstChild("UserNameLabel", true)
@@ -657,7 +621,7 @@ function UISpooferMini:applyRowVisuals(row)
 
     local isLeaderboard = self:isLeaderboardHoverEligibleCached(row)
 
-    if hasNames and isLeaderboard then
+    if isLeaderboard then
         local primary, secondary = nil, nil
         local dnOk = dn and TEXT_CLASS_SET[dn.ClassName]
         local unOk = un and TEXT_CLASS_SET[un.ClassName]
@@ -692,7 +656,7 @@ function UISpooferMini:applyRowVisuals(row)
                 pcall(function() secondary.Text = "" end)
             end
         end
-    elseif hasNames then
+    else
         if dn and TEXT_CLASS_SET[dn.ClassName] then
             self:captureLabelOriginal(dn)
             pcall(function() dn.Text = tDisplay end)
@@ -742,7 +706,7 @@ function UISpooferMini:discoverPeopleSourceRows()
     addToken(self.localIdentitySeedDisplayName)
     addToken(self.identitySpoofOriginalName)
     addToken(self.identitySpoofOriginalDisplayName)
-    if not self.identitySpoofNameApplied and not self.identitySpoofDisplayNameApplied then
+    if not self.identitySpoofApplied then
         addToken(lp.Name)
         addToken(lp.DisplayName)
     end
@@ -940,7 +904,11 @@ function UISpooferMini:setEnabled(enabled)
 
     self:clearRows()
     if self.targetUserId then self:syncPeopleRows(true) end
-    self:ensureLocalIdentitySpoof()
+    if shouldSkipIdentitySpoof() then
+        self:restoreLocalIdentitySpoof()
+    else
+        self:ensureLocalIdentitySpoof()
+    end
 
     local function onDescAdded(inst)
         if not self.enabled then return end
@@ -1001,7 +969,11 @@ function UISpooferMini:setEnabled(enabled)
             local now = os.clock()
             if now >= (self.nextIdentitySpoofReapplyAt or 0) then
                 self.nextIdentitySpoofReapplyAt = now + IDENTITY_SPOOF_REAPPLY_INTERVAL
-                self:ensureLocalIdentitySpoof()
+                if shouldSkipIdentitySpoof() then
+                    self:restoreLocalIdentitySpoof()
+                else
+                    self:ensureLocalIdentitySpoof()
+                end
             end
 
             local interval = (now < (self.fastSyncUntil or 0)) and FAST_SYNC_INTERVAL or SYNC_INTERVAL
@@ -1037,31 +1009,27 @@ function UISpooferMini:resolveUserId(target)
 end
 
 function UISpooferMini:refreshProfile(userId)
-    local resolvedName = nil
-    local resolvedDisplayName = nil
-    local headshot = nil
-    local avatarThumb = nil
+    self.targetName = tostring(userId)
+    self.targetDisplayName = nil
+    self.targetHeadshot = nil
+    self.targetAvatarThumb = nil
 
     local ok1, inGame = pcall(function() return Players:GetPlayerByUserId(userId) end)
     if ok1 and inGame then
         local pn = tostring(inGame.Name or "")
         local pd = tostring(inGame.DisplayName or "")
-        if pn ~= "" then resolvedName = pn end
-        if pd ~= "" then resolvedDisplayName = pd end
+        if pn ~= "" then self.targetName = pn end
+        if pd ~= "" then self.targetDisplayName = pd end
     end
 
-    if not hasResolvedName(resolvedName) then
-        for attempt = 1, 3 do
-            local ok2, name = pcall(function() return Players:GetNameFromUserIdAsync(userId) end)
-            if ok2 and type(name) == "string" and name ~= "" then
-                resolvedName = name
-                break
-            end
-            if attempt < 3 then task.wait(0.07) end
+    if self.targetName == tostring(userId) then
+        local ok2, name = pcall(function() return Players:GetNameFromUserIdAsync(userId) end)
+        if ok2 and type(name) == "string" and name ~= "" then
+            self.targetName = name
         end
     end
 
-    if not hasResolvedName(resolvedDisplayName) then
+    if not self.targetDisplayName then
         local ok3, info = pcall(function() return UserService:GetUserInfosByUserIdsAsync({ userId }) end)
         if ok3 and type(info) == "table" then
             local matched = nil
@@ -1075,35 +1043,23 @@ function UISpooferMini:refreshProfile(userId)
             if type(matched) == "table" then
                 local dn = matched.DisplayName
                 if type(dn) == "string" and dn ~= "" then
-                    resolvedDisplayName = dn
-                end
-                local un = matched.Username
-                if not hasResolvedName(resolvedName) and type(un) == "string" and un ~= "" then
-                    resolvedName = un
+                    self.targetDisplayName = dn
                 end
             end
         end
     end
 
-    if hasResolvedName(resolvedName) and not hasResolvedName(resolvedDisplayName) then
-        resolvedDisplayName = resolvedName
-    end
+    self.targetDisplayName = self.targetDisplayName or self.targetName
 
     local ok4, hs = pcall(function()
         return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
     end)
-    headshot = ok4 and hs or nil
+    self.targetHeadshot = ok4 and hs or nil
 
     local ok5, av = pcall(function()
         return Players:GetUserThumbnailAsync(userId, Enum.ThumbnailType.AvatarThumbnail, Enum.ThumbnailSize.Size420x420)
     end)
-    avatarThumb = ok5 and av or nil
-
-    self.targetName = hasResolvedName(resolvedName) and resolvedName or nil
-    self.targetDisplayName = hasResolvedName(resolvedDisplayName) and resolvedDisplayName or nil
-    self.targetProfileResolved = hasResolvedName(self.targetName) and hasResolvedName(self.targetDisplayName)
-    self.targetHeadshot = headshot
-    self.targetAvatarThumb = avatarThumb
+    self.targetAvatarThumb = ok5 and av or nil
 end
 
 function UISpooferMini:setTarget(target)
@@ -1111,8 +1067,6 @@ function UISpooferMini:setTarget(target)
     if not uid then return false end
 
     self.targetInput = target
-    self.targetRevision = self.targetRevision + 1
-    local targetRevision = self.targetRevision
 
     local wasEnabled = self.enabled == true
     local isSwitching = self.targetUserId ~= nil and tonumber(self.targetUserId) ~= tonumber(uid)
@@ -1122,9 +1076,6 @@ function UISpooferMini:setTarget(target)
     end
 
     self.targetUserId = uid
-    self.targetName = nil
-    self.targetDisplayName = nil
-    self.targetProfileResolved = false
     self:refreshProfile(uid)
 
     if wasEnabled and not self.enabled then
@@ -1132,23 +1083,18 @@ function UISpooferMini:setTarget(target)
     end
 
     if self.enabled then
-        self:ensureLocalIdentitySpoof()
+        if shouldSkipIdentitySpoof() then
+            self:restoreLocalIdentitySpoof()
+        else
+            self:ensureLocalIdentitySpoof()
+        end
         self.lastSyncAt = 0
         self.fastSyncUntil = os.clock() + MENU_FAST_SYNC_DURATION
         self.nextFastSyncKickAt = 0
         self.dirty = true
         self:requestSync()
-        for _, d in ipairs({ 0.07, 0.18, 0.36, 0.72 }) do
+        for _, d in ipairs({ 0.07, 0.18, 0.36 }) do
             task.delay(d, function()
-                if not self.enabled then return end
-                if self.targetRevision ~= targetRevision then return end
-                if tonumber(self.targetUserId) ~= tonumber(uid) then return end
-
-                if not self.targetProfileResolved then
-                    self:refreshProfile(uid)
-                    self:ensureLocalIdentitySpoof()
-                end
-
                 if self.enabled and tonumber(self.targetUserId) == tonumber(uid) then
                     self.lastSyncAt = 0
                     self.dirty = true
@@ -1164,6 +1110,13 @@ end
 function UISpooferMini:reapply()
     local target = self.targetInput or self.targetUserId
     if not target then return false end
+
+    if self.enabled then
+        local ok = self:setTarget(target)
+        self:setEnabled(true)
+        return ok
+    end
+
     return self:setTarget(target)
 end
 
@@ -1234,57 +1187,15 @@ end
 
 function UISpooferMini:cleanup()
     self.enabled = false
-
-    self:disconnectAll()
-    self:clearRows()
-
     self.targetInput = nil
     self.targetUserId = nil
     self.targetName = nil
     self.targetDisplayName = nil
     self.targetHeadshot = nil
     self.targetAvatarThumb = nil
-    self.targetProfileResolved = false
-    self.targetRevision = self.targetRevision + 1
-
-    self.identitySpoofOriginalCaptured = false
-    self.identitySpoofOriginalUserId = nil
-    self.identitySpoofOriginalAppearanceId = nil
-    self.identitySpoofOriginalName = nil
-    self.identitySpoofOriginalDisplayName = nil
-
-    self.identitySpoofApplied = false
-    self.identitySpoofNameApplied = false
-    self.identitySpoofDisplayNameApplied = false
-    self.identitySpoofTargetUserId = nil
-    self.nextIdentitySpoofReapplyAt = 0
-
-    self.connections = {}
-    self.rowHoverConnections = {}
-    self.rowPrimaryLabelByRow = setmetatable({}, { __mode = "k" })
-    self.rowHoverHookedByRow = setmetatable({}, { __mode = "k" })
-    self.rowHoverStateByRow = setmetatable({}, { __mode = "k" })
-    self.rowHoverEligibilityCache = setmetatable({}, { __mode = "k" })
-    self.cachedSourceRows = setmetatable({}, { __mode = "k" })
-
-    self.originalTextByLabel = {}
-    self.originalImageByImage = {}
-
-    self.syncPending = false
-    self.syncRunning = false
-    self.syncRerun = false
-    self.lastSyncAt = 0
-    self.fastSyncUntil = 0
-    self.nextFastSyncKickAt = 0
-    self.dirty = false
-
-    local lp = self:lp()
-    if lp then
-        self.localIdentitySeedName = tostring(lp.Name or "")
-        self.localIdentitySeedDisplayName = tostring(lp.DisplayName or "")
-    end
-
     self.debugSyncStats = nil
+    self:disconnectAll()
+    self:clearRows()
 end
 
 return UISpooferMini

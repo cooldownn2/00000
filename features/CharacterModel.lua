@@ -19,7 +19,6 @@ local uiTargetState = ""
 local lastUpdate = 0
 local UPDATE_INTERVAL = 0.1
 local uiIdentityGuardState = nil
-local installedEnv = nil
 
 local ENV_STATE_KEY = "__SauceCharacterModelState"
 local GETGENV_FN = rawget(_G, "getgenv")
@@ -164,16 +163,6 @@ local function reapplyAll()
     return ok
 end
 
-local function clearInstalledEnvApi()
-    if type(installedEnv) ~= "table" then return end
-
-    installedEnv.CharacterModel = nil
-    installedEnv.AvatarSpoofer = nil
-    installedEnv.UISpoofer = nil
-    installedEnv[ENV_STATE_KEY] = nil
-    installedEnv = nil
-end
-
 local function installEnvApi()
     local ok, env = pcall(function() return GETGENV_FN and GETGENV_FN() or nil end)
     if not ok or not env then return end
@@ -183,8 +172,6 @@ local function installEnvApi()
         pcall(prev.cleanup)
     end
 
-    clearInstalledEnvApi()
-
     local state = {
         cleanup = function()
             CharacterModel.cleanup()
@@ -192,7 +179,6 @@ local function installEnvApi()
     }
 
     env[ENV_STATE_KEY] = state
-    installedEnv = env
 
     local function setTargetAny(target)
         if type(target) == "number" then
@@ -208,6 +194,12 @@ local function installEnvApi()
         setEnabled(true)
 
         return switchTargetSafe(targetState)
+    end
+
+    local function setAvatarOnly(target)
+        if not setTargetAny(target) then return false end
+        if not ensureModules() then return false end
+        return avatar:setTarget(targetState)
     end
 
     local function setUiTargetAny(target)
@@ -247,6 +239,15 @@ local function installEnvApi()
         Cleanup = fullCleanup,
     }
 
+    -- Keep legacy alias for existing scripts while backing it with AvatarSpoofer.
+    env.OutfitCopy = {
+        SetTarget = setAvatarOnly,
+        SetTargetUserId = setAvatarOnly,
+        SetTargetUsername = setAvatarOnly,
+        Reapply = function() return avatar and avatar:reapply() or false end,
+        Cleanup = fullCleanup,
+    }
+
     env.UISpoofer = {
         SetTarget = setUiTargetAny,
         SetUser = setUiTargetAny,
@@ -258,6 +259,15 @@ local function installEnvApi()
         Info = function() return uiSpoofer and uiSpoofer:getTargetInfo() or nil end,
         Cleanup = fullCleanup,
     }
+
+    env.SwitchTargetSafe = setTargetAny
+    env.SetTargetSafe = setTargetAny
+
+    env.CopySetUserId = setAvatarOnly
+    env.CopyReapplyOutfit = function() return avatar and avatar:reapply() or false end
+    env.CopyOutfitCleanup = fullCleanup
+    env.FullComboCleanup = fullCleanup
+    env.CloneFullCleanup = fullCleanup
 end
 
 local function update()
@@ -338,7 +348,6 @@ local function cleanup()
 
     uiIdentityGuardState = nil
     applyUiIdentityGuard()
-    clearInstalledEnvApi()
 
     avatar = nil
     uiSpoofer = nil
