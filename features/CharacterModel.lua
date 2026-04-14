@@ -6,16 +6,10 @@ local Settings
 local LP
 local isUnloaded
 
-local CharCommon
 local CharAvatarSpoofer
-local CharAnimation
-local CharEmote
 local CharUISpoofer
 
-local shared = nil
-local outfit = nil
-local animation = nil
-local emote = nil
+local avatar = nil
 local uiSpoofer = nil
 
 local enabledState = false
@@ -26,13 +20,8 @@ local lastUpdate = 0
 local UPDATE_INTERVAL = 0.1
 local switchApplyToken = 0
 
-local STABILIZE_INITIAL_ANIM_DELAY = 0.10
-local STABILIZE_ANIM_DELAY = 0.34
-local STABILIZE_FULL_REAPPLY_DELAY = 0.72
-local STABILIZE_POST_REAPPLY_ANIM_DELAY = 1.05
-local RESPAWN_ANIM_DELAY = 0.68
+local TARGET_STABILIZE_REAPPLY_DELAY = 0.72
 local RESPAWN_REAPPLY_DELAY = 1.02
-local RESPAWN_POST_REAPPLY_ANIM_DELAY = 1.30
 
 local ENV_STATE_KEY = "__SauceCharacterModelState"
 local GETGENV_FN = rawget(_G, "getgenv")
@@ -86,25 +75,15 @@ local function normalizeTarget(raw)
 end
 
 local function ensureModules()
-    if shared and outfit and animation and emote and uiSpoofer then
+    if avatar and uiSpoofer then
         return true
     end
 
-    if not CharCommon or not CharAvatarSpoofer or not CharAnimation or not CharEmote or not CharUISpoofer then
+    if not CharAvatarSpoofer or not CharUISpoofer then
         return false
     end
 
-    shared = CharCommon.new(LP)
-    emote = CharEmote.new({
-        shared = shared,
-        localPlayer = LP,
-    })
-    animation = CharAnimation.new({
-        shared = shared,
-        localPlayer = LP,
-    })
-    outfit = CharAvatarSpoofer.new({
-        shared = shared,
+    avatar = CharAvatarSpoofer.new({
         localPlayer = LP,
     })
     uiSpoofer = CharUISpoofer.new(LP)
@@ -120,9 +99,7 @@ local function setEnabled(enabled)
 
     if not ensureModules() then return end
 
-    outfit:setEnabled(enabled)
-    animation:setEnabled(enabled)
-    emote:setEnabled(enabled)
+    avatar:setEnabled(enabled)
 end
 
 local function setUISpooferEnabled(enabled)
@@ -148,35 +125,15 @@ local function switchTargetSafe(target)
         return enabledState and applyToken == switchApplyToken and target == targetState
     end
 
-    local function applyAnimAndEmote()
+    local avatarOk = avatar:setTarget(target)
+
+    -- Stabilization pass: one delayed reapply to mirror the old "char twice" safety.
+    task.delay(TARGET_STABILIZE_REAPPLY_DELAY, function()
         if not canApplyForToken() then return end
-        emote:mimicFromTarget(target)
-        animation:mimicFromTarget(target)
-    end
-
-    local outfitOk = outfit:setTarget(target)
-
-    -- Run animation shortly after switch instead of immediate defer so outfit
-    -- apply/body-description writes have a chance to settle first.
-    task.delay(STABILIZE_INITIAL_ANIM_DELAY, applyAnimAndEmote)
-
-    -- Stabilization pass: re-run animation + emote after initial settle.
-    task.delay(STABILIZE_ANIM_DELAY, function()
-        applyAnimAndEmote()
+        avatar:reapply()
     end)
 
-    -- Full stabilization pass: mirror the successful "char twice" behavior.
-    task.delay(STABILIZE_FULL_REAPPLY_DELAY, function()
-        if not canApplyForToken() then return end
-        outfit:reapply()
-    end)
-
-    -- Apply animation/emote after reapply has had time to finish async work.
-    task.delay(STABILIZE_POST_REAPPLY_ANIM_DELAY, function()
-        applyAnimAndEmote()
-    end)
-
-    return outfitOk
+    return avatarOk
 end
 
 local function switchUITargetSafe(target)
@@ -196,9 +153,7 @@ local function reapplyAll()
 
     local ok = false
     if enabledState then
-        ok = outfit:reapply() or ok
-        ok = animation:reapply() or ok
-        ok = emote:reapply() or ok
+        ok = avatar:reapply() or ok
     end
     if uiEnabledState then
         ok = uiSpoofer:reapply() or ok
@@ -239,22 +194,10 @@ local function installEnvApi()
         return switchTargetSafe(targetState)
     end
 
-    local function setOutfitOnly(target)
+    local function setAvatarOnly(target)
         if not setTargetAny(target) then return false end
         if not ensureModules() then return false end
-        return outfit:setTarget(targetState)
-    end
-
-    local function setAnimationOnly(target)
-        if not setTargetAny(target) then return false end
-        if not ensureModules() then return false end
-        return animation:mimicFromTarget(targetState)
-    end
-
-    local function setEmoteOnly(target)
-        if not setTargetAny(target) then return false end
-        if not ensureModules() then return false end
-        return emote:mimicFromTarget(targetState)
+        return avatar:setTarget(targetState)
     end
 
     local function setUiTargetAny(target)
@@ -289,28 +232,17 @@ local function installEnvApi()
         SetTarget = setTargetAny,
         SetUser = setTargetAny,
         Reapply = function()
-            return reapplyAll()
+            return avatar and avatar:reapply() or false
         end,
         Cleanup = fullCleanup,
     }
 
+    -- Keep legacy alias for existing scripts while backing it with AvatarSpoofer.
     env.OutfitCopy = {
-        SetTarget = setOutfitOnly,
-        SetTargetUserId = setOutfitOnly,
-        SetTargetUsername = setOutfitOnly,
-        Reapply = function() return outfit and outfit:reapply() or false end,
-        Cleanup = fullCleanup,
-    }
-
-    env.EmoteMimic = {
-        SetTarget = setEmoteOnly,
-        SetTargetUserId = function(target)
-            if not setTargetAny(target) then return false end
-            if not ensureModules() then return false end
-            local userId = shared:resolveUserToId(targetState)
-            return userId and emote:mimicFromUserId(userId) or false
-        end,
-        Reapply = function() return emote and emote:reapply() or false end,
+        SetTarget = setAvatarOnly,
+        SetTargetUserId = setAvatarOnly,
+        SetTargetUsername = setAvatarOnly,
+        Reapply = function() return avatar and avatar:reapply() or false end,
         Cleanup = fullCleanup,
     }
 
@@ -329,14 +261,9 @@ local function installEnvApi()
     env.SwitchTargetSafe = setTargetAny
     env.SetTargetSafe = setTargetAny
 
-    env.CopySetUserId = setOutfitOnly
-    env.CopyReapplyOutfit = function() return outfit and outfit:reapply() or false end
+    env.CopySetUserId = setAvatarOnly
+    env.CopyReapplyOutfit = function() return avatar and avatar:reapply() or false end
     env.CopyOutfitCleanup = fullCleanup
-
-    env.CloneAnimationsFromTarget = setAnimationOnly
-    env.AnimationMimicCleanup = fullCleanup
-    env.CloneEmotesFromTarget = setEmoteOnly
-    env.EmoteMimicCleanup = fullCleanup
     env.FullComboCleanup = fullCleanup
     env.CloneFullCleanup = fullCleanup
 end
@@ -400,38 +327,20 @@ local function onCharacterAdded(char)
     local configuredTarget = getSpooferUserTarget()
     local target = normalizeTarget(targetState ~= "" and targetState or configuredTarget)
     if target == "" then
-        outfit:onCharacterAdded(char)
+        avatar:onCharacterAdded(char)
         return
     end
     if targetState == "" or target ~= targetState then
         targetState = target
     end
 
-    local function canApplyForToken()
-        return enabledState and applyToken == switchApplyToken and target == targetState and char and char.Parent
-    end
-
-    local function applyAnimAndEmote()
-        if not canApplyForToken() then return end
-        animation:mimicFromTarget(target)
-        emote:mimicFromTarget(target)
-    end
-
-    outfit:onCharacterAdded(char)
-
-    -- Respawn stabilization sequence: outfit first, then animation/emote after
-    -- outfit's delayed apply, then one full reapply pass.
-    task.delay(RESPAWN_ANIM_DELAY, function()
-        applyAnimAndEmote()
-    end)
+    avatar:onCharacterAdded(char)
 
     task.delay(RESPAWN_REAPPLY_DELAY, function()
-        if not canApplyForToken() then return end
-        outfit:reapply()
-    end)
-
-    task.delay(RESPAWN_POST_REAPPLY_ANIM_DELAY, function()
-        applyAnimAndEmote()
+        if not (enabledState and applyToken == switchApplyToken and target == targetState and char and char.Parent) then
+            return
+        end
+        avatar:reapply()
     end)
 end
 
@@ -442,18 +351,11 @@ local function cleanup()
     uiTargetState = ""
     switchApplyToken = switchApplyToken + 1
 
-    if outfit then outfit:cleanup() end
-    if animation then animation:cleanup() end
-    if emote then emote:cleanup() end
+    if avatar then avatar:cleanup() end
     if uiSpoofer then uiSpoofer:cleanup() end
 
-    outfit = nil
-    animation = nil
-    emote = nil
+    avatar = nil
     uiSpoofer = nil
-
-    if shared then shared:destroy() end
-    shared = nil
 end
 
 local function init(deps)
@@ -461,10 +363,7 @@ local function init(deps)
     LP = deps.LP or Players.LocalPlayer
     isUnloaded = deps.isUnloaded
 
-    CharCommon = deps.CharCommon
     CharAvatarSpoofer = deps.CharAvatarSpoofer
-    CharAnimation = deps.CharAnimation
-    CharEmote = deps.CharEmote
     CharUISpoofer = deps.CharUISpoofer
 
     installEnvApi()

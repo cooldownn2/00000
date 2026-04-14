@@ -27,10 +27,7 @@ local TargetCard = load("ui/TargetCard")
 local Features   = load("Features")
 local Movement   = load("features/Movement")
 local CharacterModel = load("features/CharacterModel")
-local CharCommon = load("features/char/Common")
 local CharAvatarSpoofer = load("features/char/AvatarSpoofer")
-local CharAnimation = load("features/char/AnimationMimic")
-local CharEmote = load("features/char/EmoteMimic")
 local CharUISpoofer = load("features/char/UISpooferMini")
 local AimAssist  = load("features/AimAssist")
 local Triggerbot = load("features/Triggerbot")
@@ -317,10 +314,7 @@ Targeting.init(mergeDeps({
 }))
 
 CharacterModel.init(mergeDeps({
-    CharCommon = CharCommon,
     CharAvatarSpoofer = CharAvatarSpoofer,
-    CharAnimation = CharAnimation,
-    CharEmote = CharEmote,
     CharUISpoofer = CharUISpoofer,
 }))
 CharacterModel.update()

@@ -40,6 +40,14 @@ local function trimTarget(raw)
     return tostring(raw):gsub("^%s+", ""):gsub("%s+$", "")
 end
 
+local function normalizeLookup(value)
+    local text = string.lower(tostring(value or ""))
+    text = text:gsub("^@", "")
+    text = text:gsub("%s+", "")
+    text = text:gsub("_+", "")
+    return text
+end
+
 local function stripAppearance(character)
     if not character then return end
 
@@ -70,8 +78,7 @@ end
 function AvatarSpoofer.new(deps)
     local self = setmetatable({}, AvatarSpoofer)
 
-    self.shared = deps.shared
-    self.localPlayer = deps.localPlayer
+    self.localPlayer = deps.localPlayer or Players.LocalPlayer
 
     self.active = true
     self.applySerial = 0
@@ -90,6 +97,66 @@ end
 
 function AvatarSpoofer:isApplyStillCurrent(applyToken)
     return self.active and applyToken == self.applySerial
+end
+
+function AvatarSpoofer:resolveUserToId(userInput)
+    if userInput == nil then return nil end
+    if type(userInput) == "number" then return math.floor(userInput) end
+
+    local text = trimTarget(userInput)
+    if text == "" then return nil end
+
+    local numeric = tonumber(text)
+    if numeric then return math.floor(numeric) end
+
+    local username = text:gsub("^@", "")
+    if username == "" then return nil end
+
+    local needleRaw = string.lower(username)
+    local needleNorm = normalizeLookup(username)
+
+    local exactNameUserId = nil
+    local exactDisplayUserId = nil
+    local exactDisplayCount = 0
+    local prefixCandidates = {}
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        local pName = tostring(player.Name or "")
+        local pDisplay = tostring(player.DisplayName or "")
+
+        local pNameLower = string.lower(pName)
+        local pDisplayLower = string.lower(pDisplay)
+
+        if pNameLower == needleRaw then
+            exactNameUserId = player.UserId
+            break
+        end
+
+        if pDisplayLower == needleRaw then
+            exactDisplayUserId = player.UserId
+            exactDisplayCount = exactDisplayCount + 1
+        end
+
+        local pNameNorm = normalizeLookup(pName)
+        local pDisplayNorm = normalizeLookup(pDisplay)
+        if pNameNorm:sub(1, #needleNorm) == needleNorm or pDisplayNorm:sub(1, #needleNorm) == needleNorm then
+            prefixCandidates[#prefixCandidates + 1] = player.UserId
+        end
+    end
+
+    if exactNameUserId then return exactNameUserId end
+    if exactDisplayCount == 1 then return exactDisplayUserId end
+    if #prefixCandidates > 0 then return prefixCandidates[1] end
+    if exactDisplayUserId then return exactDisplayUserId end
+
+    local ok, uid = pcall(function()
+        return Players:GetUserIdFromNameAsync(username)
+    end)
+    if ok and type(uid) == "number" then
+        return math.floor(uid)
+    end
+
+    return nil
 end
 
 function AvatarSpoofer:cleanupDescCache()
@@ -129,17 +196,8 @@ function AvatarSpoofer:getDescription(userId)
         if clone then return clone end
     end
 
-    local desc = nil
-    if self.shared and type(self.shared.getTargetDescriptionCached) == "function" then
-        desc = self.shared:getTargetDescriptionCached(userId)
-    end
-
-    if not desc then
-        local ok, fetched = pcall(Players.GetHumanoidDescriptionFromUserIdAsync, Players, userId)
-        if ok and fetched then desc = fetched end
-    end
-
-    if not desc then return nil end
+    local ok, desc = pcall(Players.GetHumanoidDescriptionFromUserIdAsync, Players, userId)
+    if not ok or not desc then return nil end
 
     local stored = cloneDescription(desc) or desc
     self.descCache[cacheKey] = {
@@ -259,17 +317,7 @@ end
 function AvatarSpoofer:setTarget(target)
     self.targetInput = target
 
-    local uid = nil
-    if type(target) == "number" then
-        uid = math.floor(target)
-    else
-        local text = trimTarget(target)
-        uid = tonumber(text)
-        if not uid and self.shared and type(self.shared.resolveUserToId) == "function" then
-            uid = self.shared:resolveUserToId(text)
-        end
-    end
-
+    local uid = self:resolveUserToId(target)
     if not uid then return false end
 
     if self.currentUserId and uid ~= self.currentUserId then
@@ -282,15 +330,7 @@ end
 function AvatarSpoofer:reapply()
     local uid = nil
     if self.targetInput ~= nil then
-        if type(self.targetInput) == "number" then
-            uid = math.floor(self.targetInput)
-        else
-            local text = trimTarget(self.targetInput)
-            uid = tonumber(text)
-            if not uid and self.shared and type(self.shared.resolveUserToId) == "function" then
-                uid = self.shared:resolveUserToId(text)
-            end
-        end
+        uid = self:resolveUserToId(self.targetInput)
     end
 
     uid = uid or self.currentUserId or self.targetUserId
@@ -309,15 +349,7 @@ function AvatarSpoofer:onCharacterAdded(char)
 
     local uid = nil
     if self.targetInput ~= nil then
-        if type(self.targetInput) == "number" then
-            uid = math.floor(self.targetInput)
-        else
-            local text = trimTarget(self.targetInput)
-            uid = tonumber(text)
-            if not uid and self.shared and type(self.shared.resolveUserToId) == "function" then
-                uid = self.shared:resolveUserToId(text)
-            end
-        end
+        uid = self:resolveUserToId(self.targetInput)
     end
     uid = uid or self.currentUserId or self.targetUserId
     if not uid then return end
