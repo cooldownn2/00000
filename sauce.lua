@@ -34,20 +34,44 @@ local function resolveRuntimeEnv()
 end
 
 local GENV = resolveRuntimeEnv()
-if GENV.SauceConfig == nil then
+local function resolveConfigTable(env)
+    if type(env) == "table" and type(env.SauceConfig) == "table" then
+        return env.SauceConfig
+    end
+
     local gCfg = rawget(_G, "SauceConfig")
     if type(gCfg) == "table" then
-        GENV.SauceConfig = gCfg
+        return gCfg
     end
-end
-if GENV.SauceConfig == nil then
+
+    local loadstringFn = rawget(_G, "loadstring")
+    if type(loadstringFn) == "function" then
+        local okChunk, chunk = pcall(loadstringFn, "return SauceConfig")
+        if okChunk and type(chunk) == "function" then
+            local okGlobal, directGlobal = pcall(chunk)
+            if okGlobal and type(directGlobal) == "table" then
+                return directGlobal
+            end
+        end
+    end
+
     local sharedTbl = rawget(_G, "shared")
     if type(sharedTbl) == "table" and type(sharedTbl.SauceConfig) == "table" then
-        GENV.SauceConfig = sharedTbl.SauceConfig
+        return sharedTbl.SauceConfig
     end
+
+    return nil
 end
-if not GENV.SauceConfig then
-    error("No config found. Run the table not just the loading string.", 2)
+
+local SAUCE_CONFIG = resolveConfigTable(GENV)
+if type(SAUCE_CONFIG) ~= "table" then
+    SAUCE_CONFIG = {}
+end
+GENV.SauceConfig = SAUCE_CONFIG
+
+local sharedTbl = rawget(_G, "shared")
+if type(sharedTbl) == "table" and type(sharedTbl.SauceConfig) ~= "table" then
+    sharedTbl.SauceConfig = SAUCE_CONFIG
 end
 if GENV.__SilentAimCleanup then
     pcall(GENV.__SilentAimCleanup)
@@ -95,12 +119,12 @@ if activeProfile then
     GameProfiles.apply(settings, activeProfile)
 end
 
-if GENV.SauceConfig then
-    ConfigBridge.applyUserConfig(settings, GENV.SauceConfig)
+if SAUCE_CONFIG then
+    ConfigBridge.applyUserConfig(settings, SAUCE_CONFIG)
 end
 
 local function getUserCfg(path)
-    local cur = GENV.SauceConfig
+    local cur = SAUCE_CONFIG
     if type(cur) ~= "table" then return nil end
     for i = 1, #path do
         if type(cur) ~= "table" then return nil end
