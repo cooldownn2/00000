@@ -152,8 +152,8 @@ local function reapplyAll()
     local ok = false
     if enabledState then
         ok = outfit:reapply() or ok
-        ok = emote:reapply() or ok
         ok = animation:reapply() or ok
+        ok = emote:reapply() or ok
     end
     return ok
 end

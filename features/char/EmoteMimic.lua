@@ -268,15 +268,18 @@ function EmoteMimic:mimicFromTarget(target)
     if not userId then return false end
 
     self.targetInput = target
+    if self.currentUserId and tonumber(self.currentUserId) ~= tonumber(userId) then
+        self.currentUserId = nil
+    end
     return self:mimicFromUserId(userId)
 end
 
 function EmoteMimic:reapply()
-    if self.currentUserId then
-        return self:mimicFromUserId(self.currentUserId)
-    end
     if self.targetInput ~= nil then
         return self:mimicFromTarget(self.targetInput)
+    end
+    if self.currentUserId then
+        return self:mimicFromUserId(self.currentUserId)
     end
     return false
 end
