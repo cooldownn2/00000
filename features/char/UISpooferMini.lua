@@ -1110,13 +1110,6 @@ end
 function UISpooferMini:reapply()
     local target = self.targetInput or self.targetUserId
     if not target then return false end
-
-    if self.enabled then
-        local ok = self:setTarget(target)
-        self:setEnabled(true)
-        return ok
-    end
-
     return self:setTarget(target)
 end
 
@@ -1187,15 +1180,55 @@ end
 
 function UISpooferMini:cleanup()
     self.enabled = false
+
+    self:disconnectAll()
+    self:clearRows()
+
     self.targetInput = nil
     self.targetUserId = nil
     self.targetName = nil
     self.targetDisplayName = nil
     self.targetHeadshot = nil
     self.targetAvatarThumb = nil
+
+    self.identitySpoofOriginalCaptured = false
+    self.identitySpoofOriginalUserId = nil
+    self.identitySpoofOriginalAppearanceId = nil
+    self.identitySpoofOriginalName = nil
+    self.identitySpoofOriginalDisplayName = nil
+
+    self.identitySpoofApplied = false
+    self.identitySpoofNameApplied = false
+    self.identitySpoofDisplayNameApplied = false
+    self.identitySpoofTargetUserId = nil
+    self.nextIdentitySpoofReapplyAt = 0
+
+    self.connections = {}
+    self.rowHoverConnections = {}
+    self.rowPrimaryLabelByRow = setmetatable({}, { __mode = "k" })
+    self.rowHoverHookedByRow = setmetatable({}, { __mode = "k" })
+    self.rowHoverStateByRow = setmetatable({}, { __mode = "k" })
+    self.rowHoverEligibilityCache = setmetatable({}, { __mode = "k" })
+    self.cachedSourceRows = setmetatable({}, { __mode = "k" })
+
+    self.originalTextByLabel = {}
+    self.originalImageByImage = {}
+
+    self.syncPending = false
+    self.syncRunning = false
+    self.syncRerun = false
+    self.lastSyncAt = 0
+    self.fastSyncUntil = 0
+    self.nextFastSyncKickAt = 0
+    self.dirty = false
+
+    local lp = self:lp()
+    if lp then
+        self.localIdentitySeedName = tostring(lp.Name or "")
+        self.localIdentitySeedDisplayName = tostring(lp.DisplayName or "")
+    end
+
     self.debugSyncStats = nil
-    self:disconnectAll()
-    self:clearRows()
 end
 
 return UISpooferMini
