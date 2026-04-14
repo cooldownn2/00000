@@ -35,6 +35,12 @@ end
 
 local GENV = resolveRuntimeEnv()
 if GENV.SauceConfig == nil then
+    local gCfg = rawget(_G, "SauceConfig")
+    if type(gCfg) == "table" then
+        GENV.SauceConfig = gCfg
+    end
+end
+if GENV.SauceConfig == nil then
     local sharedTbl = rawget(_G, "shared")
     if type(sharedTbl) == "table" and type(sharedTbl.SauceConfig) == "table" then
         GENV.SauceConfig = sharedTbl.SauceConfig
@@ -92,6 +98,48 @@ end
 if GENV.SauceConfig then
     ConfigBridge.applyUserConfig(settings, GENV.SauceConfig)
 end
+
+local function getUserCfg(path)
+    local cur = GENV.SauceConfig
+    if type(cur) ~= "table" then return nil end
+    for i = 1, #path do
+        if type(cur) ~= "table" then return nil end
+        cur = cur[path[i]]
+    end
+    return cur
+end
+
+local function forcePath(path, value)
+    if value == nil then return end
+    local cur = settings
+    for i = 1, #path - 1 do
+        local key = path[i]
+        if type(cur[key]) ~= "table" then cur[key] = {} end
+        cur = cur[key]
+    end
+    cur[path[#path]] = value
+end
+
+-- Reliability fallback: keep table cfg authoritative for critical controls.
+forcePath({"Main", "Enabled"}, getUserCfg({"Silent Aim", "Enabled"}))
+forcePath({"Main", "Target Part"}, getUserCfg({"Silent Aim", "Target Part"}))
+forcePath({"Main", "Selection System"}, getUserCfg({"Silent Aim", "Selection"}))
+forcePath({"Main", "Closest Point Scale"}, getUserCfg({"Silent Aim", "Scale"}))
+
+forcePath({"Main", "Keybinds", "Target"}, getUserCfg({"Main", "Keybinds", "Target"}))
+forcePath({"Main", "Keybinds", "Camlock"}, getUserCfg({"Main", "Keybinds", "Camlock"}))
+forcePath({"Main", "Keybinds", "Triggerbot"}, getUserCfg({"Main", "Keybinds", "Triggerbot"}))
+forcePath({"Main", "Keybinds", "ESP"}, getUserCfg({"Main", "Keybinds", "ESP"}))
+forcePath({"Main", "Keybinds", "Speed"}, getUserCfg({"Main", "Keybinds", "Speed"}))
+
+forcePath({"Character", "Speed Override", "Enabled"}, getUserCfg({"Speed Modification", "Enabled"}))
+forcePath({"Character", "Speed Override", "Velocity Injection"}, getUserCfg({"Speed Modification", "Velocity Injection"}))
+forcePath({"Character", "Speed Override", "Data"}, getUserCfg({"Speed Modification", "Data"}))
+forcePath({"Character", "Anti Trip", "Enabled"}, getUserCfg({"Speed Modification", "Anti Trip"}))
+
+forcePath({"Camlock", "Enabled"}, getUserCfg({"Camlock", "Enabled"}))
+forcePath({"Triggerbot", "Enabled"}, getUserCfg({"Triggerbot", "Enabled"}))
+forcePath({"ESP", "Enabled"}, getUserCfg({"ESP", "Enabled"}))
 
 ConfigBridge.validateSettings(Settings)
 
